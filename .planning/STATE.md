@@ -35,14 +35,15 @@ We have shipped the chat experience rebuild (Phase 01) plus a series of major it
 - The model can identify a public figure from an entity pin AND cite where they appear in the KB
 - 02-01 cleanup complete: dead RAG pipeline removed, orphan deps cleaned
 - 02-02 cleanup complete: shared types centralized in src/lib/types.ts, source variable naming normalized
+- 02-03 cleanup complete: chat routes deduped via shared runChatTurn helper, ~800 lines of duplication eliminated
 
 ## Known debt and rough edges
 
-This is what Phase 02 (cleanup) needs to address:
+Phase 02 (cleanup) addressed items 1-3 below; remaining debt:
 
-1. **Stale code from earlier iterations** — `src/app/api/query/route.ts`, `src/lib/pipeline/`, old `query` route, dead imports
-2. **Two parallel chat routes** (`/api/chat` and `/api/chat/[id]`) with copy-pasted logic that drifts
-3. **Inconsistent naming** — `pendingFile` vs `pending` vs `attachment`, sources called `docSources` / `pinnedDocSources` / `webSources` / `allSources` in the same function
+1. ~~**Stale code from earlier iterations**~~ — resolved in 02-01
+2. ~~**Two parallel chat routes**~~ — resolved in 02-03 (both delegate to runChatTurn)
+3. ~~**Inconsistent naming**~~ — resolved in 02-02
 4. **Console.error left throughout** — should be a proper logger or removed
 5. **Type imports not normalized** — some files import types from `database.types.ts`, others define inline
 6. **Long route handlers** — `/api/chat/route.ts` is now ~400 lines and doing too much; should be split
@@ -73,4 +74,4 @@ This is what Phase 02 (cleanup) needs to address:
 - **Recent versions**: `is_current = true` filter is the default on documents listing and hybrid search
 
 ## Active session
-2026-04-06 — executing phase 02 cleanup (02-01 + 02-02 complete; next: 02-03 extract shared chat-turn helper; project-centric rebuild plan: 02 cleanup → 03 schema → 04 sidebar+workspace → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence)
+2026-04-06 — phase 02 cleanup COMPLETE (02-01 + 02-02 + 02-03 all landed); ready for phase 03 (project schema). Project-centric rebuild plan: ~~02 cleanup~~ → 03 schema → 04 sidebar+workspace → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence
