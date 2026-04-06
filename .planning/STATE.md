@@ -34,6 +34,7 @@ We have shipped the chat experience rebuild (Phase 01) plus a series of major it
 - Memory layer carries insights across conversations
 - The model can identify a public figure from an entity pin AND cite where they appear in the KB
 - 02-01 cleanup complete: dead RAG pipeline removed, orphan deps cleaned
+- 02-02 cleanup complete: shared types centralized in src/lib/types.ts, source variable naming normalized
 
 ## Known debt and rough edges
 
@@ -72,4 +73,4 @@ This is what Phase 02 (cleanup) needs to address:
 - **Recent versions**: `is_current = true` filter is the default on documents listing and hybrid search
 
 ## Active session
-2026-04-06 — executing phase 02 cleanup (02-01 dead code + dep audit complete; project-centric rebuild plan: 02 cleanup → 03 schema → 04 sidebar+workspace → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence)
+2026-04-06 — executing phase 02 cleanup (02-01 + 02-02 complete; next: 02-03 extract shared chat-turn helper; project-centric rebuild plan: 02 cleanup → 03 schema → 04 sidebar+workspace → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence)
