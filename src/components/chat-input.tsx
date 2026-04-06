@@ -42,7 +42,7 @@ interface ChatInputProps {
   placeholder?: string;
 }
 
-interface PendingFile {
+interface PendingAttachment {
   id: string;
   file: File;
   status: "uploading" | "ready" | "error";
@@ -92,7 +92,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   ref,
 ) {
   const [value, setValue] = useState("");
-  const [pending, setPending] = useState<PendingFile[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [pinned, setPinned] = useState<PinnedItem[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -244,21 +244,21 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   // ── Attachment upload ──
   const uploadAttachment = useCallback(async (file: File) => {
     const id = crypto.randomUUID();
-    setPending((prev) => [...prev, { id, file, status: "uploading" }]);
+    setPendingAttachments((prev) => [...prev, { id, file, status: "uploading" }]);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/attachments", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) {
-        setPending((prev) =>
+        setPendingAttachments((prev) =>
           prev.map((p) =>
             p.id === id ? { ...p, status: "error", error: data.error || "Upload failed" } : p,
           ),
         );
         return;
       }
-      setPending((prev) =>
+      setPendingAttachments((prev) =>
         prev.map((p) =>
           p.id === id
             ? {
@@ -276,7 +276,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         ),
       );
     } catch {
-      setPending((prev) =>
+      setPendingAttachments((prev) =>
         prev.map((p) => (p.id === id ? { ...p, status: "error", error: "Upload failed" } : p)),
       );
     }
@@ -293,22 +293,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   useImperativeHandle(ref, () => ({ addFiles }), [addFiles]);
 
   const removePending = useCallback((id: string) => {
-    setPending((prev) => prev.filter((p) => p.id !== id));
+    setPendingAttachments((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
   // ── Send ──
-  const anyUploading = pending.some((p) => p.status === "uploading");
+  const anyUploading = pendingAttachments.some((p) => p.status === "uploading");
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
-    const ready = pending
+    const ready = pendingAttachments
       .filter((p) => p.status === "ready" && p.attachment)
       .map((p) => p.attachment!);
     if ((!trimmed && ready.length === 0 && pinned.length === 0) || disabled || anyUploading)
       return;
     onSend(trimmed, ready, pinned);
     setValue("");
-    setPending([]);
+    setPendingAttachments([]);
     setPinned([]);
     setPickerOpen(false);
     setPickerQuery("");
@@ -317,7 +317,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         textareaRef.current.style.height = "auto";
       }
     }, 0);
-  }, [value, pending, pinned, disabled, anyUploading, onSend]);
+  }, [value, pendingAttachments, pinned, disabled, anyUploading, onSend]);
 
   // ── Keyboard handling ──
   const handleKeyDown = useCallback(
@@ -394,7 +394,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const canSend =
     (value.trim().length > 0 ||
-      pending.some((p) => p.status === "ready") ||
+      pendingAttachments.some((p) => p.status === "ready") ||
       pinned.length > 0) &&
     !disabled &&
     !anyUploading;
@@ -498,7 +498,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm focus-within:border-slate-300 focus-within:shadow-md transition-shadow">
         {/* Pinned chips + attachment chips (above input row) */}
-        {(pinned.length > 0 || pending.length > 0) && (
+        {(pinned.length > 0 || pendingAttachments.length > 0) && (
           <div className="flex flex-wrap gap-1.5 px-3 pt-3">
             {pinned.map((p) => {
               const Icon =
@@ -530,7 +530,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
                 </div>
               );
             })}
-            {pending.map((p) => (
+            {pendingAttachments.map((p) => (
               <div
                 key={p.id}
                 className={`flex items-center gap-2 text-[12px] rounded-lg pl-2 pr-1 py-1 border ${
