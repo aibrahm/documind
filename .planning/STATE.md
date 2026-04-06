@@ -33,6 +33,7 @@ We have shipped the chat experience rebuild (Phase 01) plus a series of major it
 - Inline `[PINNED-N]` citations are clickable and matched to source pills
 - Memory layer carries insights across conversations
 - The model can identify a public figure from an entity pin AND cite where they appear in the KB
+- 02-01 cleanup complete: dead RAG pipeline removed, orphan deps cleaned
 
 ## Known debt and rough edges
 
@@ -71,4 +72,4 @@ This is what Phase 02 (cleanup) needs to address:
 - **Recent versions**: `is_current = true` filter is the default on documents listing and hybrid search
 
 ## Active session
-2026-04-06 — preparing the project-centric architecture rebuild (phases 02 cleanup → 03 schema → 04 sidebar+workspace → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence)
+2026-04-06 — executing phase 02 cleanup (02-01 dead code + dep audit complete; project-centric rebuild plan: 02 cleanup → 03 schema → 04 sidebar+workspace → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence)
