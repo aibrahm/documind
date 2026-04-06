@@ -9,8 +9,8 @@ A project-centric document intelligence system for the Vice Chairman of GTEZ. Ea
 | # | Name | Status | Output |
 |---|---|---|---|
 | 01 | Chat experience rebuild | ✅ shipped | Multi-turn chat, intelligence routing, doctrines, autonomous web search, pinned references, librarian core, conversational upload |
-| 02 | **Cleanup and tech debt** | 📋 planning | Dead code removed, routes deduped, naming normalized, types unified, dead `pipeline/` deleted, `query/` route deleted, audit log cleanup |
-| 03 | Project schema and CRUD | ⏳ next | Migration `008_projects.sql`, REST endpoints for projects, type generation, basic project lifecycle |
+| 02 | Cleanup and tech debt | ✅ shipped | Dead code removed (~3,000 LOC), chat routes deduped via `runChatTurn`, types centralized in `src/lib/types.ts`, naming normalized, 5 orphan deps removed |
+| 03 | **Project schema and CRUD** | 📋 planning | Migration `008_projects.sql`, REST endpoints for projects + membership + negotiations, type generation, basic project lifecycle |
 | 04 | Project sidebar and workspace UI | ⏳ planned | Sidebar with project list, `/projects/[slug]` workspace page with Overview/Documents/Negotiations/Chats/Memory tabs, project context badge in chat input |
 | 05 | Project-scoped chat | ⏳ planned | Chat API reads `conversation.project_id`, injects project `context_summary` into system prompt, filters/boosts retrieval to project documents, scopes memory to project first |
 | 06 | Negotiations | ⏳ planned | `negotiations` schema, deal-room view with timeline + key facts, librarian suggests negotiation membership |
