@@ -1,0 +1,107 @@
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "./database.types";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+// Client-side Supabase client (browser)
+export function createBrowserClient() {
+  return createClient<Database>(supabaseUrl, supabaseAnonKey);
+}
+
+// Admin client — lazy singleton
+let _admin: ReturnType<typeof createClient<Database>> | null = null;
+export const supabaseAdmin = (() => {
+  if (!_admin) _admin = createClient<Database>(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder");
+  return _admin;
+})();
+
+// ============================================================
+// Type definitions matching the database schema
+// ============================================================
+
+export interface Document {
+  id: string;
+  title: string;
+  type: string;
+  classification: "PRIVATE" | "DOCTRINE" | "PUBLIC";
+  language: string;
+  file_url: string;
+  file_size: number | null;
+  page_count: number | null;
+  metadata: Record<string, unknown>;
+  entities: string[];
+  encrypted_content: string | null;
+  version_of: string | null;
+  supersedes: string | null;
+  version_number: number;
+  is_current: boolean;
+  status: "pending" | "processing" | "ready" | "error";
+  processing_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Chunk {
+  id: string;
+  document_id: string;
+  content: string;
+  embedding: number[] | null;
+  page_number: number;
+  section_title: string | null;
+  clause_number: string | null;
+  chunk_index: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface Entity {
+  id: string;
+  name: string;
+  name_en: string | null;
+  type: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface DocumentReference {
+  id: string;
+  source_id: string;
+  target_id: string | null;
+  reference_text: string;
+  reference_type: string;
+  resolved: boolean;
+  created_at: string;
+}
+
+export interface Doctrine {
+  id: string;
+  name: string;
+  title: string;
+  content_ar: string;
+  content_en: string;
+  version: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  details: Record<string, unknown>;
+  scores: Record<string, number> | null;
+  created_at: string;
+}
+
+export interface HybridSearchResult {
+  chunk_id: string;
+  document_id: string;
+  content: string;
+  page_number: number;
+  section_title: string | null;
+  clause_number: string | null;
+  similarity: number;
+  fts_rank: number;
+  combined_score: number;
+}
