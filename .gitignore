@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright session caches
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# supabase CLI temp
+supabase/.temp/
+
+# claude code agent mirror (the canonical source is .claude/skills/)
+.agents/
+
+# root-level test screenshots and extraction dumps — never commit these
+/*.png
+/extraction_*.json
+/extraction_*.txt
+/full_document_output.json
