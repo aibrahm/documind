@@ -287,7 +287,18 @@ async function classifyDocument(pageImageBase64: string): Promise<{ result: Docu
       },
     ],
   });
-  const parsed = JSON.parse(res.choices[0].message.content || "{}");
+  const rawContent = res.choices[0].message.content || "{}";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (err) {
+    console.error(
+      "classifyDocument: JSON.parse failed, falling back to defaults:",
+      (err as Error).message,
+    );
+    parsed = {};
+  }
   const cost = ((res.usage?.prompt_tokens || 0) * 0.15 + (res.usage?.completion_tokens || 0) * 0.6) / 1_000_000;
   return { result: parsed as DocumentClassification, cost };
 }
@@ -398,7 +409,11 @@ async function extractPage(
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
     temperature: 0,
-    max_tokens: 8192,
+    // 16384 is gpt-4o's max output budget. Dense Arabic legal pages can run
+    // 10k+ output tokens (full preserved text + sections + sub-items).
+    // Previously was 8192 — caused mid-string truncation on long pages and
+    // crashed the entire upload via JSON.parse.
+    max_tokens: 16384,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: prompt },
@@ -415,7 +430,27 @@ async function extractPage(
     ],
   });
 
-  const parsed = JSON.parse(res.choices[0].message.content || "{}");
+  // Detect token-budget truncation visibly so we know which pages are
+  // degraded. Don't crash the upload — fall back to an empty page so the
+  // rest of the document still extracts.
+  const finishReason = res.choices[0]?.finish_reason;
+  const rawContent = res.choices[0].message.content || "{}";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (err) {
+    console.error(
+      `extractPage(${pageNumber}): JSON.parse failed (finish_reason=${finishReason}, content_length=${rawContent.length}). Falling back to empty page so the rest of the document can still process.`,
+      (err as Error).message,
+    );
+    parsed = {};
+  }
+  if (finishReason === "length") {
+    console.error(
+      `extractPage(${pageNumber}): hit max_tokens cap (finish_reason=length). Page output may be incomplete.`,
+    );
+  }
   const cost = ((res.usage?.prompt_tokens || 0) * 2.5 + (res.usage?.completion_tokens || 0) * 10) / 1_000_000;
 
   const rawPage: ExtractedPage = {
@@ -502,7 +537,17 @@ If unsure about a fix, leave the text unchanged and lower confidence.`,
       ],
     });
 
-    const parsed = JSON.parse(res.choices[0].message.content || "{}");
+    const rawContent = res.choices[0].message.content || "{}";
+    let parsed: { corrected?: string[]; corrections?: string[]; confidence?: number[] };
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch (err) {
+      console.error(
+        `correctText batch ${i / 10}: JSON.parse failed, skipping batch corrections:`,
+        (err as Error).message,
+      );
+      parsed = {};
+    }
     totalCost += ((res.usage?.prompt_tokens || 0) * 0.15 + (res.usage?.completion_tokens || 0) * 0.6) / 1_000_000;
 
     const correctedTexts: string[] = parsed.corrected || [];
@@ -796,7 +841,18 @@ File: ${fileName}`,
     ],
   });
 
-  const parsed = JSON.parse(res.choices[0].message.content || "{}");
+  const rawContent = res.choices[0].message.content || "{}";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (err) {
+    console.error(
+      "extractMetadata: JSON.parse failed, falling back to empty metadata:",
+      (err as Error).message,
+    );
+    parsed = {};
+  }
   const cost = ((res.usage?.prompt_tokens || 0) * 0.15 + (res.usage?.completion_tokens || 0) * 0.6) / 1_000_000;
 
   return {
