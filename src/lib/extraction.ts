@@ -157,14 +157,16 @@ export async function extractDocument(
     );
   }
 
-  // Step 2.5: Law verifier (Pass 2) — for law documents, re-read each page
-  // asking ONLY for high-stakes fields (article labels, percentages, law
-  // references, years) and cross-check against the extracted content.
+  // Step 2.5: Legal verifier (Pass 2) — for law and decree documents, re-read
+  // each page asking ONLY for high-stakes fields (article labels, percentages,
+  // law references, years) and cross-check against the extracted content.
   // This catches the failure mode where the model "smoothed" the text and
   // dropped or substituted critical legal values. Verifier mismatches are
   // surfaced as warnings on the document row, not as a hard failure.
   const verifierMismatches: string[] = [];
-  if (classification.result.documentType === "law") {
+  const docType = classification.result.documentType;
+  const isLegalType = docType === "law" || docType === "decree";
+  if (isLegalType) {
     const verifierResults = await Promise.all(
       pageImages.map((img, i) => verifyLawPage(img, i + 1)),
     );
@@ -393,8 +395,50 @@ async function classifyDocument(pageImageBase64: string): Promise<{ result: Docu
 // STEP 2: EXTRACT (type-aware)
 // ============================================================
 
+// ============================================================
+// SHARED VERBATIM DISCIPLINE — injected into every type prompt
+// ============================================================
+
+const VERBATIM_DISCIPLINE = `
+VERBATIM TRANSCRIPTION RULES — non-negotiable for every page:
+
+1. **Do not invent text.** If a word is partially obscured, ambiguous, or you are not sure, write [غير واضح] / [unclear] in its place. Never guess. Never substitute a word that "sounds right." Never auto-correct.
+
+2. **Do not paraphrase, smooth, or normalize.** Copy what is on the page literally. If the page has unusual wording, keep it. If a phrase is grammatically awkward, keep it. The page is the source of truth, not your prior knowledge of how this kind of document is usually phrased.
+
+3. **Do not duplicate phrases.** If you find yourself about to repeat a clause (e.g. "وزير المالية، ووزير المالية"), stop and re-read the line. Each phrase appears in the text exactly as many times as the page shows it.
+
+4. **Do not invent connective tissue between lines.** If two adjacent lines on the page do not actually connect grammatically, do not add "و" / "كما" / "and" / "however" or any glue word to make them flow. Keep the original line breaks.
+
+5. **Numbers, percentages, dates, references — verbatim.** Every digit exactly as printed:
+   - النسب المئوية / percentages (e.g. ١٧٪، 50%): copy exactly, no rounding
+   - أرقام المواد / article and section numbers, with all suffixes (مكرراً, /أ, /ب) intact
+   - Law and decree references (e.g. القانون رقم 83 لسنة 2002): copy law number AND year exactly
+   - Dates, durations, currency amounts
+   These fields are higher-stakes than the surrounding prose. If you are unsure of any digit, write [غير واضح] for that token instead of guessing.
+
+6. **Easily-confused Arabic letters.** Pay special attention to:
+   - تيسيرات vs تنسيبات (the former is a legal term; the latter is meaningless)
+   - التعاقدات vs التعليقات (the former is "contracts"; the latter is unrelated)
+   - Similar letterforms: ب/ت/ث/ن/ي، ج/ح/خ، د/ذ، ر/ز، س/ش، ص/ض، ط/ظ، ع/غ
+   If the page uses one of these easily-confused words, look carefully and copy the exact letter you see. If unclear, mark [غير واضح].
+
+7. **Numeral system.** Preserve the digit system exactly as printed. If the page uses Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩), keep them. If Western digits (0123456789), keep them. Do NOT convert between systems — code post-processes.
+
+8. **Empty pages → pageType "blank", empty sections array.**
+
+9. **No commentary, translation, or meta-notes.** No "this section discusses…" text. No square-bracket annotations except [غير واضح].
+
+10. **Capture ALL text on the page.** Every paragraph, every footnote, every signature line. Missing text is a failure as serious as wrong text.
+
+If you find yourself wanting to "fix" something on the page, stop. Your job is to faithfully record what the page says, not to produce a polished version. A faithful but messy transcription is correct. A clean, polished version with substituted words is wrong.
+`.trim();
+
 const EXTRACTION_PROMPTS: Record<string, string> = {
-  law: `أنت ناسخ قانوني عربي / You are an Arabic legal scribe transcribing a single page of a draft law, decree, or statute. Your only job is verbatim transcription. You are NOT an editor, summarizer, smoother, or translator.
+  // ────────────────────────────────────────
+  // LAW — statutes, draft laws, mostly Arabic
+  // ────────────────────────────────────────
+  law: `أنت ناسخ قانوني عربي / You are an Arabic legal scribe transcribing a single page of a draft law or statute. Your only job is verbatim transcription. You are NOT an editor, summarizer, smoother, or translator.
 
 Return JSON:
 {
@@ -403,7 +447,7 @@ Return JSON:
   "pageType": "cover|toc|body|appendix|signature|blank",
   "language": "ar|en|mixed",
   "sections": [{
-    "clauseNumber": "e.g. المادة الأولى, المادة الثانية, مادة (14), مادة (37 مكرراً), مادة (38 مكرراً/أ), مادة 47 مكرراً — copy the EXACT label from the page. Use null only if no label is present.",
+    "clauseNumber": "e.g. المادة الأولى, المادة الثانية, مادة (14), مادة (37 مكرراً), مادة (38 مكرراً/أ) — copy the EXACT label. Use null only if no label is present.",
     "title": "section title if any, or null",
     "content": "the exact verbatim text of this section as it appears on the page",
     "type": "preamble|article|clause|sub_clause|definition|penalty|transitional|signature|body",
@@ -411,109 +455,257 @@ Return JSON:
   }]
 }
 
-VERBATIM TRANSCRIPTION RULES — these are non-negotiable:
+LAW-SPECIFIC RULES:
+- Sub-items (أ، ب، ج، 1، 2، 3) go in subItems array, NOT in content
+- Every article/clause MUST have clauseNumber populated when a label is visible
+- A preamble (بعد الاطلاع على القانون رقم…، وعلى القانون رقم…) is ONE section with type="preamble" and clauseNumber=null. Do not split each "وعلى" into its own section.
 
-1. **Do not invent text.** If a word is partially obscured, ambiguous, or you are not sure, write [غير واضح] in its place. Never guess. Never substitute a word that "sounds right." Never auto-correct.
+${VERBATIM_DISCIPLINE}`,
 
-2. **Do not paraphrase, smooth, or normalize.** Copy what is on the page literally. If the page has unusual wording, keep it. If a phrase is grammatically awkward, keep it. The page is the source of truth, not your prior knowledge of how Egyptian law is usually phrased.
+  // ────────────────────────────────────────
+  // DECREE — presidential / ministerial / cabinet decrees
+  // Same legal stakes as `law` — uses the same scribe discipline
+  // ────────────────────────────────────────
+  decree: `أنت ناسخ قانوني / You are a legal scribe transcribing a single page of a decree (قرار / مرسوم / قرار جمهوري / قرار وزاري). Your only job is verbatim transcription. You are NOT an editor, summarizer, smoother, or translator.
 
-3. **Do not duplicate phrases.** If you accidentally start to repeat a clause (e.g. "وزير المالية، ووزير المالية"), stop and re-read the line. Each phrase appears in the text exactly as many times as the page shows it.
-
-4. **Do not invent connective tissue between lines.** If two adjacent lines on the page do not actually connect grammatically, do not add "و" or "كما" or any glue word to make them flow. Keep the original line breaks as separate sentences if the page does.
-
-5. **Numbers, percentages, article numbers, year numbers, and law references are critical.** Copy every digit exactly. Examples to be especially careful with:
-   - النسب المئوية (e.g. ١٧٪، ٥٠٪، ٨٠٪) — copy the exact digit, do not round
-   - أرقام المواد (e.g. مادة 14، مادة 37 مكرراً، مادة 38 مكرراً/ب) — copy with all suffixes (مكرراً, /أ, /ب) intact
-   - أرقام القوانين والسنوات (e.g. القانون رقم 83 لسنة 2002) — copy law number and year exactly
-   - Dates and durations
-   These fields are higher-stakes than the surrounding prose. If you are unsure of any digit, write [غير واضح] for that token, not a guess.
-
-6. **Easily-confused Arabic letters.** Pay special attention to:
-   - تيسيرات vs تنسيبات (the former is a real legal term; the latter is meaningless)
-   - التعاقدات vs التعليقات (the former is "contracts"; the latter is unrelated)
-   - Similar letterforms (ب/ت/ث، ج/ح/خ، د/ذ، ر/ز، س/ش، ص/ض، ط/ظ، ع/غ)
-   If the page uses one of these easily-confused words, look at it carefully and copy the exact letter you see. If unclear, mark [غير واضح].
-
-7. **Sub-items (أ، ب، ج، 1، 2، 3) go in subItems array, NOT in content.** Each sub-item is its own array entry, transcribed verbatim with its label.
-
-8. **Every article/clause MUST have its clauseNumber field populated** if a label is visible on the page. Examples of valid clauseNumber values: "المادة الأولى", "المادة الثانية", "مادة (14)", "مادة (37) مكرراً", "مادة (38 مكرراً/أ)", "مادة 47 مكرراً". Use null only when there is genuinely no label.
-
-9. **Preamble.** A preamble (بعد الاطلاع على القانون رقم...، وعلى القانون رقم...) goes as a single section with type="preamble" and clauseNumber=null. Do not split each "وعلى" reference into its own section.
-
-10. **Numerals system.** Preserve the digit system exactly as printed. If the page uses Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩), keep them. If the page uses Western digits (0123456789), keep them. Do NOT convert between systems — code post-processes that.
-
-11. **Empty pages → pageType "blank", empty sections array.**
-
-12. **Do not include translation, commentary, or meta-notes.** No "this section discusses..." text. No square-bracket annotations except [غير واضح].
-
-If you find yourself wanting to "fix" something on the page, stop. Your job is to faithfully record what the page says, not to produce a polished version. A faithful but messy transcription is correct. A clean, polished version with substituted words is wrong.`,
-
-  report: `Extract this REPORT page. Return JSON:
+Return JSON:
 {
-  "header": "ONLY the small repeated header line at top of page (org name, contract number) or null. Body text is NOT header.",
-  "footer": "ONLY footer at bottom (page number, footnote ref) or null. Body text is NOT footer.",
+  "header": "official header (e.g. 'قرار رئيس مجلس الوزراء رقم X لسنة Y') or null",
+  "footer": "page number or footer line only or null",
   "pageType": "cover|toc|body|appendix|signature|blank",
   "language": "ar|en|mixed",
   "sections": [{
-    "clauseNumber": "section number e.g. ١-٢ or 3-3 or null",
+    "clauseNumber": "e.g. المادة الأولى, مادة (5), بند (3) — copy exact label, or null",
+    "title": "section title if any, or null",
+    "content": "exact verbatim text",
+    "type": "preamble|article|clause|sub_clause|definition|signature|body",
+    "subItems": ["sub-item verbatim text"]
+  }]
+}
+
+DECREE-SPECIFIC RULES:
+- Decree number AND year in the header are critical — copy exactly
+- Issuing authority (رئيس مجلس الوزراء، وزير …) goes in the header or as type="signature"
+- Effective date (تاريخ النفاذ) is high-stakes — copy verbatim
+- Annexes/attachments labels (مرفق رقم …، ملحق …) go as type="appendix"
+
+${VERBATIM_DISCIPLINE}`,
+
+  // ────────────────────────────────────────
+  // CONTRACT / MOU — bilateral agreements
+  // Equally high stakes for parties, dates, amounts, percentages
+  // ────────────────────────────────────────
+  contract: `أنت ناسخ عقود / You are a contract scribe transcribing a single page of a contract or memorandum of understanding. Your only job is verbatim transcription. You are NOT an editor, summarizer, smoother, or translator.
+
+Return JSON:
+{
+  "header": "header line at top of page only or null",
+  "footer": "page number or footer line only or null",
+  "pageType": "cover|toc|body|appendix|signature|blank",
+  "language": "ar|en|mixed",
+  "sections": [{
+    "clauseNumber": "article/clause label as printed (e.g. 'المادة الأولى', 'البند 3', 'Article 5.2'), or null",
+    "title": "section heading if any, or null",
+    "content": "exact verbatim text",
+    "type": "parties|preamble|definition|obligation|right|penalty|payment|termination|duration|warranty|confidentiality|dispute_resolution|signature|body|table",
+    "subItems": ["sub-clauses verbatim"]
+  }]
+}
+
+CONTRACT-SPECIFIC RULES:
+- Parties (الطرف الأول، الطرف الثاني / "Party A", "Party B") go as type="parties" — copy full legal names exactly with all titles and registration numbers
+- Financial figures, currencies, percentages: copy verbatim with original currency symbols (EGP / ج.م. / $ / €). Never round.
+- Dates: copy verbatim in their original format
+- Durations (e.g. "for a period of seventeen (17) years" / "لمدة سبعة عشر عاماً (17 سنة)"): copy both the spelled form AND the numeric form if both appear
+- Tables: type="table". Set content to a JSON STRING with shape: {"caption":"...","headers":[...],"rows":[[...],[...]]}. Each cell is a string. Preserve numbers verbatim.
+- Signature blocks: type="signature" with the full printed line including titles
+
+${VERBATIM_DISCIPLINE}`,
+
+  // ────────────────────────────────────────
+  // REPORT — research, planning, technical reports
+  // Looser structurally but still verbatim text + faithful figure descriptions
+  // ────────────────────────────────────────
+  report: `أنت ناسخ تقارير / You are a report transcriber. Your job is verbatim transcription of the text on this page, plus faithful description of any figures, charts, maps, and tables that aren't pure text. You are NOT an editor or summarizer.
+
+Return JSON:
+{
+  "header": "ONLY the small repeated header line at top of page (org name, doc title). Body text is NOT a header. Or null.",
+  "footer": "ONLY footer at bottom (page number, footnote ref). Body text is NOT a footer. Or null.",
+  "pageType": "cover|toc|body|appendix|signature|blank",
+  "language": "ar|en|mixed",
+  "sections": [{
+    "clauseNumber": "section number e.g. ١-٢ or 3.3 or null",
     "title": "section heading or null",
-    "content": "ALL text in this section. Capture EVERY paragraph and sentence. Do NOT truncate.",
+    "content": "ALL text in this section, verbatim",
     "type": "introduction|findings|recommendation|conclusion|table|chart|map|figure_caption|footnote|body",
     "subItems": ["bullet points or numbered list items if any"]
   }]
 }
-CRITICAL RULES:
+
+REPORT-SPECIFIC RULES:
 - header field = ONLY the small repeated line at page top (e.g. org name). NEVER put body text here.
 - footer field = ONLY page number or footnote marker. NEVER put body text here.
-- CAPTURE ALL TEXT. Every paragraph on the page must appear in some section. Missing text is a failure.
-- Nested sections: use clauseNumber like "٣-٣" for subsection 3 of section 3
-- NUMERALS: preserve digits EXACTLY as they appear (Arabic-Indic ٠١٢٣٤٥٦٧٨٩ stays Arabic-Indic; Western 0123456789 stays Western). DO NOT translate or convert digit systems — that causes errors. Code will normalize after extraction.
-- Tables: type "table". Set content to a JSON STRING with this exact shape: {"caption":"title or section name","headers":["col1","col2"],"rows":[["val1","val2"],["val3","val4"]]}. Each cell is a string. Preserve numbers verbatim. Do not flatten the table into prose.
-- Charts/Graphs: type "chart". Set content to JSON: {"chartType":"bar|line|pie","caption":"title","data":[{"label":"x","value":123}],"unit":"unit","description":"what the chart shows"}
-- Maps: type "map". Set content to JSON: {"caption":"title","description":"detailed description","features":["feature1"]}
-- Figures/Images: type "figure_caption". Set content to JSON: {"caption":"title","description":"detailed description"}
-- Footnotes: type "footnote" as separate section
-- Long pages: include ALL content even if it makes the JSON large`,
+- CAPTURE ALL TEXT verbatim. Every paragraph on the page must appear in some section.
+- Nested sections: use clauseNumber like "٣-٣" for subsection 3 of section 3.
+- Tables: type "table". Content is a JSON STRING: {"caption":"title","headers":["col1","col2"],"rows":[["v1","v2"]]}. Each cell verbatim. Do not flatten the table into prose.
+- Charts/Graphs: type "chart". Content is JSON: {"chartType":"bar|line|pie","caption":"title","data":[{"label":"x","value":123}],"unit":"unit","description":"what the chart shows"}. The description is the only place you may produce non-verbatim text — keep it factual and short.
+- Maps: type "map". Content is JSON: {"caption":"title","description":"detailed factual description","features":["feature1"]}.
+- Figures/Images (logos, photos, diagrams): type "figure_caption". Content is JSON: {"caption":"title or visible caption","description":"factual description"}.
+- Footnotes: type "footnote" as a separate section.
+- Figures and chart descriptions are the ONLY place non-verbatim text is allowed in this prompt. Everywhere else: verbatim.
 
-  contract: `Extract this CONTRACT/MoU page. Return JSON:
+${VERBATIM_DISCIPLINE}`,
+
+  // ────────────────────────────────────────
+  // MEMO — internal memos and briefings
+  // Less structured but still verbatim
+  // ────────────────────────────────────────
+  memo: `أنت ناسخ مذكرات داخلية / You are an internal-memo transcriber. Verbatim transcription of the page. You are NOT an editor or summarizer.
+
+Return JSON:
 {
-  "header": "header or null",
-  "footer": "footer or null",
+  "header": "memo header (To, From, Date, Subject lines or 'إلى السيد...، الموضوع...') or null",
+  "footer": "page number or footer line or null",
   "pageType": "cover|toc|body|appendix|signature|blank",
   "language": "ar|en|mixed",
   "sections": [{
-    "clauseNumber": "article/clause number or null",
+    "clauseNumber": "numbered point if any (e.g. '1.', 'أولاً'), or null",
+    "title": "section heading if any, or null",
+    "content": "exact verbatim text",
+    "type": "header_block|introduction|background|analysis|recommendation|conclusion|signature|body|table",
+    "subItems": ["sub-points verbatim"]
+  }]
+}
+
+MEMO-SPECIFIC RULES:
+- The To/From/Date/Subject block (or its Arabic equivalent إلى/من/التاريخ/الموضوع) goes as ONE section with type="header_block" and content containing all four lines verbatim.
+- Numbered recommendations (1, 2, 3 / أولاً، ثانياً، ثالثاً) get clauseNumber populated.
+- Signature lines at the end go as type="signature" with the printed name and title verbatim.
+- Tables: type="table" with the standard JSON shape used in reports.
+
+${VERBATIM_DISCIPLINE}`,
+
+  // ────────────────────────────────────────
+  // POLICY — strategic / policy documents
+  // ────────────────────────────────────────
+  policy: `أنت ناسخ وثائق سياسات / You are a policy-document transcriber. Verbatim transcription of the page. You are NOT an editor or summarizer.
+
+Return JSON:
+{
+  "header": "policy header line or null",
+  "footer": "page number or footer line or null",
+  "pageType": "cover|toc|body|appendix|signature|blank",
+  "language": "ar|en|mixed",
+  "sections": [{
+    "clauseNumber": "section number e.g. 1.2 or ٢-٣ or null",
     "title": "section heading or null",
-    "content": "full text",
-    "type": "parties|definition|obligation|right|penalty|termination|duration|signature|body|preamble|table",
-    "subItems": []
+    "content": "exact verbatim text",
+    "type": "vision|mission|principle|objective|strategy|action_item|definition|body|table",
+    "subItems": ["enumerated points verbatim"]
   }]
 }
-Rules:
-- Identify parties (الطرف الأول، الطرف الثاني) with type "parties"
-- Preserve exact financial figures, dates, and durations
-- Tag obligations vs rights vs penalties accurately
-- NUMERALS: preserve digits EXACTLY as they appear (Arabic-Indic ٠١٢٣٤٥٦٧٨٩ stays Arabic-Indic; Western 0123456789 stays Western). DO NOT translate or convert digit systems.
-- Tables: type "table". Set content to JSON STRING: {"caption":"title","headers":["col1","col2"],"rows":[["val1","val2"]]}. Preserve numbers verbatim.`,
 
-  default: `Extract all text from this document page. Return JSON:
+POLICY-SPECIFIC RULES:
+- Vision / Mission / Principles / Objectives statements get their own section types
+- Numbered objectives or action items: clauseNumber populated
+- Tables (KPIs, targets): type="table" with JSON content shape
+
+${VERBATIM_DISCIPLINE}`,
+
+  // ────────────────────────────────────────
+  // FINANCIAL — financial proposals, budgets, statements
+  // Numbers are the entire point — extra strict
+  // ────────────────────────────────────────
+  financial: `أنت ناسخ مالي / You are a financial-document transcriber. The numbers ARE the document. Verbatim transcription only. You are NOT an editor or summarizer.
+
+Return JSON:
 {
-  "header": "header or null",
-  "footer": "footer or null",
+  "header": "header line (statement title, period, currency basis) or null",
+  "footer": "page number or footer line or null",
   "pageType": "cover|toc|body|appendix|signature|blank",
   "language": "ar|en|mixed",
   "sections": [{
-    "clauseNumber": "number or null",
-    "title": "heading or null",
-    "content": "full text",
-    "type": "body|header|table|footnote",
+    "clauseNumber": "line item number or null",
+    "title": "section heading (e.g. 'Revenue', 'الإيرادات') or null",
+    "content": "exact verbatim text — for narrative, full prose verbatim",
+    "type": "summary|line_item|table|note|signature|body",
     "subItems": []
   }]
 }
-Rules:
-- Preserve original text exactly. Fix scanning artifacts only.
-- NUMERALS: preserve digits EXACTLY as they appear (Arabic-Indic ٠١٢٣٤٥٦٧٨٩ stays Arabic-Indic; Western 0123456789 stays Western). DO NOT translate or convert digit systems.
-- Tables: type "table". Set content to JSON STRING: {"caption":"title","headers":["col1","col2"],"rows":[["val1","val2"]]}. Preserve numbers verbatim.`,
+
+FINANCIAL-SPECIFIC RULES:
+- Currency symbols, decimal separators, thousands separators: copy EXACTLY as printed (1,234,567.89 vs 1.234.567,89 vs ١٬٢٣٤٬٥٦٧)
+- Negative values: copy the original notation (-1234, (1234), 1234-)
+- Percentages: copy exact digit and the % / ٪ symbol as printed
+- Tables (balance sheets, income statements, cash flows): type="table" with JSON content shape. EVERY CELL VERBATIM. No rounding, no normalization, no currency conversion.
+- Line items: each row of a financial table is a sub-item OR a row in the table — never paraphrased into prose
+- Footnotes (often essential to financial figures): type="note" as separate section
+- If you cannot read a digit clearly, write [غير واضح] for that specific cell instead of guessing
+
+${VERBATIM_DISCIPLINE}`,
+
+  // ────────────────────────────────────────
+  // LETTER — official correspondence
+  // ────────────────────────────────────────
+  letter: `أنت ناسخ مراسلات / You are a correspondence transcriber. Verbatim transcription only. You are NOT an editor or summarizer.
+
+Return JSON:
+{
+  "header": "letterhead and date block verbatim, or null",
+  "footer": "page number or footer line or null",
+  "pageType": "cover|toc|body|appendix|signature|blank",
+  "language": "ar|en|mixed",
+  "sections": [{
+    "clauseNumber": "paragraph number if any, or null",
+    "title": "subject line if printed as a heading, or null",
+    "content": "exact verbatim text",
+    "type": "salutation|subject|body|signature|attachment|cc",
+    "subItems": []
+  }]
+}
+
+LETTER-SPECIFIC RULES:
+- Letterhead / addressee block (السيد رئيس / The Honorable …) goes in the header or as the first section
+- Subject line (الموضوع: …) gets its own section with type="subject"
+- Salutation (تحية طيبة وبعد، / Dear …) is type="salutation"
+- Closing and signature (تفضلوا بقبول …، الاسم، التوقيع) is type="signature" — full name + title + organization verbatim
+- Carbon-copy list (صورة إلى) is type="cc"
+
+${VERBATIM_DISCIPLINE}`,
+
+  // ────────────────────────────────────────
+  // OTHER / DEFAULT — anything the classifier wasn't sure about
+  // ────────────────────────────────────────
+  default: `أنت ناسخ مستندات / You are a document transcriber. Verbatim transcription of every visible word on this page. You are NOT an editor or summarizer.
+
+Return JSON:
+{
+  "header": "small header line at top of page (org name, doc title) or null",
+  "footer": "page number or footer line or null",
+  "pageType": "cover|toc|body|appendix|signature|blank",
+  "language": "ar|en|mixed",
+  "sections": [{
+    "clauseNumber": "any visible numbering label, or null",
+    "title": "section heading if any, or null",
+    "content": "exact verbatim text",
+    "type": "body|header|table|footnote|signature",
+    "subItems": []
+  }]
+}
+
+DEFAULT RULES:
+- Capture every paragraph, list item, table cell, and signature line
+- Tables: type="table" with JSON content shape used in reports
+- Signature lines with names + titles: type="signature"
+
+${VERBATIM_DISCIPLINE}`,
+};
+
+// Type aliases — classifier may emit "mou" but we share the contract prompt
+const PROMPT_ALIASES: Record<string, string> = {
+  mou: "contract",
+  other: "default",
 };
 
 async function extractPage(
@@ -521,7 +713,10 @@ async function extractPage(
   pageNumber: number,
   documentType: DocumentType
 ): Promise<{ page: ExtractedPage; cost: number; failed: boolean }> {
-  const prompt = EXTRACTION_PROMPTS[documentType] || EXTRACTION_PROMPTS.default;
+  // Resolve type aliases (e.g. "mou" → "contract") then look up the prompt.
+  // Falls through to default for any genuinely unknown type.
+  const resolvedType = PROMPT_ALIASES[documentType] || documentType;
+  const prompt = EXTRACTION_PROMPTS[resolvedType] || EXTRACTION_PROMPTS.default;
   const openai = getOpenAI();
 
   const res = await openai.chat.completions.create({
