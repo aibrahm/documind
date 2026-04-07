@@ -1,6 +1,6 @@
 # DocuMind — Project State
 
-**Last updated:** 2026-04-06
+**Last updated:** 2026-04-07
 
 ## Current position
 
@@ -74,4 +74,4 @@ Phase 02 (cleanup) addressed items 1-3 below; remaining debt:
 - **Recent versions**: `is_current = true` filter is the default on documents listing and hybrid search
 
 ## Active session
-2026-04-06 — phase 02 cleanup COMPLETE (02-01 + 02-02 + 02-03 all landed); ready for phase 03 (project schema). Project-centric rebuild plan: ~~02 cleanup~~ → 03 schema → 04 sidebar+workspace → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence
+2026-04-07 — phase 03 COMPLETE (schema + CRUD + membership/negotiations endpoints all shipped). Phase 04-01 COMPLETE (foundation refactor: (workspace) route group, all 5 pages migrated, useChat hook extracted from page.tsx). Next: 04-02 (ProjectSidebar + CreateProjectDialog + server actions). Roadmap: ~~02 cleanup~~ → ~~03 schema~~ → 04 sidebar+workspace (1/4 plans landed) → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence

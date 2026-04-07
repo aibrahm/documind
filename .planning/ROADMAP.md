@@ -10,15 +10,20 @@ A project-centric document intelligence system for the Vice Chairman of GTEZ. Ea
 |---|---|---|---|
 | 01 | Chat experience rebuild | ✅ shipped | Multi-turn chat, intelligence routing, doctrines, autonomous web search, pinned references, librarian core, conversational upload |
 | 02 | Cleanup and tech debt | ✅ shipped | Dead code removed (~3,000 LOC), chat routes deduped via `runChatTurn`, types centralized in `src/lib/types.ts`, naming normalized, 5 orphan deps removed |
-| 03 | **Project schema and CRUD** | 📋 planning | Migration `008_projects.sql`, REST endpoints for projects + membership + negotiations, type generation, basic project lifecycle |
-| 04 | Project sidebar and workspace UI | ⏳ planned | Sidebar with project list, `/projects/[slug]` workspace page with Overview/Documents/Negotiations/Chats/Memory tabs, project context badge in chat input |
+| 02.1 | Junk cleanup + track all sources | ✅ shipped | Screenshots, extraction dumps, dead routes removed. Tightened `.gitignore`. Committed ~4,000 lines of previously-untracked production code across migrations, lib, api, pages, components. Working tree clean. |
+| 03 | **Project schema and CRUD** | ✅ shipped | Migration `008_projects.sql` applied, REST endpoints for projects + membership + negotiations, type generation, full project lifecycle (create / list / get-with-counts / patch / soft-archive) |
+| 03.5 | **Tier 1 analytical tools** | 📋 next to plan | `financial_model` (NPV/IRR/payback/sensitivity), `fetch_url`, `extract_key_terms`, `compare_deals`. Eliminates math errors in existing chat and auto-populates negotiation records. Some parts depend on 03's schema (negotiations table). |
+| 04 | **Project sidebar and workspace UI** | 🚧 in progress (1/4 plans landed) | 04-01 ✅ — (workspace) route group + shared layout + 5 pages migrated + useChat hook extracted. 04-02 next: ProjectSidebar + CreateProjectDialog + server actions. 04-03: workspace shell + chat-first Overview tab. 04-04: remaining 4 tabs. |
 | 05 | Project-scoped chat | ⏳ planned | Chat API reads `conversation.project_id`, injects project `context_summary` into system prompt, filters/boosts retrieval to project documents, scopes memory to project first |
-| 06 | Negotiations | ⏳ planned | `negotiations` schema, deal-room view with timeline + key facts, librarian suggests negotiation membership |
-| 07 | Librarian project intelligence | ⏳ planned | On upload, librarian proposes which project the doc belongs to (entity overlap with `project_companies`), allows quick "create new project" from upload flow |
-| 08 | Visible model badge + manual model overrides | ⏳ planned | Model chip per assistant message, `/fast` and `/deep` slash commands, "regenerate with Opus" hover action |
-| 09 | Save-as-artifact + deal-room timeline | ⏳ planned | Save important assistant responses as `project_artifacts`, project workspace shows them as deal-room timeline events |
-| 10 | Tool use in casual mode | ⏳ planned | Bring autonomous web search to gpt-4o-mini turns too, so casual queries can also retry / refine |
-| 11 | Visual graph view | ⏳ later | Force-directed knowledge graph (entities ↔ documents ↔ projects) like Obsidian's graph view |
+| 06 | Negotiations deal-room UI | ⏳ planned | Deal-room view with timeline + key facts + artifacts, librarian suggests negotiation membership |
+| 07 | Librarian project intelligence | ⏳ planned | On upload, librarian proposes which project the doc belongs to (entity overlap with `project_companies`), allows quick "create new project" from upload flow, auto-creates project when no match. Also fixes the 31% similarity bug by sampling more chunks. |
+| 08 | Visible model badge + manual overrides | ⏳ planned | Model chip per assistant message, `/fast` and `/deep` slash commands, "regenerate with Opus" hover action |
+| 09 | Save-as-artifact + deal-room timeline | ⏳ planned | `project_artifacts` table (schema in a new migration), save important assistant responses as artifacts, project workspace shows them as deal-room timeline events |
+| 10 | Tool use in casual mode | ⏳ planned | Bring autonomous web search + financial_model to gpt-4o-mini turns too, so casual queries can also retry / refine / calculate |
+| 11 | Disambiguation turns + cross-project dossier | ⏳ planned | When retrieval is spread across many candidates, ask the user which one. Cross-project entity dossier view ("show me everything about Elsewedy across all my projects"). |
+| 12 | Tier 2 tools: memo generator + interactive document editor | ⏳ planned | `render_memo` with Egyptian govt templates (committee briefing, board submission, executive memo, technical note, negotiation brief) → PDF. **Canvas-style interactive document editor** — new UI panel where model drafts, VC edits inline, model suggests revisions via tool calls. Biggest user-visible transformation. |
+| 13 | Presentation builder + chart renderer | ⏳ planned | `presentation_builder` (deal analysis → pptx), `chart_renderer` (NPV sensitivity charts, comparison bars). For board meetings. |
+| 14 | Visual graph view | ⏳ later | Force-directed knowledge graph (entities ↔ documents ↔ projects) like Obsidian's graph view |
 
 ## Out of scope (intentionally)
 
