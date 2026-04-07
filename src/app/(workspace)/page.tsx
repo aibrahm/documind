@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Nav } from "@/components/nav";
 import { ChatMessage } from "@/components/chat-message";
 import {
   ChatInput,
@@ -415,10 +414,7 @@ export default function Home() {
   const isIdle = messages.length === 0 && !streaming;
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Nav />
-
-      <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <ChatSidebar
           conversations={conversations}
@@ -668,7 +664,6 @@ export default function Home() {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }
