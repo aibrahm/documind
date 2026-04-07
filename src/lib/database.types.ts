@@ -85,6 +85,44 @@ export type Database = {
           },
         ]
       }
+      conversation_memory: {
+        Row: {
+          conversation_id: string | null
+          created_at: string | null
+          entities: string[] | null
+          id: string
+          importance: number | null
+          kind: string
+          text: string
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string | null
+          entities?: string[] | null
+          id?: string
+          importance?: number | null
+          kind: string
+          text: string
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string | null
+          entities?: string[] | null
+          id?: string
+          importance?: number | null
+          kind?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_memory_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           classification: Json | null
