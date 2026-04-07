@@ -74,4 +74,4 @@ Phase 02 (cleanup) addressed items 1-3 below; remaining debt:
 - **Recent versions**: `is_current = true` filter is the default on documents listing and hybrid search
 
 ## Active session
-2026-04-07 — phase 03 COMPLETE (schema + CRUD + membership/negotiations endpoints all shipped). Phase 04-01 COMPLETE (foundation refactor: (workspace) route group, all 5 pages migrated, useChat hook extracted from page.tsx). Next: 04-02 (ProjectSidebar + CreateProjectDialog + server actions). Roadmap: ~~02 cleanup~~ → ~~03 schema~~ → 04 sidebar+workspace (1/4 plans landed) → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence
+2026-04-07 — phase 03 COMPLETE; phase 04 in progress (2/4 plans landed). 04-01: (workspace) route group + page migration + useChat extraction. 04-02: ProjectSidebar replaces chat-sidebar, CreateProjectDialog + server actions, URL-based conversation switching, layout server-fetches sidebar data. Next: 04-03 (workspace shell + chat-first Overview tab — first visible deliverable). Roadmap: ~~02~~ → ~~03~~ → 04 sidebar+workspace (2/4) → 05 project-scoped chat → 06 negotiations → 07 librarian project intelligence
