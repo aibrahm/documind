@@ -74,7 +74,7 @@ export function WorkspaceClient({
           <DocumentsTab projectSlug={project.slug} />
         </div>
         <div hidden={activeTab !== "negotiations"} className="h-full">
-          <NegotiationsTab projectId={project.id} />
+          <NegotiationsTab projectId={project.id} projectSlug={project.slug} />
         </div>
         <div hidden={activeTab !== "chats"} className="h-full">
           <ChatsTab projectSlug={project.slug} />

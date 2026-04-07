@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Handshake, Plus } from "lucide-react";
+import { Handshake, Plus, ChevronRight, ChevronDown } from "lucide-react";
 import { Tag } from "@/components/ui-system";
 import { Button } from "@/components/ui/button";
 import { CreateNegotiationDialog } from "@/components/create-negotiation-dialog";
+import { NegotiationDetail } from "@/components/negotiation-detail";
 
 interface Negotiation {
   id: string;
@@ -13,6 +14,8 @@ interface Negotiation {
   key_terms: Record<string, unknown> | null;
   opened_at: string | null;
   closed_at: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 const STATUS_VARIANT: Record<
@@ -27,13 +30,29 @@ const STATUS_VARIANT: Record<
   withdrawn: "default",
 };
 
-export function NegotiationsTab({ projectId }: { projectId: string }) {
+export function NegotiationsTab({
+  projectId,
+  projectSlug,
+}: {
+  projectId: string;
+  projectSlug: string;
+}) {
   const [negs, setNegs] = useState<Negotiation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const toggle = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,40 +139,68 @@ export function NegotiationsTab({ projectId }: { projectId: string }) {
           </p>
           {createButton}
         </div>
-        {negs.map((n) => (
-          <div
-            key={n.id}
-            className="rounded-lg border border-slate-200 px-4 py-3 bg-white"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <h3
-                className="text-[14px] font-medium text-slate-900 font-['IBM_Plex_Sans_Arabic']"
-                dir="auto"
+        {negs.map((n) => {
+          const isExpanded = expanded.has(n.id);
+          return (
+            <div
+              key={n.id}
+              className="rounded-lg border border-slate-200 bg-white overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => toggle(n.id)}
+                className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer bg-transparent border-none"
               >
-                {n.name}
-              </h3>
-              <Tag variant={STATUS_VARIANT[n.status] || "default"}>
-                {n.status.replace("_", " ")}
-              </Tag>
-            </div>
-            {n.key_terms && Object.keys(n.key_terms).length > 0 && (
-              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-                {Object.entries(n.key_terms)
-                  .slice(0, 6)
-                  .map(([k, v]) => (
-                    <div key={k} className="flex items-center gap-1.5">
-                      <span className="text-slate-400 font-['JetBrains_Mono'] uppercase tracking-wider">
-                        {k.replace(/_/g, " ")}:
-                      </span>
-                      <span className="text-slate-700 font-['JetBrains_Mono']">
-                        {String(v)}
-                      </span>
+                <div className="flex items-start gap-2">
+                  <div className="mt-0.5 shrink-0">
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3
+                        className="text-[14px] font-medium text-slate-900 font-['IBM_Plex_Sans_Arabic']"
+                        dir="auto"
+                      >
+                        {n.name}
+                      </h3>
+                      <Tag variant={STATUS_VARIANT[n.status] || "default"}>
+                        {n.status.replace("_", " ")}
+                      </Tag>
                     </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        ))}
+                    {!isExpanded &&
+                      n.key_terms &&
+                      Object.keys(n.key_terms).length > 0 && (
+                        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                          {Object.entries(n.key_terms)
+                            .slice(0, 6)
+                            .map(([k, v]) => (
+                              <div key={k} className="flex items-center gap-1.5">
+                                <span className="text-slate-400 font-['JetBrains_Mono'] uppercase tracking-wider">
+                                  {k.replace(/_/g, " ")}:
+                                </span>
+                                <span className="text-slate-700 font-['JetBrains_Mono']">
+                                  {String(v)}
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                  </div>
+                </div>
+              </button>
+              {isExpanded && (
+                <NegotiationDetail
+                  negotiation={n}
+                  projectSlug={projectSlug}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
       {dialog}
     </div>
