@@ -67,7 +67,9 @@ export function PdfViewerProvider({ children }: { children: ReactNode }) {
   return (
     <PdfViewerContext.Provider value={{ openPdf, closePdf, openDocument }}>
       <div className="flex-1 flex min-w-0 overflow-hidden">
-        <div className="flex-1 min-w-0 overflow-hidden">{children}</div>
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+          {children}
+        </div>
         {pdf && (
           <div className="w-[480px] shrink-0 border-l border-slate-200 bg-white flex flex-col">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 shrink-0">
