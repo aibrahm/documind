@@ -36,6 +36,15 @@ interface RelatedDoc {
   versionNumber: number;
 }
 
+interface SuggestedProject {
+  id: string;
+  slug: string;
+  name: string;
+  color: string | null;
+  overlapCount: number;
+  reason: string;
+}
+
 interface Proposal {
   detected: {
     title: string;
@@ -56,6 +65,7 @@ interface Proposal {
     targetDocumentId?: string;
     confidence: "high" | "medium" | "low";
   };
+  suggestedProject?: SuggestedProject | null;
 }
 
 type Stage = "idle" | "analyzing" | "review" | "uploading" | "done" | "error";
@@ -123,6 +133,8 @@ export default function UploadPage() {
   const [chosenClassification, setChosenClassification] = useState<Classification>("PRIVATE");
   const [chosenTitle, setChosenTitle] = useState("");
   const [chosenTargetId, setChosenTargetId] = useState<string | null>(null);
+  // Phase 07: link-to-project toggle (set from librarian suggestion)
+  const [linkToProjectId, setLinkToProjectId] = useState<string | null>(null);
 
   // Recent uploads sidebar
   const [recentDocs, setRecentDocs] = useState<
@@ -165,6 +177,8 @@ export default function UploadPage() {
       setChosenClassification(p.detected.suggestedClassification);
       setChosenTitle(p.detected.suggestedTitle);
       setChosenTargetId(p.recommendation.targetDocumentId || null);
+      // Phase 07: default to linking when the librarian found a project match
+      setLinkToProjectId(p.suggestedProject?.id || null);
       setStage("review");
     } catch (e) {
       setError((e as Error).message);
@@ -203,6 +217,7 @@ export default function UploadPage() {
       fd.append("title", chosenTitle);
       if (chosenAction === "version" && chosenTargetId) fd.append("versionOf", chosenTargetId);
       if (chosenAction === "related" && chosenTargetId) fd.append("relatedTo", chosenTargetId);
+      if (linkToProjectId) fd.append("linkToProject", linkToProjectId);
 
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       const data = await res.json();
@@ -286,6 +301,8 @@ export default function UploadPage() {
               setChosenTitle={setChosenTitle}
               chosenTargetId={chosenTargetId}
               setChosenTargetId={setChosenTargetId}
+              linkToProjectId={linkToProjectId}
+              setLinkToProjectId={setLinkToProjectId}
               onConfirm={confirmUpload}
               onSkipDuplicate={handleDuplicateSkip}
               onCancel={reset}
@@ -412,6 +429,8 @@ function ReviewCard({
   setChosenTitle,
   chosenTargetId,
   setChosenTargetId,
+  linkToProjectId,
+  setLinkToProjectId,
   onConfirm,
   onSkipDuplicate,
   onCancel,
@@ -426,11 +445,13 @@ function ReviewCard({
   setChosenTitle: (t: string) => void;
   chosenTargetId: string | null;
   setChosenTargetId: (id: string | null) => void;
+  linkToProjectId: string | null;
+  setLinkToProjectId: (id: string | null) => void;
   onConfirm: () => void;
   onSkipDuplicate: () => void;
   onCancel: () => void;
 }) {
-  const { detected, related, recommendation } = proposal;
+  const { detected, related, recommendation, suggestedProject } = proposal;
   const RecommendedIcon = ACTION_COPY[recommendation.action].icon;
 
   return (
@@ -550,6 +571,42 @@ function ReviewCard({
           </div>
         </div>
       </div>
+
+      {/* Phase 07: project suggestion pill */}
+      {suggestedProject && (
+        <div className="border border-slate-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-2.5 bg-slate-50/50 border-b border-slate-100">
+            <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Project match
+            </p>
+          </div>
+          <div className="px-4 py-3 flex items-center gap-3">
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ background: suggestedProject.color || "#64748B" }}
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-slate-900 truncate">
+                {suggestedProject.name}
+              </p>
+              <p className="text-[11px] text-slate-500">
+                {suggestedProject.reason}
+              </p>
+            </div>
+            <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-slate-700">
+              <input
+                type="checkbox"
+                checked={linkToProjectId === suggestedProject.id}
+                onChange={(e) =>
+                  setLinkToProjectId(e.target.checked ? suggestedProject.id : null)
+                }
+                className="w-4 h-4 cursor-pointer"
+              />
+              Link on confirm
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* Related documents */}
       {related.length > 0 && (

@@ -39,6 +39,15 @@ export interface LibrarianRelated {
   versionNumber: number;
 }
 
+export interface SuggestedProject {
+  id: string;
+  slug: string;
+  name: string;
+  color: string | null;
+  overlapCount: number;
+  reason: string;
+}
+
 export interface LibrarianProposal {
   // What we detected about the new document
   detected: {
@@ -64,6 +73,9 @@ export interface LibrarianProposal {
     targetDocumentId?: string; // for version/duplicate
     confidence: "high" | "medium" | "low";
   };
+
+  // Phase 07: project suggestion based on entity overlap with project_companies
+  suggestedProject: SuggestedProject | null;
 }
 
 interface QuickExtraction {
@@ -223,27 +235,51 @@ async function findRelatedDocuments(
         ? 0
         : overlapCount / Math.max(newEntityNames.size, docEntitySet.size);
 
-    // Content similarity (cheap heuristic — sample one chunk per doc)
+    // Content similarity — sample first/middle/last chunks and take the MAX
+    // (Phase 07 fix for the 31% bug: single-chunk sampling missed exact
+    // duplicates because cover pages vary across OCR/rendering.)
     let contentSim = 0;
     if (newEmbedding) {
-      const { data: oneChunk } = await supabaseAdmin
+      // First, get the chunk count so we can pick first/middle/last positions
+      const { count: chunkCount } = await supabaseAdmin
         .from("chunks")
-        .select("embedding")
-        .eq("document_id", doc.id)
-        .order("chunk_index", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (oneChunk?.embedding) {
-        try {
-          const docEmb =
-            typeof oneChunk.embedding === "string"
-              ? JSON.parse(oneChunk.embedding)
-              : oneChunk.embedding;
-          if (Array.isArray(docEmb) && docEmb.length === newEmbedding.length) {
-            contentSim = cosineSimilarity(newEmbedding, docEmb);
+        .select("id", { count: "exact", head: true })
+        .eq("document_id", doc.id);
+
+      const totalChunks = chunkCount ?? 0;
+      const sampleIndices: number[] =
+        totalChunks <= 1
+          ? totalChunks === 1
+            ? [0]
+            : []
+          : totalChunks === 2
+            ? [0, 1]
+            : [0, Math.floor(totalChunks / 2), totalChunks - 1];
+
+      if (sampleIndices.length > 0) {
+        const { data: sampleChunks } = await supabaseAdmin
+          .from("chunks")
+          .select("embedding, chunk_index")
+          .eq("document_id", doc.id)
+          .in("chunk_index", sampleIndices);
+
+        for (const ch of sampleChunks ?? []) {
+          if (!ch.embedding) continue;
+          try {
+            const docEmb =
+              typeof ch.embedding === "string"
+                ? JSON.parse(ch.embedding)
+                : ch.embedding;
+            if (
+              Array.isArray(docEmb) &&
+              docEmb.length === newEmbedding.length
+            ) {
+              const sim = cosineSimilarity(newEmbedding, docEmb);
+              if (sim > contentSim) contentSim = sim;
+            }
+          } catch {
+            /* skip */
           }
-        } catch {
-          /* skip */
         }
       }
     }
@@ -364,6 +400,91 @@ function formatRelativeShort(iso: string): string {
 }
 
 // ────────────────────────────────────────
+// PROJECT SUGGESTION (Phase 07)
+// ────────────────────────────────────────
+
+/**
+ * Given the entities detected on the new document, find the project (if any)
+ * with the highest entity-overlap count via project_companies. Returns null
+ * if no overlap exists.
+ */
+async function suggestProject(
+  detectedEntities: Array<{ name: string; type: string; nameEn?: string }>,
+): Promise<SuggestedProject | null> {
+  if (detectedEntities.length === 0) return null;
+
+  // Canonicalize the detected entities to get their IDs in the entities table.
+  // canonicalizeEntities also creates new entities — for the librarian's
+  // suggestion logic, that's harmless since they'll be re-used during the
+  // full upload pipeline anyway.
+  const entityIds = await canonicalizeEntities(detectedEntities);
+  const uniqueIds = [...new Set(entityIds)];
+  if (uniqueIds.length === 0) return null;
+
+  // Find all project_companies rows that match any of these entities,
+  // joined to projects (filter out archived projects).
+  const { data: links } = await supabaseAdmin
+    .from("project_companies")
+    .select(
+      `
+      project_id,
+      entity_id,
+      project:projects ( id, slug, name, color, status )
+    `,
+    )
+    .in("entity_id", uniqueIds);
+
+  if (!links || links.length === 0) return null;
+
+  // Tally overlap per project (skip archived)
+  type ProjectMeta = {
+    id: string;
+    slug: string;
+    name: string;
+    color: string | null;
+    overlapEntityIds: Set<string>;
+  };
+  const byProject = new Map<string, ProjectMeta>();
+  for (const link of links) {
+    const project = link.project as
+      | { id: string; slug: string; name: string; color: string | null; status: string }
+      | null;
+    if (!project || project.status === "archived") continue;
+    if (!byProject.has(project.id)) {
+      byProject.set(project.id, {
+        id: project.id,
+        slug: project.slug,
+        name: project.name,
+        color: project.color,
+        overlapEntityIds: new Set(),
+      });
+    }
+    byProject.get(project.id)!.overlapEntityIds.add(link.entity_id as string);
+  }
+
+  if (byProject.size === 0) return null;
+
+  // Pick the project with the highest overlap count
+  const ranked = [...byProject.values()].sort(
+    (a, b) => b.overlapEntityIds.size - a.overlapEntityIds.size,
+  );
+  const top = ranked[0];
+  if (top.overlapEntityIds.size === 0) return null;
+
+  return {
+    id: top.id,
+    slug: top.slug,
+    name: top.name,
+    color: top.color,
+    overlapCount: top.overlapEntityIds.size,
+    reason:
+      top.overlapEntityIds.size === 1
+        ? `1 entity matches a counterparty in this project`
+        : `${top.overlapEntityIds.size} entities match counterparties in this project`,
+  };
+}
+
+// ────────────────────────────────────────
 // MAIN ENTRYPOINT
 // ────────────────────────────────────────
 
@@ -395,8 +516,11 @@ export async function analyzeUpload(
     };
   }
 
-  // Step 3: Find related documents in the KB
-  const related = await findRelatedDocuments(analysis, usableText);
+  // Step 3: Find related documents + suggest project (parallel)
+  const [related, projectSuggestion] = await Promise.all([
+    findRelatedDocuments(analysis, usableText),
+    suggestProject(analysis.entities),
+  ]);
 
   // Step 4: Decide the action
   const recommendation = decideAction(analysis, related);
@@ -416,6 +540,7 @@ export async function analyzeUpload(
     },
     related,
     recommendation,
+    suggestedProject: projectSuggestion,
   };
 }
 

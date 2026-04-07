@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
     const versionOf = formData.get("versionOf") as string | null;
     const relatedTo = formData.get("relatedTo") as string | null;
     const titleOverride = formData.get("title") as string | null;
+    const linkToProject = formData.get("linkToProject") as string | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -82,10 +83,29 @@ export async function POST(request: NextRequest) {
         .eq("id", doc.id);
     }
 
+    // Phase 07: link the document to a project if requested by the user
+    // (the librarian's project suggestion was accepted on the upload page)
+    if (linkToProject) {
+      const { error: linkErr } = await supabaseAdmin
+        .from("project_documents")
+        .upsert(
+          {
+            project_id: linkToProject,
+            document_id: doc.id,
+            added_by: "librarian",
+          },
+          { onConflict: "project_id,document_id" },
+        );
+      if (linkErr) {
+        console.error("Failed to link uploaded doc to project:", linkErr);
+      }
+    }
+
     await logAudit("upload", {
       documentId: doc.id,
       fileName: file.name,
       fileSize: fileBuffer.length,
+      ...(linkToProject ? { linkedProjectId: linkToProject } : {}),
     });
 
     // Get the updated document title (set during extraction)
