@@ -176,9 +176,35 @@ async function processDocument(
   // Step 5: Update document record (use librarian-confirmed title if provided).
   // Preserve the sha256 we stored in metadata at insert time so the librarian
   // can keep short-circuiting future re-uploads.
+  // Also surface any extraction warnings on the row so the user knows the
+  // doc is partially extracted instead of silently shipping empty pages.
   const finalTitle = titleOverride?.trim() || extraction.classification.title;
   const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
-  const mergedMetadata = { ...(extraction.metadata || {}), sha256 };
+  const w = extraction.warnings;
+  const hasWarnings =
+    w.failedPages.length > 0 ||
+    w.classificationFailed ||
+    w.metadataFailed ||
+    w.correctionBatchesFailed > 0;
+  const warningText = hasWarnings
+    ? [
+        w.failedPages.length > 0
+          ? `Pages with extraction failures: ${w.failedPages.join(", ")} of ${extraction.pages.length}`
+          : null,
+        w.classificationFailed ? "Classification call failed" : null,
+        w.metadataFailed ? "Metadata extraction call failed" : null,
+        w.correctionBatchesFailed > 0
+          ? `${w.correctionBatchesFailed} Arabic-correction batch(es) failed`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+  const mergedMetadata = {
+    ...(extraction.metadata || {}),
+    sha256,
+    ...(hasWarnings ? { extractionWarnings: w } : {}),
+  };
   await supabaseAdmin
     .from("documents")
     .update({
@@ -193,9 +219,17 @@ async function processDocument(
       ),
       encrypted_content: encryptedContent,
       status: "ready",
-      processing_error: null,
+      // Surface warnings even on a "ready" doc — the user/UI can show a
+      // partial-extraction chip. Empty if no warnings.
+      processing_error: warningText,
     })
     .eq("id", docId);
+
+  if (hasWarnings) {
+    console.error(
+      `processDocument(${docId}): partial extraction. ${warningText}`,
+    );
+  }
 
   // Step 5b: If librarian flagged this as RELATED to an existing doc, create a cross-reference
   if (relatedTo) {

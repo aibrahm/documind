@@ -75,6 +75,19 @@ export interface ExtractionResult {
     correction: number;
     total: number;
   };
+  /**
+   * Per-page extraction failures discovered during the pipeline. Empty when
+   * all pages succeeded. Populated when an LLM call returned malformed JSON,
+   * hit the token cap, or otherwise produced unusable output. The upload
+   * route surfaces this on the document row so the user knows the doc is
+   * partially extracted instead of silently shipping empty pages.
+   */
+  warnings: {
+    failedPages: number[];
+    classificationFailed: boolean;
+    metadataFailed: boolean;
+    correctionBatchesFailed: number;
+  };
 }
 
 // ============================================================
@@ -103,6 +116,7 @@ export async function extractDocument(
 
   // Step 2: Extract all pages with type-specific prompt (batched for parallelism)
   const rawPages: ExtractedPage[] = [];
+  const failedPages: number[] = [];
   const BATCH_SIZE = 5;
   for (let i = 0; i < pageImages.length; i += BATCH_SIZE) {
     const batch = pageImages.slice(i, i + BATCH_SIZE);
@@ -111,14 +125,32 @@ export async function extractDocument(
         extractPage(img, i + j + 1, classification.result.documentType)
       )
     );
-    for (const { page, cost } of batchResults) {
+    for (let k = 0; k < batchResults.length; k++) {
+      const { page, cost, failed } = batchResults[k];
       rawPages.push(page);
       costs.extraction += cost;
+      if (failed) failedPages.push(i + k + 1);
     }
   }
 
+  // Fail loud: if EVERY page failed, the document is unusable. Throw so the
+  // upload route sets status='error' with a clear message instead of saving
+  // a "ready" doc with zero content.
+  if (failedPages.length === pageImages.length) {
+    throw new Error(
+      `Extraction failed on ALL ${pageImages.length} pages. ` +
+        `Likely causes: model rate limit, content-policy block, or persistent token-budget overflow. ` +
+        `See server logs for per-page errors.`,
+    );
+  }
+
   // Step 3: Correct Arabic text (batch all pages in one call)
-  const { pages: correctedPages, corrections, cost: correctionCost } = await correctText(rawPages);
+  const {
+    pages: correctedPages,
+    corrections,
+    cost: correctionCost,
+    failedBatches: correctionBatchesFailed,
+  } = await correctText(rawPages);
   costs.correction = correctionCost;
 
   // Step 4: Rule-based validation (deterministic, no LLM)
@@ -127,7 +159,12 @@ export async function extractDocument(
 
   // Step 5: Extract metadata
   const allText = correctedPages.flatMap(p => p.sections.map(s => s.content)).join("\n\n");
-  const { metadata, referencedLaws, cost: metaCost } = await extractMetadata(allText, fileName, classification.result.documentType);
+  const {
+    metadata,
+    referencedLaws,
+    cost: metaCost,
+    failed: metadataFailed,
+  } = await extractMetadata(allText, fileName, classification.result.documentType);
   costs.extraction += metaCost;
 
   costs.total = costs.classification + costs.extraction + costs.correction;
@@ -139,6 +176,12 @@ export async function extractDocument(
     validation,
     metadata,
     costs,
+    warnings: {
+      failedPages,
+      classificationFailed: classification.failed,
+      metadataFailed,
+      correctionBatchesFailed,
+    },
   };
 }
 
@@ -266,7 +309,7 @@ function getPdfPageCount(buffer: Buffer): number {
 // STEP 1: CLASSIFY
 // ============================================================
 
-async function classifyDocument(pageImageBase64: string): Promise<{ result: DocumentClassification; cost: number }> {
+async function classifyDocument(pageImageBase64: string): Promise<{ result: DocumentClassification; cost: number; failed: boolean }> {
   const openai = getOpenAI();
   const res = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -290,6 +333,7 @@ async function classifyDocument(pageImageBase64: string): Promise<{ result: Docu
   const rawContent = res.choices[0].message.content || "{}";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let parsed: any;
+  let failed = false;
   try {
     parsed = JSON.parse(rawContent);
   } catch (err) {
@@ -298,9 +342,10 @@ async function classifyDocument(pageImageBase64: string): Promise<{ result: Docu
       (err as Error).message,
     );
     parsed = {};
+    failed = true;
   }
   const cost = ((res.usage?.prompt_tokens || 0) * 0.15 + (res.usage?.completion_tokens || 0) * 0.6) / 1_000_000;
-  return { result: parsed as DocumentClassification, cost };
+  return { result: parsed as DocumentClassification, cost, failed };
 }
 
 // ============================================================
@@ -402,7 +447,7 @@ async function extractPage(
   pageImageBase64: string,
   pageNumber: number,
   documentType: DocumentType
-): Promise<{ page: ExtractedPage; cost: number }> {
+): Promise<{ page: ExtractedPage; cost: number; failed: boolean }> {
   const prompt = EXTRACTION_PROMPTS[documentType] || EXTRACTION_PROMPTS.default;
   const openai = getOpenAI();
 
@@ -437,6 +482,7 @@ async function extractPage(
   const rawContent = res.choices[0].message.content || "{}";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let parsed: any;
+  let failed = false;
   try {
     parsed = JSON.parse(rawContent);
   } catch (err) {
@@ -445,11 +491,13 @@ async function extractPage(
       (err as Error).message,
     );
     parsed = {};
+    failed = true;
   }
   if (finishReason === "length") {
     console.error(
       `extractPage(${pageNumber}): hit max_tokens cap (finish_reason=length). Page output may be incomplete.`,
     );
+    failed = true;
   }
   const cost = ((res.usage?.prompt_tokens || 0) * 2.5 + (res.usage?.completion_tokens || 0) * 10) / 1_000_000;
 
@@ -475,7 +523,7 @@ async function extractPage(
   // Normalize Arabic-Indic digits → Western digits everywhere
   const page = normalizePageDigits(rawPage);
 
-  return { page, cost };
+  return { page, cost, failed };
 }
 
 // ============================================================
@@ -484,10 +532,10 @@ async function extractPage(
 
 async function correctText(
   pages: ExtractedPage[]
-): Promise<{ pages: ExtractedPage[]; corrections: string[]; cost: number }> {
+): Promise<{ pages: ExtractedPage[]; corrections: string[]; cost: number; failedBatches: number }> {
   // Only correct body pages with actual content
   const bodyPages = pages.filter(p => p.pageType === "body" && p.sections.length > 0);
-  if (bodyPages.length === 0) return { pages, corrections: [], cost: 0 };
+  if (bodyPages.length === 0) return { pages, corrections: [], cost: 0, failedBatches: 0 };
 
   // Send sections for correction (batch to save tokens)
   const sectionsToCorrect = bodyPages.flatMap((p, pi) =>
@@ -497,6 +545,7 @@ async function correctText(
   // Process in batches of 10 sections
   const allCorrections: string[] = [];
   let totalCost = 0;
+  let failedBatches = 0;
 
   const openai = getOpenAI();
   for (let i = 0; i < sectionsToCorrect.length; i += 10) {
@@ -547,6 +596,7 @@ If unsure about a fix, leave the text unchanged and lower confidence.`,
         (err as Error).message,
       );
       parsed = {};
+      failedBatches++;
     }
     totalCost += ((res.usage?.prompt_tokens || 0) * 0.15 + (res.usage?.completion_tokens || 0) * 0.6) / 1_000_000;
 
@@ -599,7 +649,7 @@ If unsure about a fix, leave the text unchanged and lower confidence.`,
     }
   }
 
-  return { pages, corrections: allCorrections, cost: totalCost };
+  return { pages, corrections: allCorrections, cost: totalCost, failedBatches };
 }
 
 // ============================================================
@@ -805,6 +855,7 @@ async function extractMetadata(
   metadata: ExtractionResult["metadata"];
   referencedLaws: string[];
   cost: number;
+  failed: boolean;
 }> {
   // Extract referenced laws with regex (deterministic)
   const referencedLaws = detectReferences(fullText)
@@ -844,6 +895,7 @@ File: ${fileName}`,
   const rawContent = res.choices[0].message.content || "{}";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let parsed: any;
+  let failed = false;
   try {
     parsed = JSON.parse(rawContent);
   } catch (err) {
@@ -852,6 +904,7 @@ File: ${fileName}`,
       (err as Error).message,
     );
     parsed = {};
+    failed = true;
   }
   const cost = ((res.usage?.prompt_tokens || 0) * 0.15 + (res.usage?.completion_tokens || 0) * 0.6) / 1_000_000;
 
@@ -862,6 +915,7 @@ File: ${fileName}`,
     },
     referencedLaws,
     cost,
+    failed,
   };
 }
 
