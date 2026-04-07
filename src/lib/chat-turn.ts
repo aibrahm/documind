@@ -244,19 +244,43 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     }
   }
 
-  // Web search if router says so
+  // Web search if router says so.
+  // Use routing.searchQuery (not the raw userMessage): the router strips slash
+  // prefixes like "/web " and rewrites terse follow-ups ("look up some stuff",
+  // "try again") into a topical query using conversation history. Passing the
+  // raw userMessage here defeats all of that and produces garbage Tavily hits.
+  let webSearchError: string | null = null;
   if (routing.shouldWebSearch) {
-    const webResults = await webSearch(userMessage, 3);
-    webEvidence = webResults.map((r, i) => ({
-      id: `WEB-${i + 1}`,
-      type: "web",
-      title: r.title,
-      url: r.url,
-    }));
-    if (webResults.length > 0) {
-      evidencePackage += "═══ WEB SEARCH RESULTS ═══\n\n" +
-        webResults.map((r, i) => `[WEB-${i + 1}] ${r.title}\nSource: ${r.url}\n${r.content}`).join("\n\n") +
-        "\n\n";
+    const webQuery = routing.searchQuery?.trim() || userMessage;
+    try {
+      const webResults = await webSearch(webQuery, 5);
+      webEvidence = webResults.map((r, i) => ({
+        id: `WEB-${i + 1}`,
+        type: "web",
+        title: r.title,
+        url: r.url,
+      }));
+      if (webResults.length > 0) {
+        evidencePackage +=
+          `═══ WEB SEARCH RESULTS (query: "${webQuery}") ═══\n\n` +
+          webResults
+            .map((r, i) => `[WEB-${i + 1}] ${r.title}\nSource: ${r.url}\n${r.content}`)
+            .join("\n\n") +
+          "\n\n";
+      } else {
+        webSearchError = `Web search for "${webQuery}" returned no results.`;
+      }
+    } catch (err) {
+      // Fail loud per CLAUDE.md: surface the web-search failure to both the
+      // user (via a visible notice block in the evidence) and the UI stream.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("webSearch failed:", msg);
+      webSearchError = `Web search failed: ${msg}`;
+      emit("tool", { status: "error", name: "web_search", query: webQuery, error: msg });
+    }
+    if (webSearchError) {
+      evidencePackage +=
+        `═══ WEB SEARCH NOTICE ═══\n${webSearchError}\nYou MUST tell the user explicitly that the web search did not return usable results for this turn. Do NOT pretend to lack web access in general, and do NOT invent facts.\n\n`;
     }
   }
 
@@ -365,7 +389,9 @@ CONTENT QUESTIONS ("what does the contract say about...", "summarize the report"
 - If the evidence is missing or weak, say so — never fabricate.
 
 WEB QUESTIONS:
-- When [WEB-N] sources are provided, use them and cite as [WEB-N].
+- You DO have web search. When [WEB-N] sources are provided in this turn, the system already searched the internet for you — USE them to answer directly and cite as [WEB-N]. NEVER say "I can't browse the internet" or "check Reuters yourself" when [WEB-N] blocks are present.
+- When a "WEB SEARCH NOTICE" block appears, the search failed or returned nothing. Tell the user that plainly — do not substitute a generic "you can check these sites" answer, and do not claim a general lack of web access. State what went wrong in one line.
+- For news/current-events questions, summarize the actual content of the [WEB-N] articles in your own words with inline [WEB-N] citations. Do not just list source names.
 
 PINNED REFERENCES (the @ picker):
 
@@ -483,11 +509,16 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
         onText: (delta) => {
           emit("text", { content: delta });
         },
-        onToolStart: (query) => {
-          emit("tool", { status: "start", name: "web_search", query });
+        onToolStart: (query, toolName = "web_search") => {
+          emit("tool", { status: "start", name: toolName, query });
         },
-        onToolEnd: (query, count) => {
-          emit("tool", { status: "end", name: "web_search", query, resultCount: count });
+        onToolEnd: (query, count, toolName = "web_search") => {
+          emit("tool", {
+            status: "end",
+            name: toolName,
+            query,
+            resultCount: count,
+          });
         },
         onComplete: (_text, sources) => {
           additionalWebSources.push(...sources);

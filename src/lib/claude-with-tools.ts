@@ -1,6 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { getAnthropic } from "@/lib/clients";
 import { webSearch } from "@/lib/web-search";
+import { runFinancialModel } from "@/lib/tools/financial-model";
+import { runFetchUrl } from "@/lib/tools/fetch-url";
 
 /**
  * Claude streaming with autonomous web_search tool use.
@@ -30,9 +32,10 @@ interface RunOpts {
   maxTokens?: number;
   // Called whenever a chunk of final text is produced
   onText: (delta: string) => void;
-  // Called once per tool round so the UI can display status
-  onToolStart?: (query: string) => void;
-  onToolEnd?: (query: string, resultCount: number) => void;
+  // Called once per tool round so the UI can display status.
+  // toolName lets the UI distinguish web_search vs fetch_url etc.
+  onToolStart?: (query: string, toolName?: string) => void;
+  onToolEnd?: (query: string, resultCount: number, toolName?: string) => void;
   // Called once at the end with the full text
   onComplete?: (fullText: string, additionalWebSources: AdditionalWebSource[]) => void;
   // Hard limit on tool rounds to prevent infinite loops
@@ -60,6 +63,68 @@ const WEB_SEARCH_TOOL: Anthropic.Tool = {
   },
 };
 
+const FINANCIAL_MODEL_TOOL: Anthropic.Tool = {
+  name: "financial_model",
+  description:
+    "Run financial calculations with guaranteed correctness. Use this whenever the user's question involves NPV, IRR, payback period, or sensitivity analysis. DO NOT do arithmetic in your head — always call this tool for any non-trivial calculation involving cashflows, discount rates, or return metrics. Much more reliable than mental math.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      operation: {
+        type: "string",
+        enum: ["npv", "irr", "payback", "sensitivity"],
+        description:
+          "Which calculation to run. npv = net present value (needs discount_rate). irr = internal rate of return. payback = simple payback period in years. sensitivity = NPV sweep across a range of discount rates.",
+      },
+      cashflows: {
+        type: "array",
+        description:
+          "Array of cash flows. Year 0 = today. Positive amounts = inflows to the authority. Negative = outflows. Use ONE consistent currency across all entries (convert first if needed).",
+        items: {
+          type: "object",
+          properties: {
+            year: { type: "number", description: "0 = today, 1 = one year from now, etc." },
+            amount: { type: "number", description: "In the chosen currency. Negative = outflow." },
+          },
+          required: ["year", "amount"],
+        },
+      },
+      discount_rate: {
+        type: "number",
+        description: "For NPV operation. Decimal form (0.12 = 12%). Default 0.12 if not provided.",
+      },
+      sensitivity: {
+        type: "object",
+        description: "For sensitivity operation only.",
+        properties: {
+          variable: { type: "string", enum: ["discount_rate"] },
+          min: { type: "number", description: "Start of sweep range (decimal)" },
+          max: { type: "number", description: "End of sweep range (decimal)" },
+          steps: { type: "number", description: "Number of discrete points in the sweep" },
+        },
+      },
+    },
+    required: ["operation", "cashflows"],
+  },
+};
+
+const FETCH_URL_TOOL: Anthropic.Tool = {
+  name: "fetch_url",
+  description:
+    "Fetch the full text content of a specific URL. Use this after web_search when a search result looks promising but Tavily's snippet is too short to answer the question. DON'T use this for general research — prefer web_search first. Use fetch_url only when you've already found a specific URL and need its full content. Example: web_search found an Elsewedy investor-relations page; call fetch_url to read the actual contents instead of just the snippet.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      url: {
+        type: "string",
+        description:
+          "A full http(s):// URL. Must be a webpage (not a PDF or binary file).",
+      },
+    },
+    required: ["url"],
+  },
+};
+
 export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
   const {
     systemPrompt,
@@ -79,7 +144,12 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
   // content forms; we use block arrays once tools are involved.
   type Block =
     | { type: "text"; text: string }
-    | { type: "tool_use"; id: string; name: string; input: { query: string; reason?: string } }
+    | {
+        type: "tool_use";
+        id: string;
+        name: string;
+        input: Record<string, unknown>;
+      }
     | { type: "tool_result"; tool_use_id: string; content: string };
 
   const workingMessages: Array<{ role: "user" | "assistant"; content: string | Block[] }> = [
@@ -99,7 +169,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
       max_tokens: maxTokens,
       temperature,
       system: systemPrompt,
-      tools: [WEB_SEARCH_TOOL],
+      tools: [WEB_SEARCH_TOOL, FINANCIAL_MODEL_TOOL, FETCH_URL_TOOL],
       messages: workingMessages as Anthropic.MessageParam[],
     });
 
@@ -110,7 +180,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
       type: "tool_use";
       id: string;
       name: string;
-      input: { query: string; reason?: string };
+      input: Record<string, unknown>;
       _inputJson: string;
     } | null = null;
 
@@ -123,7 +193,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
             type: "tool_use",
             id: event.content_block.id,
             name: event.content_block.name,
-            input: { query: "" },
+            input: {},
             _inputJson: "",
           };
         }
@@ -145,7 +215,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
             const parsed = JSON.parse(currentToolUse._inputJson || "{}");
             currentToolUse.input = parsed;
           } catch {
-            currentToolUse.input = { query: currentToolUse._inputJson };
+            currentToolUse.input = { _raw: currentToolUse._inputJson };
           }
           // strip the helper field before passing on
           const { _inputJson, ...toolBlock } = currentToolUse;
@@ -165,36 +235,94 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
 
     // Run each tool in parallel and build tool_result blocks
     const toolResults: Block[] = await Promise.all(
-      toolUses.map(async (tu) => {
-        const query = tu.input.query || "";
-        onToolStart?.(query);
-        try {
-          const results = await webSearch(query, 5);
-          // Add to the unified web sources list returned to the caller
-          for (const r of results) {
-            const id = `WEB-${additionalWebSources.length + 1}`;
-            additionalWebSources.push({ id, type: "web", title: r.title, url: r.url });
+      toolUses.map(async (tu): Promise<Block> => {
+        // ── web_search ──
+        if (tu.name === "web_search") {
+          const query = (tu.input.query as string) || "";
+          onToolStart?.(query, "web_search");
+          try {
+            const results = await webSearch(query, 5);
+            for (const r of results) {
+              const id = `WEB-${additionalWebSources.length + 1}`;
+              additionalWebSources.push({
+                id,
+                type: "web",
+                title: r.title,
+                url: r.url,
+              });
+            }
+            onToolEnd?.(query, results.length, "web_search");
+            const resultText =
+              results.length > 0
+                ? results
+                    .map(
+                      (r, i) =>
+                        `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content}`,
+                    )
+                    .join("\n\n")
+                : "No results found.";
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: resultText,
+            };
+          } catch (err) {
+            onToolEnd?.(query, 0, "web_search");
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: `Search failed: ${(err as Error).message}`,
+            };
           }
-          onToolEnd?.(query, results.length);
-          const resultText =
-            results.length > 0
-              ? results
-                  .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.content}`)
-                  .join("\n\n")
-              : "No results found.";
-          return {
-            type: "tool_result" as const,
-            tool_use_id: tu.id,
-            content: resultText,
-          };
-        } catch (err) {
-          onToolEnd?.(query, 0);
-          return {
-            type: "tool_result" as const,
-            tool_use_id: tu.id,
-            content: `Search failed: ${(err as Error).message}`,
-          };
         }
+
+        // ── financial_model (instant, no UI status emit) ──
+        if (tu.name === "financial_model") {
+          try {
+            const resultText = await runFinancialModel(tu.input);
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: resultText,
+            };
+          } catch (err) {
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: `Calculation failed: ${(err as Error).message}`,
+            };
+          }
+        }
+
+        // ── fetch_url (slow, status visible to UI via onToolStart/End) ──
+        if (tu.name === "fetch_url") {
+          const url = (tu.input.url as string) || "";
+          onToolStart?.(`Reading: ${url}`, "fetch_url");
+          try {
+            const resultText = await runFetchUrl(tu.input);
+            const parsed = JSON.parse(resultText) as { ok?: boolean };
+            onToolEnd?.(`Reading: ${url}`, parsed.ok ? 1 : 0, "fetch_url");
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: resultText,
+            };
+          } catch (err) {
+            onToolEnd?.(`Reading: ${url}`, 0, "fetch_url");
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: `Fetch failed: ${(err as Error).message}`,
+            };
+          }
+        }
+
+        // ── unknown tool name (shouldn't happen) ──
+        return {
+          type: "tool_result" as const,
+          tool_use_id: tu.id,
+          content: `Unknown tool: ${tu.name}`,
+        };
       }),
     );
 
