@@ -9,6 +9,10 @@ import {
 } from "@/components/project-workspace-header";
 import { ProjectTabs, type TabId } from "@/components/project-tabs";
 import { OverviewTab } from "./_tabs/overview";
+import { DocumentsTab } from "./_tabs/documents";
+import { NegotiationsTab } from "./_tabs/negotiations";
+import { ChatsTab } from "./_tabs/chats";
+import { MemoryTab } from "./_tabs/memory";
 
 type Project = Database["public"]["Tables"]["projects"]["Row"];
 
@@ -67,30 +71,17 @@ export function WorkspaceClient({
           <OverviewTab project={project} counts={counts} chat={chat} />
         </div>
         <div hidden={activeTab !== "documents"} className="h-full">
-          <TabPlaceholder label="Documents" />
+          <DocumentsTab projectSlug={project.slug} />
         </div>
         <div hidden={activeTab !== "negotiations"} className="h-full">
-          <TabPlaceholder label="Negotiations" />
+          <NegotiationsTab projectId={project.id} />
         </div>
         <div hidden={activeTab !== "chats"} className="h-full">
-          <TabPlaceholder label="Chats" />
+          <ChatsTab projectSlug={project.slug} />
         </div>
         <div hidden={activeTab !== "memory"} className="h-full">
-          <TabPlaceholder label="Memory" />
+          <MemoryTab />
         </div>
-      </div>
-    </div>
-  );
-}
-
-function TabPlaceholder({ label }: { label: string }) {
-  return (
-    <div className="h-full flex items-center justify-center">
-      <div className="text-center space-y-2">
-        <p className="text-lg font-semibold text-slate-700">{label} tab</p>
-        <p className="text-sm text-slate-400">
-          Coming in Phase 04-04 — this tab exists so the tab bar is functional.
-        </p>
       </div>
     </div>
   );
