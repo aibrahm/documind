@@ -87,6 +87,13 @@ export interface ExtractionResult {
     classificationFailed: boolean;
     metadataFailed: boolean;
     correctionBatchesFailed: number;
+    /**
+     * For LAW documents only: high-stakes verifier mismatches. Each entry is
+     * a human-readable message naming the page + the missing article label,
+     * percentage, or law reference. Empty for non-law docs or when the
+     * verifier and the extraction agreed.
+     */
+    verifierMismatches: string[];
   };
 }
 
@@ -100,9 +107,15 @@ export async function extractDocument(
 ): Promise<ExtractionResult> {
   const costs = { classification: 0, extraction: 0, correction: 0, total: 0 };
 
-  // Convert PDF pages to PNG images using pdf-to-img
+  // Convert PDF pages to PNG images using pdf-to-img.
+  // scale: 3 (was 2) gives ~2.25× more pixels per character. For dense
+  // Arabic legal text this is the single highest-impact image change —
+  // GPT-4o vision is resolution-bound on small Arabic letterforms more
+  // than it is contrast- or skew-bound. Bumping scale costs ~30% more
+  // upload time per page but materially reduces character-confusion
+  // failures (ب/ت/ث/ن/ي, ص/ض, ع/غ) on scanned PDFs.
   const pageImages: string[] = [];
-  for await (const page of await pdfToImg(fileBuffer, { scale: 2 })) {
+  for await (const page of await pdfToImg(fileBuffer, { scale: 3 })) {
     pageImages.push(Buffer.from(page).toString("base64"));
   }
 
@@ -144,6 +157,33 @@ export async function extractDocument(
     );
   }
 
+  // Step 2.5: Law verifier (Pass 2) — for law documents, re-read each page
+  // asking ONLY for high-stakes fields (article labels, percentages, law
+  // references, years) and cross-check against the extracted content.
+  // This catches the failure mode where the model "smoothed" the text and
+  // dropped or substituted critical legal values. Verifier mismatches are
+  // surfaced as warnings on the document row, not as a hard failure.
+  const verifierMismatches: string[] = [];
+  if (classification.result.documentType === "law") {
+    const verifierResults = await Promise.all(
+      pageImages.map((img, i) => verifyLawPage(img, i + 1)),
+    );
+    for (let i = 0; i < verifierResults.length; i++) {
+      const v = verifierResults[i];
+      costs.extraction += v.cost;
+      if (v.failed || rawPages[i] === undefined) continue;
+      const mismatches = diffVerifierAgainstPage(v, rawPages[i]);
+      verifierMismatches.push(...mismatches);
+    }
+    if (verifierMismatches.length > 0) {
+      console.error(
+        `extractDocument: law verifier found ${verifierMismatches.length} mismatch(es) across ${pageImages.length} pages. ` +
+          `These indicate the extraction may have substituted or omitted high-stakes legal values. ` +
+          `Sample: ${verifierMismatches.slice(0, 3).join(" | ")}`,
+      );
+    }
+  }
+
   // Step 3: Correct Arabic text (batch all pages in one call)
   const {
     pages: correctedPages,
@@ -181,6 +221,7 @@ export async function extractDocument(
       classificationFailed: classification.failed,
       metadataFailed,
       correctionBatchesFailed,
+      verifierMismatches,
     },
   };
 }
@@ -353,27 +394,59 @@ async function classifyDocument(pageImageBase64: string): Promise<{ result: Docu
 // ============================================================
 
 const EXTRACTION_PROMPTS: Record<string, string> = {
-  law: `Extract this LEGAL DOCUMENT page. Return JSON:
+  law: `أنت ناسخ قانوني عربي / You are an Arabic legal scribe transcribing a single page of a draft law, decree, or statute. Your only job is verbatim transcription. You are NOT an editor, summarizer, smoother, or translator.
+
+Return JSON:
 {
-  "header": "official header or null",
-  "footer": "footer text or null",
+  "header": "official header line at the top of the page only (e.g. 'مشروع قانون', republic name) or null",
+  "footer": "page number or footer line only or null",
   "pageType": "cover|toc|body|appendix|signature|blank",
   "language": "ar|en|mixed",
   "sections": [{
-    "clauseNumber": "e.g. المادة الأولى or مادة (١٤) or null",
-    "title": "section title or null",
-    "content": "full exact text of this section",
+    "clauseNumber": "e.g. المادة الأولى, المادة الثانية, مادة (14), مادة (37 مكرراً), مادة (38 مكرراً/أ), مادة 47 مكرراً — copy the EXACT label from the page. Use null only if no label is present.",
+    "title": "section title if any, or null",
+    "content": "the exact verbatim text of this section as it appears on the page",
     "type": "preamble|article|clause|sub_clause|definition|penalty|transitional|signature|body",
-    "subItems": ["(أ) full text", "(ب) full text"]
+    "subItems": ["(أ) verbatim text", "(ب) verbatim text"]
   }]
 }
-Rules:
-- Preserve EXACT Arabic legal phrasing — do not paraphrase
-- Every article/clause MUST have clauseNumber
-- Sub-items (أ، ب، ج) go in subItems array, NOT in content
-- Capture preamble (بعد الاطلاع على...) as type "preamble"
-- NUMERALS: preserve digits EXACTLY as they appear (Arabic-Indic ٠١٢٣٤٥٦٧٨٩ stays Arabic-Indic; Western 0123456789 stays Western). DO NOT translate or convert digit systems.
-- Empty pages → pageType "blank", empty sections array`,
+
+VERBATIM TRANSCRIPTION RULES — these are non-negotiable:
+
+1. **Do not invent text.** If a word is partially obscured, ambiguous, or you are not sure, write [غير واضح] in its place. Never guess. Never substitute a word that "sounds right." Never auto-correct.
+
+2. **Do not paraphrase, smooth, or normalize.** Copy what is on the page literally. If the page has unusual wording, keep it. If a phrase is grammatically awkward, keep it. The page is the source of truth, not your prior knowledge of how Egyptian law is usually phrased.
+
+3. **Do not duplicate phrases.** If you accidentally start to repeat a clause (e.g. "وزير المالية، ووزير المالية"), stop and re-read the line. Each phrase appears in the text exactly as many times as the page shows it.
+
+4. **Do not invent connective tissue between lines.** If two adjacent lines on the page do not actually connect grammatically, do not add "و" or "كما" or any glue word to make them flow. Keep the original line breaks as separate sentences if the page does.
+
+5. **Numbers, percentages, article numbers, year numbers, and law references are critical.** Copy every digit exactly. Examples to be especially careful with:
+   - النسب المئوية (e.g. ١٧٪، ٥٠٪، ٨٠٪) — copy the exact digit, do not round
+   - أرقام المواد (e.g. مادة 14، مادة 37 مكرراً، مادة 38 مكرراً/ب) — copy with all suffixes (مكرراً, /أ, /ب) intact
+   - أرقام القوانين والسنوات (e.g. القانون رقم 83 لسنة 2002) — copy law number and year exactly
+   - Dates and durations
+   These fields are higher-stakes than the surrounding prose. If you are unsure of any digit, write [غير واضح] for that token, not a guess.
+
+6. **Easily-confused Arabic letters.** Pay special attention to:
+   - تيسيرات vs تنسيبات (the former is a real legal term; the latter is meaningless)
+   - التعاقدات vs التعليقات (the former is "contracts"; the latter is unrelated)
+   - Similar letterforms (ب/ت/ث، ج/ح/خ، د/ذ، ر/ز، س/ش، ص/ض، ط/ظ، ع/غ)
+   If the page uses one of these easily-confused words, look at it carefully and copy the exact letter you see. If unclear, mark [غير واضح].
+
+7. **Sub-items (أ، ب، ج، 1، 2، 3) go in subItems array, NOT in content.** Each sub-item is its own array entry, transcribed verbatim with its label.
+
+8. **Every article/clause MUST have its clauseNumber field populated** if a label is visible on the page. Examples of valid clauseNumber values: "المادة الأولى", "المادة الثانية", "مادة (14)", "مادة (37) مكرراً", "مادة (38 مكرراً/أ)", "مادة 47 مكرراً". Use null only when there is genuinely no label.
+
+9. **Preamble.** A preamble (بعد الاطلاع على القانون رقم...، وعلى القانون رقم...) goes as a single section with type="preamble" and clauseNumber=null. Do not split each "وعلى" reference into its own section.
+
+10. **Numerals system.** Preserve the digit system exactly as printed. If the page uses Arabic-Indic digits (٠١٢٣٤٥٦٧٨٩), keep them. If the page uses Western digits (0123456789), keep them. Do NOT convert between systems — code post-processes that.
+
+11. **Empty pages → pageType "blank", empty sections array.**
+
+12. **Do not include translation, commentary, or meta-notes.** No "this section discusses..." text. No square-bracket annotations except [غير واضح].
+
+If you find yourself wanting to "fix" something on the page, stop. Your job is to faithfully record what the page says, not to produce a polished version. A faithful but messy transcription is correct. A clean, polished version with substituted words is wrong.`,
 
   report: `Extract this REPORT page. Return JSON:
 {
@@ -524,6 +597,165 @@ async function extractPage(
   const page = normalizePageDigits(rawPage);
 
   return { page, cost, failed };
+}
+
+// ============================================================
+// LAW VERIFIER (Pass 2) — re-read page for high-stakes fields
+// ============================================================
+
+interface LawVerifierResult {
+  /** Verbatim list of clause/article labels the verifier saw on the page */
+  articleLabels: string[];
+  /** Verbatim list of percentages on the page (e.g. "17%", "٥٠٪") */
+  percentages: string[];
+  /** Verbatim list of "law N of YEAR" references */
+  lawReferences: string[];
+  /** Year tokens visible on the page (e.g. "2002", "2025") */
+  years: string[];
+  cost: number;
+  failed: boolean;
+}
+
+async function verifyLawPage(
+  pageImageBase64: string,
+  pageNumber: number,
+): Promise<LawVerifierResult> {
+  const openai = getOpenAI();
+  let res;
+  try {
+    res = await openai.chat.completions.create({
+      model: "gpt-4o",
+      temperature: 0,
+      max_tokens: 1500,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `أنت مدقق قانوني عربي. مهمتك هي قراءة صورة صفحة من قانون أو مشروع قانون عربي، ثم استخراج فقط الحقول العالية الخطورة كما تظهر حرفيًا في الصورة. لا تنسخ النص بالكامل.
+
+Return JSON:
+{
+  "articleLabels": ["المادة الأولى", "المادة الثانية", "مادة (14)", "مادة (37 مكرراً)", ...],
+  "percentages": ["17%", "50%", "80%", ...],
+  "lawReferences": ["قانون رقم 83 لسنة 2002", "قانون رقم 91 لسنة 2005", ...],
+  "years": ["2002", "2005", "2025", ...]
+}
+
+CRITICAL RULES:
+- Look at the IMAGE, not at any prior assumption about the document
+- Copy each value EXACTLY as it appears on this specific page (verbatim digit form, verbatim suffixes like مكرراً or /أ or /ب)
+- If a label has a sub-letter suffix (e.g. مكرراً/أ, مكرراً/ب), include the suffix
+- Empty arrays are fine — only list what is actually visible on this page
+- DO NOT invent or add anything that is not on the page
+- If you cannot read a digit clearly, omit that value entirely (do NOT guess)
+
+This is the second pass of a two-pass extraction. The first pass already transcribed the page. Your output is used to cross-check the first pass for high-stakes errors (article numbers, tax rates, law references).`,
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `Verify high-stakes fields on page ${pageNumber}. Return JSON.` },
+            {
+              type: "image_url",
+              image_url: { url: `data:image/png;base64,${pageImageBase64}`, detail: "high" },
+            },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    console.error(`verifyLawPage(${pageNumber}): API call failed:`, (err as Error).message);
+    return {
+      articleLabels: [],
+      percentages: [],
+      lawReferences: [],
+      years: [],
+      cost: 0,
+      failed: true,
+    };
+  }
+
+  const rawContent = res.choices[0].message.content || "{}";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  let failed = false;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (err) {
+    console.error(
+      `verifyLawPage(${pageNumber}): JSON.parse failed:`,
+      (err as Error).message,
+    );
+    parsed = {};
+    failed = true;
+  }
+  const cost =
+    ((res.usage?.prompt_tokens || 0) * 2.5 + (res.usage?.completion_tokens || 0) * 10) /
+    1_000_000;
+
+  return {
+    articleLabels: Array.isArray(parsed.articleLabels) ? parsed.articleLabels : [],
+    percentages: Array.isArray(parsed.percentages) ? parsed.percentages : [],
+    lawReferences: Array.isArray(parsed.lawReferences) ? parsed.lawReferences : [],
+    years: Array.isArray(parsed.years) ? parsed.years : [],
+    cost,
+    failed,
+  };
+}
+
+/**
+ * Compare a verifier result against an extracted page. Returns a list of
+ * mismatches (verifier found a value that the extraction is missing). Used
+ * to surface high-stakes extraction errors as warnings on the document row.
+ */
+function diffVerifierAgainstPage(
+  verifier: LawVerifierResult,
+  page: ExtractedPage,
+): string[] {
+  // Concatenate everything from the page so we can substring-check
+  const pageText = page.sections
+    .map((s) => `${s.clauseNumber || ""} ${s.title || ""} ${s.content} ${s.subItems.join(" ")}`)
+    .join(" ");
+
+  const mismatches: string[] = [];
+
+  // Normalize digits before comparing (verifier may keep Arabic-Indic, page is post-normalized)
+  const normalizeDigit = (s: string) =>
+    s.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+  const haystack = normalizeDigit(pageText);
+
+  for (const label of verifier.articleLabels) {
+    const needle = normalizeDigit(label);
+    // Allow approximate match: collapse whitespace + check substring of significant tokens
+    const tokens = needle.replace(/\s+/g, " ").trim();
+    if (tokens && !haystack.includes(tokens)) {
+      mismatches.push(`page ${page.pageNumber}: missing article label "${label}"`);
+    }
+  }
+
+  for (const ref of verifier.lawReferences) {
+    const needle = normalizeDigit(ref).replace(/\s+/g, " ").trim();
+    // Match on the law number + year tokens since prose may rearrange wording
+    const m = needle.match(/(\d+)[^\d]+(\d{4})/);
+    if (m) {
+      const num = m[1];
+      const year = m[2];
+      if (!haystack.includes(num) || !haystack.includes(year)) {
+        mismatches.push(
+          `page ${page.pageNumber}: missing law reference "${ref}" (looked for ${num} + ${year})`,
+        );
+      }
+    }
+  }
+
+  for (const pct of verifier.percentages) {
+    const num = pct.replace(/[^\d]/g, "");
+    if (num && !haystack.includes(num)) {
+      mismatches.push(`page ${page.pageNumber}: missing percentage "${pct}"`);
+    }
+  }
+
+  return mismatches;
 }
 
 // ============================================================

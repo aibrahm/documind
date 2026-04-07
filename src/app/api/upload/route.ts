@@ -185,7 +185,8 @@ async function processDocument(
     w.failedPages.length > 0 ||
     w.classificationFailed ||
     w.metadataFailed ||
-    w.correctionBatchesFailed > 0;
+    w.correctionBatchesFailed > 0 ||
+    w.verifierMismatches.length > 0;
   const warningText = hasWarnings
     ? [
         w.failedPages.length > 0
@@ -195,6 +196,9 @@ async function processDocument(
         w.metadataFailed ? "Metadata extraction call failed" : null,
         w.correctionBatchesFailed > 0
           ? `${w.correctionBatchesFailed} Arabic-correction batch(es) failed`
+          : null,
+        w.verifierMismatches.length > 0
+          ? `Verifier flagged ${w.verifierMismatches.length} potential extraction error${w.verifierMismatches.length === 1 ? "" : "s"} (article labels, percentages, or law references that the verifier saw on the page but the extracted text is missing)`
           : null,
       ]
         .filter(Boolean)
