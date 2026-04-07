@@ -95,6 +95,10 @@ const FINANCIAL_MODEL_TOOL: Anthropic.Tool = {
         type: "number",
         description: "For NPV operation. Decimal form (0.12 = 12%). Default 0.12 if not provided.",
       },
+      currency: {
+        type: "string",
+        description: "Optional ISO-like currency code (e.g. 'EGP', 'USD'). Echoed back in the result for clarity. All cashflows must already be in this currency.",
+      },
       sensitivity: {
         type: "object",
         description: "For sensitivity operation only.",
@@ -113,14 +117,14 @@ const FINANCIAL_MODEL_TOOL: Anthropic.Tool = {
 const FETCH_URL_TOOL: Anthropic.Tool = {
   name: "fetch_url",
   description:
-    "Fetch the full text content of a specific URL. Use this after web_search when a search result looks promising but Tavily's snippet is too short to answer the question. DON'T use this for general research — prefer web_search first. Use fetch_url only when you've already found a specific URL and need its full content. Example: web_search found an Elsewedy investor-relations page; call fetch_url to read the actual contents instead of just the snippet.",
+    "Fetch the full text content of a specific URL — supports both HTML pages AND PDF files (extracted via pdf-parse). Use this after web_search when a search result looks promising but Tavily's snippet is too short to answer the question. DON'T use this for general research — prefer web_search first. Use fetch_url only when you've already found a specific URL and need its full content. Examples: an Elsewedy investor-relations page; an official decree PDF linked from a news article.",
   input_schema: {
     type: "object" as const,
     properties: {
       url: {
         type: "string",
         description:
-          "A full http(s):// URL. Must be a webpage (not a PDF or binary file).",
+          "A full http(s):// URL. Webpages and PDF files are both supported.",
       },
     },
     required: ["url"],

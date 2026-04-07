@@ -99,7 +99,10 @@ export interface FinancialModelInput {
   operation: "npv" | "irr" | "payback" | "sensitivity";
   cashflows: CashFlow[];
   discount_rate?: number;
+  /** Optional currency code (e.g. "EGP", "USD") — echoed in the result for clarity */
+  currency?: string;
   sensitivity?: {
+    /** Which variable to sweep. discount_rate is the only one for now. */
     variable: "discount_rate";
     min: number;
     max: number;
@@ -127,6 +130,11 @@ export async function runFinancialModel(rawInput: unknown): Promise<string> {
     }
   }
 
+  const currency =
+    typeof input.currency === "string" && input.currency.trim().length > 0
+      ? input.currency.trim()
+      : "unspecified (assumed consistent across cashflows)";
+
   switch (input.operation) {
     case "npv": {
       const rate =
@@ -136,7 +144,7 @@ export async function runFinancialModel(rawInput: unknown): Promise<string> {
         operation: "npv",
         discount_rate: rate,
         result: value,
-        currency: "unspecified (assumed consistent across cashflows)",
+        currency,
       });
     }
     case "irr": {
@@ -144,6 +152,7 @@ export async function runFinancialModel(rawInput: unknown): Promise<string> {
       return JSON.stringify({
         operation: "irr",
         result: rate,
+        currency,
         note:
           rate === null
             ? "Could not converge — check cashflow pattern"
@@ -155,6 +164,7 @@ export async function runFinancialModel(rawInput: unknown): Promise<string> {
       return JSON.stringify({
         operation: "payback",
         result: years,
+        currency,
         note:
           years === null
             ? "Never recovers initial investment"
@@ -175,7 +185,12 @@ export async function runFinancialModel(rawInput: unknown): Promise<string> {
         steps: input.sensitivity.steps,
         metric: "npv",
       });
-      return JSON.stringify({ operation: "sensitivity", sweep });
+      return JSON.stringify({
+        operation: "sensitivity",
+        variable: input.sensitivity.variable,
+        currency,
+        sweep,
+      });
     }
     default:
       return JSON.stringify({

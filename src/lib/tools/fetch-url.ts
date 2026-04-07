@@ -2,7 +2,10 @@
 //
 // Fetch a URL and return its readable text content. Used by Claude when it
 // needs full page contents instead of Tavily's short snippet. Pure built-in
-// fetch + regex HTML stripping. Zero new dependencies.
+// fetch + regex HTML stripping. PDFs are extracted via pdf-parse (already a
+// dep). Zero new dependencies.
+
+import { PDFParse } from "pdf-parse";
 
 const MAX_CONTENT_CHARS = 8000;
 const FETCH_TIMEOUT_MS = 15000;
@@ -31,33 +34,17 @@ export async function fetchUrlContent(url: string): Promise<FetchUrlResult> {
   // Fetch with timeout
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  let html: string;
+  let response: Response;
   try {
-    const response = await fetch(url, {
+    response = await fetch(url, {
       signal: controller.signal,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml",
+        Accept: "text/html,application/xhtml+xml,application/pdf",
       },
     });
     clearTimeout(timeoutId);
-    if (!response.ok) {
-      return {
-        ok: false,
-        url,
-        error: `HTTP ${response.status} ${response.statusText}`,
-      };
-    }
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("html") && !contentType.includes("text")) {
-      return {
-        ok: false,
-        url,
-        error: `Unsupported content type: ${contentType}`,
-      };
-    }
-    html = await response.text();
   } catch (err) {
     clearTimeout(timeoutId);
     const message =
@@ -65,6 +52,67 @@ export async function fetchUrlContent(url: string): Promise<FetchUrlResult> {
         ? "Request timed out"
         : (err as Error).message;
     return { ok: false, url, error: message };
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      url,
+      error: `HTTP ${response.status} ${response.statusText}`,
+    };
+  }
+
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
+  const isPdf = contentType.includes("application/pdf") || /\.pdf(\?|$)/i.test(url);
+  const isText = contentType.includes("html") || contentType.includes("text");
+
+  if (!isPdf && !isText) {
+    return {
+      ok: false,
+      url,
+      error: `Unsupported content type: ${contentType}`,
+    };
+  }
+
+  // ── PDF branch ──
+  if (isPdf) {
+    let pdfText = "";
+    let pageCount = 0;
+    try {
+      const buf = Buffer.from(await response.arrayBuffer());
+      const parser = new PDFParse({ data: new Uint8Array(buf) });
+      try {
+        const result = await parser.getText();
+        pdfText = result.text || "";
+        pageCount = result.total || result.pages.length || 0;
+      } finally {
+        await parser.destroy().catch(() => {});
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        url,
+        error: `PDF parse failed: ${(err as Error).message}`,
+      };
+    }
+    let text = pdfText.replace(/\s+/g, " ").trim();
+    const truncated = text.length > MAX_CONTENT_CHARS;
+    if (truncated) text = text.slice(0, MAX_CONTENT_CHARS) + "\n\n[truncated]";
+    return {
+      ok: true,
+      url,
+      title: `PDF (${pageCount} pages)`,
+      content: text,
+      truncated,
+    };
+  }
+
+  // ── HTML/text branch ──
+  let html: string;
+  try {
+    html = await response.text();
+  } catch (err) {
+    return { ok: false, url, error: (err as Error).message };
   }
 
   // Extract title
