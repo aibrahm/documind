@@ -3,19 +3,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput, type ChatInputHandle } from "@/components/chat-input";
-import { ChatSidebar } from "@/components/chat-sidebar";
-import { X, FileText, Upload as UploadIcon, MessageSquare } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { X, FileText, Upload as UploadIcon } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { Source } from "@/lib/types";
 import { useChat } from "@/lib/hooks/use-chat";
 
 // ── Types ──
-
-interface Conversation {
-  id: string;
-  title: string;
-  created_at: string;
-}
 
 interface PdfState {
   url: string;
@@ -36,19 +29,15 @@ interface RecentDoc {
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedConvoId = searchParams.get("conversation");
 
-  // Sidebar conversations list (separate from useChat — sidebar owns it)
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-
-  const refreshConversations = useCallback(() => {
-    fetch("/api/conversations")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.conversations) setConversations(data.conversations);
-      })
-      .catch(() => {});
-  }, []);
+  // Refresh the workspace layout (sidebar conversations) after a new
+  // conversation is created from the chat. router.refresh() re-runs the
+  // server layout without unmounting the page.
+  const refreshLayout = useCallback(() => {
+    router.refresh();
+  }, [router]);
 
   // Chat state via hook
   const {
@@ -62,7 +51,7 @@ export default function Home() {
     loadConversation,
     newChat,
     setError,
-  } = useChat({}, { onConversationCreated: refreshConversations });
+  } = useChat({}, { onConversationCreated: refreshLayout });
 
   // Empty state data
   const [recentDocs, setRecentDocs] = useState<RecentDoc[]>([]);
@@ -79,11 +68,9 @@ export default function Home() {
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // ── Load conversations + recent docs on mount ──
+  // ── Load recent docs on mount ──
 
   useEffect(() => {
-    refreshConversations();
-
     fetch("/api/documents")
       .then((r) => r.json())
       .then((data) => {
@@ -92,56 +79,26 @@ export default function Home() {
         setRecentDocs(docs.filter((d) => d.status === "ready").slice(0, 4));
       })
       .catch(() => {});
-  }, [refreshConversations]);
+  }, []);
+
+  // ── React to ?conversation=<id> in the URL (sidebar nav) ──
+
+  useEffect(() => {
+    if (requestedConvoId && requestedConvoId !== conversationId) {
+      setPdf(null);
+      loadConversation(requestedConvoId);
+    } else if (!requestedConvoId && conversationId !== null) {
+      setPdf(null);
+      newChat();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedConvoId]);
 
   // ── Auto-scroll ──
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
-
-  // ── Wrap loadConversation/newChat to also reset PDF panel ──
-
-  const loadConversationAndClearPdf = useCallback(
-    async (id: string) => {
-      setPdf(null);
-      await loadConversation(id);
-    },
-    [loadConversation],
-  );
-
-  const newChatAndClearPdf = useCallback(() => {
-    setPdf(null);
-    newChat();
-  }, [newChat]);
-
-  // ── Rename / delete conversations ──
-
-  const renameConversation = useCallback(async (id: string, title: string) => {
-    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
-    try {
-      await fetch(`/api/conversations/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      });
-    } catch {
-      setError("Failed to rename");
-    }
-  }, []);
-
-  const deleteConversation = useCallback(async (id: string) => {
-    setConversations((prev) => prev.filter((c) => c.id !== id));
-    if (conversationId === id) {
-      newChat();
-      setPdf(null);
-    }
-    try {
-      await fetch(`/api/conversations/${id}`, { method: "DELETE" });
-    } catch {
-      setError("Failed to delete");
-    }
-  }, [conversationId, newChat, setError]);
 
   // ── Source click → open PDF (document) or new tab (web) ──
 
@@ -159,25 +116,13 @@ export default function Home() {
     } catch {
       setError("Failed to load document");
     }
-  }, []);
+  }, [setError]);
 
   // ── Determine UI state ──
   const isIdle = messages.length === 0 && !streaming;
 
   return (
     <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <ChatSidebar
-          conversations={conversations}
-          activeId={conversationId}
-          onSelect={loadConversationAndClearPdf}
-          onNew={newChatAndClearPdf}
-          onRename={renameConversation}
-          onDelete={deleteConversation}
-          isOpen={sidebarOpen}
-          onToggle={() => setSidebarOpen((prev) => !prev)}
-        />
-
         {/* Chat area */}
         <div
           className="flex-1 flex flex-col min-w-0 bg-white relative"
@@ -236,7 +181,7 @@ export default function Home() {
                 </div>
 
                 {/* Two columns: recent docs / recent threads */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 gap-8">
                   {/* Recent documents */}
                   {recentDocs.length > 0 && (
                     <div>
@@ -276,34 +221,6 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Recent threads */}
-                  {conversations.length > 0 && (
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                          Recent threads
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        {conversations.slice(0, 4).map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => loadConversationAndClearPdf(c.id)}
-                            className="w-full flex items-center gap-2.5 text-left bg-transparent hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg px-2.5 py-2 transition-all cursor-pointer"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span
-                              className="text-[13px] text-slate-700 truncate flex-1"
-                              dir="auto"
-                            >
-                              {c.title}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* Empty: no docs at all */}
