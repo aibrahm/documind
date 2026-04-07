@@ -98,7 +98,14 @@ If nothing durable was discussed, return {"memories": []}.`,
       .filter((m) => m.importance >= 0.4)
       .slice(0, 3);
   } catch (err) {
-    console.error("Memory extraction failed:", err);
+    // Fail-loud per CLAUDE.md: log the failure prominently so we can diagnose.
+    // Returning [] is intentional (memory is best-effort, not blocking) but
+    // the log makes the degraded state visible.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      "memory: extractMemories FAILED — this turn's context will NOT be persisted:",
+      message,
+    );
     return [];
   }
 }

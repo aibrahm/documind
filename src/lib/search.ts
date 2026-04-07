@@ -128,8 +128,12 @@ async function rerankResults(
       ...results[r.index],
       score: r.relevanceScore,
     }));
-  } catch {
-    // Fall back to original ordering if rerank fails
+  } catch (err) {
+    // Fail-loud per CLAUDE.md: log the rerank failure so we know quality is
+    // degraded for this query. The fallback to original ordering is OK as a
+    // graceful degrade, but the silent swallow was hiding outages.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("search: Cohere rerank FAILED, using original ordering:", msg);
     return results;
   }
 }

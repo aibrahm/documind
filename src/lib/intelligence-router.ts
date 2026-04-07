@@ -137,8 +137,9 @@ If the query has NOTHING to do with documents or web search (like "tell me a jok
     ],
   });
 
+  const rawContent = res.choices[0].message.content || "{}";
   try {
-    const parsed = JSON.parse(res.choices[0].message.content || "{}");
+    const parsed = JSON.parse(rawContent);
     return {
       mode: parsed.mode || "casual",
       shouldSearch: parsed.shouldSearch ?? false,
@@ -147,14 +148,25 @@ If the query has NOTHING to do with documents or web search (like "tell me a jok
       searchQuery: parsed.searchQuery || message,
       reasoning: parsed.reasoning || "",
     };
-  } catch {
+  } catch (err) {
+    // Fail-loud per CLAUDE.md: log the malformed response with the raw content
+    // so we can debug. The fallback to casual mode is annotated in `reasoning`
+    // so the UI shows the degraded state instead of pretending the routing
+    // worked.
+    console.error(
+      "intelligence-router: failed to parse JSON response from gpt-4o-mini:",
+      (err as Error).message,
+      "\n  raw content:",
+      rawContent.slice(0, 500),
+    );
     return {
       mode: "casual",
       shouldSearch: false,
       shouldWebSearch: false,
       doctrines: [],
       searchQuery: message,
-      reasoning: "Routing failed, defaulting to casual",
+      reasoning:
+        "⚠️ Routing fell back to casual mode (JSON parse failure). Response may be less accurate than usual.",
     };
   }
 }
