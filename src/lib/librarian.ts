@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { supabaseAdmin } from "./supabase";
 import { getOpenAI } from "./clients";
 import { canonicalizeEntities, normalizeName, similarity, type CanonicalEntity } from "./entities";
@@ -198,13 +199,35 @@ async function findRelatedDocuments(
     analysis.entities.map((e) => normalizeName(e.name)).filter(Boolean),
   );
 
-  // Get embedding for the new doc's first page (one call)
-  let newEmbedding: number[] | null = null;
+  // Get embeddings for the new doc at multiple positions (first / middle / last
+  // 2000-char windows). The deeper-31% fix: by sampling the new doc the same
+  // way we sample candidates, we cover the case where the existing doc was
+  // chunked at boundaries that don't align with raw pdf-parse text. Up to 3
+  // embeddings, computed in parallel.
+  let newEmbeddings: number[][] = [];
   try {
-    newEmbedding = await embedQuery(firstPageText.slice(0, 2000));
-  } catch {
-    /* embedding is optional */
+    const len = firstPageText.length;
+    const windows: string[] = [];
+    if (len > 0) {
+      windows.push(firstPageText.slice(0, 2000));
+      if (len > 4000) {
+        const midStart = Math.max(0, Math.floor(len / 2) - 1000);
+        windows.push(firstPageText.slice(midStart, midStart + 2000));
+      }
+      if (len > 2000) {
+        windows.push(firstPageText.slice(Math.max(0, len - 2000)));
+      }
+    }
+    const settled = await Promise.allSettled(
+      windows.map((w) => embedQuery(w)),
+    );
+    newEmbeddings = settled
+      .filter((s): s is PromiseFulfilledResult<number[]> => s.status === "fulfilled")
+      .map((s) => s.value);
+  } catch (err) {
+    console.error("librarian: new-doc embedding batch failed:", err);
   }
+  const newEmbedding = newEmbeddings[0] || null; // legacy reference (kept for any cosine-sim path)
 
   // Score each existing doc
   type Scored = {
@@ -235,12 +258,14 @@ async function findRelatedDocuments(
         ? 0
         : overlapCount / Math.max(newEntityNames.size, docEntitySet.size);
 
-    // Content similarity — sample first/middle/last chunks and take the MAX
-    // (Phase 07 fix for the 31% bug: single-chunk sampling missed exact
-    // duplicates because cover pages vary across OCR/rendering.)
+    // Content similarity — sample first/middle/last chunks of the candidate
+    // AND first/middle/last 2k-char windows of the new doc (computed once
+    // above into newEmbeddings), then take the MAX cosine across the full
+    // cross-product. Up to 3 × 3 = 9 comparisons per candidate. Catches
+    // exact-PDF re-uploads even when chunking pipelines disagree on cut
+    // points or cover pages differ between OCR/rendering passes.
     let contentSim = 0;
-    if (newEmbedding) {
-      // First, get the chunk count so we can pick first/middle/last positions
+    if (newEmbeddings.length > 0) {
       const { count: chunkCount } = await supabaseAdmin
         .from("chunks")
         .select("id", { count: "exact", head: true })
@@ -270,11 +295,10 @@ async function findRelatedDocuments(
               typeof ch.embedding === "string"
                 ? JSON.parse(ch.embedding)
                 : ch.embedding;
-            if (
-              Array.isArray(docEmb) &&
-              docEmb.length === newEmbedding.length
-            ) {
-              const sim = cosineSimilarity(newEmbedding, docEmb);
+            if (!Array.isArray(docEmb)) continue;
+            for (const ne of newEmbeddings) {
+              if (docEmb.length !== ne.length) continue;
+              const sim = cosineSimilarity(ne, docEmb);
               if (sim > contentSim) contentSim = sim;
             }
           } catch {
@@ -492,6 +516,60 @@ export async function analyzeUpload(
   fileBuffer: Buffer,
   fileName: string,
 ): Promise<LibrarianProposal> {
+  // Step 0: SHA256 short-circuit. If a document with the exact same hash
+  // exists, this is a bit-for-bit duplicate — return "duplicate" immediately
+  // without running the (slow + flaky) embedding/title/entity heuristics.
+  // Embedding similarity caps below 1.0 because pdf-parse text vs vision-
+  // extracted chunks never align perfectly, so the heuristic path can't
+  // reliably catch exact re-uploads. Hash matching is bulletproof.
+  const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
+
+  const { data: hashMatches } = await supabaseAdmin
+    .from("documents")
+    .select("id, title, type, classification, created_at, version_number, is_current, metadata")
+    .filter("metadata->>sha256", "eq", sha256)
+    .limit(1);
+
+  if (hashMatches && hashMatches.length > 0) {
+    const existing = hashMatches[0];
+    return {
+      detected: {
+        title: existing.title || fileName.replace(/\.pdf$/i, ""),
+        suggestedTitle: existing.title || fileName.replace(/\.pdf$/i, ""),
+        documentType: existing.type || "memo",
+        language: "ar",
+        pageCount: 0,
+        fileSize: fileBuffer.length,
+        suggestedClassification:
+          (existing.classification as "PRIVATE" | "PUBLIC" | "DOCTRINE") ||
+          "PRIVATE",
+        classificationReason: "Existing classification preserved (exact-hash match).",
+        entities: [],
+        firstPagePreview: "",
+      },
+      related: [
+        {
+          documentId: existing.id,
+          title: existing.title || "Unknown",
+          type: existing.type || "memo",
+          classification: existing.classification || "PRIVATE",
+          createdAt: existing.created_at || "",
+          similarity: 1.0,
+          reason: "exact SHA256 match — bit-for-bit identical file",
+          isCurrent: existing.is_current ?? true,
+          versionNumber: existing.version_number ?? 1,
+        },
+      ],
+      recommendation: {
+        action: "duplicate",
+        reason: `This is a bit-for-bit duplicate of "${existing.title}" (uploaded ${formatRelativeShort(existing.created_at || "")}). The SHA256 hash matches exactly.`,
+        targetDocumentId: existing.id,
+        confidence: "high",
+      },
+      suggestedProject: null,
+    };
+  }
+
   // Step 1: Quick extract (no vision, just pdf-parse)
   const { text, pageCount } = await quickExtract(fileBuffer);
 

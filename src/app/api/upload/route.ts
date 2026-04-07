@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { extractDocument } from "@/lib/extraction";
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Upload file to Supabase Storage
     const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
     const filePath = `documents/${Date.now()}_${crypto.randomUUID()}.pdf`;
 
     const { error: uploadError } = await supabaseAdmin.storage
@@ -51,7 +53,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 2: Create document record (status: processing)
+    // Step 2: Create document record (status: processing).
+    // Store sha256 in metadata so the librarian can short-circuit on
+    // future re-uploads of the exact same file.
     const { data: doc, error: docError } = await supabaseAdmin
       .from("documents")
       .insert({
@@ -60,6 +64,7 @@ export async function POST(request: NextRequest) {
         file_size: fileBuffer.length,
         status: "processing",
         version_of: versionOf || null,
+        metadata: { sha256 },
       })
       .select()
       .single();
@@ -168,8 +173,12 @@ async function processDocument(
   const fullText = extraction.pages.flatMap((p) => p.sections.map((s) => s.content)).join("\n\n");
   const encryptedContent = classification === "PRIVATE" ? encrypt(fullText) : null;
 
-  // Step 5: Update document record (use librarian-confirmed title if provided)
+  // Step 5: Update document record (use librarian-confirmed title if provided).
+  // Preserve the sha256 we stored in metadata at insert time so the librarian
+  // can keep short-circuiting future re-uploads.
   const finalTitle = titleOverride?.trim() || extraction.classification.title;
+  const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
+  const mergedMetadata = { ...(extraction.metadata || {}), sha256 };
   await supabaseAdmin
     .from("documents")
     .update({
@@ -178,7 +187,7 @@ async function processDocument(
       classification: classificationOverride || classification,
       language: extraction.classification.language,
       page_count: extraction.pages.length,
-      metadata: extraction.metadata,
+      metadata: mergedMetadata,
       entities: (extraction.metadata.entities || []).map(
         (e: { name: string }) => e.name
       ),
