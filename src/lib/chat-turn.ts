@@ -68,13 +68,96 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     emit,
   } = args;
 
+  // ── Project context (Phase 05) ──
+  // The conversation row may carry a project_id. When set, this turn runs in
+  // "project-scoped" mode: the project's documents are seeded as primary
+  // evidence, the project's context_summary is injected into the system
+  // prompt, and OTHER projects' PRIVATE documents are excluded from
+  // retrieval. PUBLIC and DOCTRINE docs remain available globally.
+  const { data: convoRow } = await supabaseAdmin
+    .from("conversations")
+    .select("project_id")
+    .eq("id", conversationId)
+    .maybeSingle();
+  const projectId = (convoRow?.project_id as string | null) ?? null;
+
+  let projectContext: {
+    id: string;
+    name: string;
+    description: string | null;
+    context_summary: string | null;
+    color: string | null;
+  } | null = null;
+  let projectDocIds: string[] = [];
+  let excludedDocIds = new Set<string>();
+  let counterpartyNames: string[] = [];
+
+  if (projectId) {
+    // Fetch project + linked-doc IDs + counterparties + other-projects' private
+    // doc IDs in parallel — these are independent reads.
+    const [projectRes, projectLinksRes, companiesRes, otherLinksRes] =
+      await Promise.all([
+        supabaseAdmin
+          .from("projects")
+          .select("id, name, description, context_summary, color")
+          .eq("id", projectId)
+          .maybeSingle(),
+        supabaseAdmin
+          .from("project_documents")
+          .select("document_id")
+          .eq("project_id", projectId),
+        supabaseAdmin
+          .from("project_companies")
+          .select(
+            `entity:entities ( name, name_en )`,
+          )
+          .eq("project_id", projectId),
+        // Other projects' linked docs (used to compute exclusion)
+        supabaseAdmin
+          .from("project_documents")
+          .select("document_id, project_id")
+          .neq("project_id", projectId),
+      ]);
+
+    if (projectRes.data) projectContext = projectRes.data;
+    projectDocIds = (projectLinksRes.data ?? []).map(
+      (r) => r.document_id as string,
+    );
+
+    counterpartyNames = (companiesRes.data ?? [])
+      .map((l) => {
+        const e = l.entity as { name?: string; name_en?: string | null } | null;
+        return e?.name_en || e?.name || null;
+      })
+      .filter((s): s is string => Boolean(s));
+
+    // Exclusion: PRIVATE docs that are linked to OTHER projects but NOT to
+    // this one. Public and doctrine classifications are always allowed.
+    const otherDocIdSet = new Set(
+      (otherLinksRes.data ?? [])
+        .map((r) => r.document_id as string)
+        .filter((id) => !projectDocIds.includes(id)),
+    );
+    if (otherDocIdSet.size > 0) {
+      const { data: otherDocs } = await supabaseAdmin
+        .from("documents")
+        .select("id, classification")
+        .in("id", [...otherDocIdSet]);
+      for (const d of otherDocs ?? []) {
+        if (d.classification === "PRIVATE") {
+          excludedDocIds.add(d.id as string);
+        }
+      }
+    }
+  }
+
   // Route the message and pull cross-conversation memories in parallel.
   // The continue-path passes history to the router so it can rebuild a
   // topical search query from earlier turns when the current message is
   // terse ("retry", "this is old data", etc).
   const [routing, priorMemories] = await Promise.all([
     routeMessage(userMessage, history),
-    retrieveRelevantMemories(userMessage, conversationId, 8),
+    retrieveRelevantMemories(userMessage, conversationId, 8, projectId),
   ]);
   const memoryBlock = formatMemoriesForPrompt(priorMemories);
 
@@ -217,6 +300,44 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     if (ids.length > 0) entityScopedDocIds = ids;
   }
 
+  // ── Project-doc evidence (Phase 05) ──
+  // When in a project, run an additional retrieval pass restricted to the
+  // project's linked documents. These chunks become the FIRST evidence block
+  // labeled PROJECT-DOC-N. Always runs (regardless of routing.shouldSearch)
+  // because the project context should always be available.
+  let projectDocEvidence: Array<{
+    id: string;
+    type: "document";
+    title: string;
+    pageNumber: number;
+    sectionTitle: string | null;
+    clauseNumber: string | null;
+    documentId: string;
+    content: string;
+  }> = [];
+  if (projectId && projectDocIds.length > 0) {
+    try {
+      const projectResults = await hybridSearch({
+        query: routing.searchQuery || userMessage,
+        matchCount: 6,
+        useRerank: false,
+        documentIds: projectDocIds,
+      });
+      projectDocEvidence = projectResults.map((r, i) => ({
+        id: `PROJECT-DOC-${i + 1}`,
+        type: "document" as const,
+        title: r.document?.title || "Unknown",
+        pageNumber: r.pageNumber,
+        sectionTitle: r.sectionTitle,
+        clauseNumber: r.clauseNumber,
+        documentId: r.documentId,
+        content: r.content,
+      }));
+    } catch (err) {
+      console.error("Project-doc retrieval failed:", err);
+    }
+  }
+
   if (routing.shouldSearch) {
     const results = await hybridSearch({
       query: routing.searchQuery,
@@ -226,7 +347,19 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
       // Otherwise normal corpus-wide search.
       documentIds: entityScopedDocIds,
     });
-    documentEvidence = results.map((r, i) => ({
+    // Phase 05: filter out PRIVATE docs that belong to OTHER projects
+    const filtered =
+      excludedDocIds.size > 0
+        ? results.filter((r) => !excludedDocIds.has(r.documentId))
+        : results;
+    // Also de-dupe against project-doc evidence (don't show the same chunk twice)
+    const projectChunkIds = new Set(
+      projectDocEvidence.map((p) => `${p.documentId}:${p.pageNumber}`),
+    );
+    const deduped = filtered.filter(
+      (r) => !projectChunkIds.has(`${r.documentId}:${r.pageNumber}`),
+    );
+    documentEvidence = deduped.map((r, i) => ({
       id: `DOC-${i + 1}`,
       type: "document",
       title: r.document?.title || "Unknown",
@@ -242,6 +375,21 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
         documentEvidence.map(s => `[${s.id}] ${s.title} | Page ${s.pageNumber}${s.sectionTitle ? ` | ${s.sectionTitle}` : ""}\n${s.content}`).join("\n\n") +
         "\n\n";
     }
+  }
+
+  // Prepend project-doc evidence to the package (after the regular block has
+  // been built) so PROJECT-DOC-N appears FIRST in the user message.
+  if (projectDocEvidence.length > 0) {
+    const projectBlock =
+      "═══ PROJECT DOCUMENTS (linked to this project — primary context) ═══\n\n" +
+      projectDocEvidence
+        .map(
+          (s) =>
+            `[${s.id}] ${s.title} | Page ${s.pageNumber}${s.sectionTitle ? ` | ${s.sectionTitle}` : ""}\n${s.content}`,
+        )
+        .join("\n\n") +
+      "\n\n";
+    evidencePackage = projectBlock + evidencePackage;
   }
 
   // Web search if router says so.
@@ -334,34 +482,70 @@ Document mentions follow:
       evidencePackage;
   }
 
-  const evidenceSources = [...pinnedEvidence, ...documentEvidence, ...webEvidence];
+  const evidenceSources = [
+    ...pinnedEvidence,
+    ...projectDocEvidence,
+    ...documentEvidence,
+    ...webEvidence,
+  ];
 
   // Load document inventory (always — it's tiny metadata, not content).
   // Order is stable (created_at desc) so position numbers don't drift between
-  // turns of the same conversation.
+  // turns of the same conversation. Phase 05: filter out excluded docs (other
+  // projects' PRIVATE material) when in a project so the model doesn't see
+  // titles it isn't allowed to read.
   const { data: allDocs } = await supabaseAdmin
     .from("documents")
-    .select("title, type, classification, language, page_count, status, created_at")
+    .select("id, title, type, classification, language, page_count, status, created_at")
     .eq("status", "ready")
     .order("created_at", { ascending: false });
 
-  const docInventory = (allDocs || [])
+  const visibleDocs =
+    excludedDocIds.size > 0
+      ? (allDocs || []).filter((d) => !excludedDocIds.has(d.id as string))
+      : allDocs || [];
+
+  const docInventory = visibleDocs
     .map(
       (d, i) =>
         `${i + 1}. "${d.title}" — ${d.type}, ${d.classification}, ${d.page_count} pages, ${d.language}`,
     )
     .join("\n");
 
+  // ── Project context block (Phase 05) ──
+  // Injected into BOTH deep and casual prompts when the conversation has a
+  // project_id. Tells the model what project it's in, what the project is
+  // about, and that the PROJECT-DOC blocks below are primary context.
+  const projectContextBlock = projectContext
+    ? `═══ PROJECT CONTEXT ═══
+
+You are working inside the **${projectContext.name}** project.${projectContext.description ? `
+
+Description: ${projectContext.description}` : ""}${projectContext.context_summary ? `
+
+Context summary: ${projectContext.context_summary}` : ""}${counterpartyNames.length > 0 ? `
+
+Counterparties: ${counterpartyNames.join(", ")}` : ""}
+
+The PROJECT-DOC blocks in the user message are this project's linked documents — they are the primary context for any question. Other DOC blocks are general retrieval; WEB blocks are external sources. Cite project documents as [PROJECT-DOC-N] inline. If you reference a counterparty by pronoun ("they", "the developer"), the user means a counterparty above.
+
+`
+    : "";
+
   // Build system prompt based on mode
   let systemPrompt: string;
   if (routing.mode === "deep") {
-    systemPrompt = (await buildDoctrinePrompt(routing.doctrines, "ar")) + "\n\n" + memoryBlock;
+    systemPrompt =
+      projectContextBlock +
+      (await buildDoctrinePrompt(routing.doctrines, "ar")) +
+      "\n\n" +
+      memoryBlock;
   } else {
-    systemPrompt = `You are DocuMind, an intelligent document assistant for a government economic authority. You have access to institutional documents including contracts, laws, reports, and decrees.
+    systemPrompt = projectContextBlock + `You are DocuMind, an intelligent document assistant for a government economic authority. You have access to institutional documents including contracts, laws, reports, and decrees.
 
 ${memoryBlock}
 
-DOCUMENT INVENTORY (${(allDocs || []).length} documents indexed, newest first):
+DOCUMENT INVENTORY (${visibleDocs.length} documents available, newest first):
 ${docInventory || "No documents indexed yet."}
 
 ================ HOW TO ANSWER ================
@@ -469,11 +653,19 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
       documentId: s.documentId,
     }));
 
-  // Send sources (pinned + documents + web, unified)
+  // Send sources (pinned + project docs + documents + web, unified)
   if (evidenceSources.length > 0 || pinnedSourcePills.length > 0) {
     emit("sources", {
       sources: [
         ...pinnedSourcePills,
+        ...projectDocEvidence.map((s) => ({
+          id: s.id,
+          type: s.type,
+          title: s.title,
+          pageNumber: s.pageNumber,
+          sectionTitle: s.sectionTitle,
+          documentId: s.documentId,
+        })),
         ...documentEvidence.map((s) => ({
           id: s.id,
           type: s.type,
@@ -582,6 +774,13 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
       doctrines: routing.doctrines,
       model: modelUsed,
       sources: [
+        ...projectDocEvidence.map((s) => ({
+          id: s.id,
+          type: s.type,
+          title: s.title,
+          pageNumber: s.pageNumber,
+          documentId: s.documentId,
+        })),
         ...documentEvidence.map((s) => ({
           id: s.id,
           type: s.type,
@@ -594,9 +793,10 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
     },
   });
 
-  // Fire-and-forget memory extraction (don't block response close)
+  // Fire-and-forget memory extraction (don't block response close).
+  // New memories inherit the conversation's project_id (Phase 05).
   extractMemories(userMessage, fullText, conversationId)
-    .then((memories) => storeMemories(memories, conversationId))
+    .then((memories) => storeMemories(memories, conversationId, projectId))
     .catch((err) => console.error("Memory extraction error:", err));
 
   return {

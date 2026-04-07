@@ -109,6 +109,7 @@ If nothing durable was discussed, return {"memories": []}.`,
 export async function storeMemories(
   memories: ExtractedMemory[],
   conversationId: string,
+  projectId?: string | null,
 ): Promise<void> {
   if (memories.length === 0) return;
   const rows = memories.map((m) => ({
@@ -117,6 +118,7 @@ export async function storeMemories(
     kind: m.kind,
     entities: m.entities || [],
     importance: m.importance,
+    ...(projectId ? { project_id: projectId } : {}),
   }));
   const { error } = await supabaseAdmin.from("conversation_memory").insert(rows);
   if (error) console.error("Memory store failed:", error);
@@ -135,6 +137,7 @@ export async function retrieveRelevantMemories(
   userMessage: string,
   excludeConversationId?: string | null,
   maxResults = 8,
+  projectId?: string | null,
 ): Promise<ConversationMemory[]> {
   const candidateEntities = extractCandidateEntities(userMessage);
 
@@ -155,12 +158,26 @@ export async function retrieveRelevantMemories(
 
   const memories = data as ConversationMemory[];
 
-  // Score each memory: entity overlap is the strongest signal
+  // Score each memory: entity overlap is the strongest signal.
+  // Project-scoped chat: boost memories tagged with the current project,
+  // penalize memories tagged with a DIFFERENT project (don't leak between deals),
+  // global memories (project_id IS NULL) stay neutral so cross-cutting context
+  // (e.g. "VC won't go below 18% rev share") still surfaces.
   const scored = memories.map((m) => {
     const entityOverlap = candidateEntities.filter((e) =>
-      m.entities.some((me) => me.toLowerCase().includes(e.toLowerCase()) || e.toLowerCase().includes(me.toLowerCase())),
+      m.entities.some(
+        (me) =>
+          me.toLowerCase().includes(e.toLowerCase()) ||
+          e.toLowerCase().includes(me.toLowerCase()),
+      ),
     ).length;
-    const score = entityOverlap * 2 + m.importance;
+    let score = entityOverlap * 2 + m.importance;
+    if (projectId) {
+      const memProjectId = (m as ConversationMemory & { project_id?: string | null })
+        .project_id;
+      if (memProjectId === projectId) score += 3;
+      else if (memProjectId && memProjectId !== projectId) score -= 2;
+    }
     return { memory: m, score };
   });
 
