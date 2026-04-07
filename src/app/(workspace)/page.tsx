@@ -3,18 +3,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput, type ChatInputHandle } from "@/components/chat-input";
-import { X, FileText, Upload as UploadIcon } from "lucide-react";
+import { FileText, Upload as UploadIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Source } from "@/lib/types";
 import { useChat } from "@/lib/hooks/use-chat";
+import { usePdfViewer } from "@/components/pdf-viewer-context";
 
 // ── Types ──
-
-interface PdfState {
-  url: string;
-  page: number;
-  title: string;
-}
 
 interface RecentDoc {
   id: string;
@@ -57,8 +52,8 @@ export default function Home() {
   const [recentDocs, setRecentDocs] = useState<RecentDoc[]>([]);
   const [docCount, setDocCount] = useState<number>(0);
 
-  // PDF viewer
-  const [pdf, setPdf] = useState<PdfState | null>(null);
+  // PDF viewer (lifted to workspace context — see PdfViewerProvider)
+  const { openDocument, closePdf } = usePdfViewer();
 
   // Drag-drop attachments onto the chat area
   const [dragOver, setDragOver] = useState(false);
@@ -85,10 +80,10 @@ export default function Home() {
 
   useEffect(() => {
     if (requestedConvoId && requestedConvoId !== conversationId) {
-      setPdf(null);
+      closePdf();
       loadConversation(requestedConvoId);
     } else if (!requestedConvoId && conversationId !== null) {
-      setPdf(null);
+      closePdf();
       newChat();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,21 +97,20 @@ export default function Home() {
 
   // ── Source click → open PDF (document) or new tab (web) ──
 
-  const handleSourceClick = useCallback(async (source: Source) => {
-    if (source.type === "web") {
-      window.open(source.url, "_blank", "noopener,noreferrer");
-      return;
-    }
-    try {
-      const response = await fetch(`/api/documents/${source.documentId}/url`);
-      const data = await response.json();
-      if (data.url) {
-        setPdf({ url: data.url, page: source.pageNumber, title: source.title });
+  const handleSourceClick = useCallback(
+    async (source: Source) => {
+      if (source.type === "web") {
+        window.open(source.url, "_blank", "noopener,noreferrer");
+        return;
       }
-    } catch {
-      setError("Failed to load document");
-    }
-  }, [setError]);
+      try {
+        await openDocument(source.documentId, source.pageNumber, source.title);
+      } catch {
+        setError("Failed to load document");
+      }
+    },
+    [openDocument, setError],
+  );
 
   // ── Determine UI state ──
   const isIdle = messages.length === 0 && !streaming;
@@ -304,34 +298,6 @@ export default function Home() {
           )}
         </div>
 
-        {/* PDF Viewer panel */}
-        {pdf && (
-          <div className="w-[480px] shrink-0 border-l border-slate-200 bg-white flex flex-col">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                <span className="text-sm text-slate-700 truncate" dir="auto">
-                  {pdf.title}
-                </span>
-                <span className="font-['JetBrains_Mono'] text-[10px] text-slate-400 shrink-0">p.{pdf.page}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPdf(null)}
-                className="text-slate-400 hover:text-slate-700 bg-transparent border-none cursor-pointer p-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1">
-              <iframe
-                src={`${pdf.url}#page=${pdf.page}`}
-                className="w-full h-full border-none"
-                title={pdf.title}
-              />
-            </div>
-          </div>
-        )}
     </div>
   );
 }

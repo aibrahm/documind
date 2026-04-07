@@ -1,5 +1,6 @@
 import { Nav } from "@/components/nav";
 import { ProjectSidebarShell } from "@/components/project-sidebar-shell";
+import { PdfViewerProvider } from "@/components/pdf-viewer-context";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export default async function WorkspaceLayout({
@@ -32,7 +33,7 @@ export default async function WorkspaceLayout({
           projects={projects}
           conversations={conversations}
         />
-        <div className="flex-1 flex min-w-0 overflow-hidden">{children}</div>
+        <PdfViewerProvider>{children}</PdfViewerProvider>
       </div>
     </div>
   );

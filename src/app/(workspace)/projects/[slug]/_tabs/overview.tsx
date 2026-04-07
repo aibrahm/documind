@@ -5,6 +5,7 @@ import type { Database } from "@/lib/database.types";
 import type { UseChatResult } from "@/lib/hooks/use-chat";
 import { ChatInput, type ChatInputHandle } from "@/components/chat-input";
 import { ChatMessage } from "@/components/chat-message";
+import { usePdfViewer } from "@/components/pdf-viewer-context";
 import type { Source } from "@/lib/types";
 import { FileText, Building2, Handshake, MessageSquare } from "lucide-react";
 
@@ -24,6 +25,7 @@ interface OverviewTabProps {
 export function OverviewTab({ project, counts, chat }: OverviewTabProps) {
   const inputRef = useRef<ChatInputHandle>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { openDocument } = usePdfViewer();
   const {
     messages,
     streaming,
@@ -39,14 +41,13 @@ export function OverviewTab({ project, counts, chat }: OverviewTabProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
-  // Source pills currently open in a new tab for web sources;
-  // document sources do nothing in the workspace overview (the
-  // dedicated document viewer lives at /documents/[id]).
+  // Source pills: web sources open in a new tab; document sources open
+  // the workspace-side PDF viewer panel via the PdfViewerProvider context.
   const handleSourceClick = (source: Source) => {
     if (source.type === "web") {
       window.open(source.url, "_blank", "noopener,noreferrer");
     } else {
-      window.open(`/documents/${source.documentId}`, "_blank", "noopener,noreferrer");
+      openDocument(source.documentId, source.pageNumber, source.title);
     }
   };
 
