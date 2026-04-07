@@ -8,7 +8,10 @@ export type AuditAction =
   | "model_call"
   | "login"
   | "classification"
-  | "extraction";
+  | "extraction"
+  | "project.create"
+  | "project.update"
+  | "project.archive";
 
 /**
  * Log an action to the audit trail.
