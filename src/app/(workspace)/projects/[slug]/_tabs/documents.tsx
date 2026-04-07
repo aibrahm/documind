@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { FileText, ExternalLink } from "lucide-react";
+import { FileText, ExternalLink, Plus } from "lucide-react";
 import { Tag } from "@/components/ui-system";
+import { Button } from "@/components/ui/button";
+import { LinkDocumentDialog } from "@/components/link-document-dialog";
 
 interface LinkedDocument {
   id: string;
@@ -21,6 +23,10 @@ interface LinkedDocument {
 export function DocumentsTab({ projectSlug }: { projectSlug: string }) {
   const [docs, setDocs] = useState<LinkedDocument[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +44,28 @@ export function DocumentsTab({ projectSlug }: { projectSlug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [projectSlug]);
+  }, [projectSlug, refreshKey]);
+
+  const linkButton = (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => setLinkOpen(true)}
+      className="gap-1.5"
+    >
+      <Plus className="w-3.5 h-3.5" />
+      Link document
+    </Button>
+  );
+
+  const dialog = (
+    <LinkDocumentDialog
+      projectSlug={projectSlug}
+      open={linkOpen}
+      onOpenChange={setLinkOpen}
+      onLinked={refetch}
+    />
+  );
 
   if (error) {
     return (
@@ -46,6 +73,7 @@ export function DocumentsTab({ projectSlug }: { projectSlug: string }) {
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
           Failed to load documents: {error}
         </div>
+        {dialog}
       </div>
     );
   }
@@ -53,21 +81,25 @@ export function DocumentsTab({ projectSlug }: { projectSlug: string }) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-slate-400">
         Loading documents…
+        {dialog}
       </div>
     );
   }
   if (docs.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="max-w-md text-center space-y-2">
+        <div className="max-w-md text-center space-y-3">
           <FileText className="w-8 h-8 text-slate-300 mx-auto" />
           <p className="text-lg font-semibold text-slate-700">
             No documents linked yet
           </p>
           <p className="text-sm text-slate-400">
-            Upload documents from the Upload page, then link them to this project.
+            Link existing knowledge-base documents to this project, or upload new
+            ones from the Upload page.
           </p>
+          <div className="pt-2">{linkButton}</div>
         </div>
+        {dialog}
       </div>
     );
   }
@@ -75,6 +107,12 @@ export function DocumentsTab({ projectSlug }: { projectSlug: string }) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-2">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] font-['JetBrains_Mono'] font-semibold uppercase tracking-wider text-slate-400">
+            {docs.length} linked
+          </p>
+          {linkButton}
+        </div>
         {docs.map((d) => (
           <Link
             key={d.id}
@@ -106,6 +144,7 @@ export function DocumentsTab({ projectSlug }: { projectSlug: string }) {
           </Link>
         ))}
       </div>
+      {dialog}
     </div>
   );
 }

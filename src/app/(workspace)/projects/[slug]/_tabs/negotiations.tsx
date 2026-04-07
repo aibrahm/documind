@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Handshake } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Handshake, Plus } from "lucide-react";
 import { Tag } from "@/components/ui-system";
+import { Button } from "@/components/ui/button";
+import { CreateNegotiationDialog } from "@/components/create-negotiation-dialog";
 
 interface Negotiation {
   id: string;
@@ -28,6 +30,10 @@ const STATUS_VARIANT: Record<
 export function NegotiationsTab({ projectId }: { projectId: string }) {
   const [negs, setNegs] = useState<Negotiation[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +51,28 @@ export function NegotiationsTab({ projectId }: { projectId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, refreshKey]);
+
+  const createButton = (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => setCreateOpen(true)}
+      className="gap-1.5"
+    >
+      <Plus className="w-3.5 h-3.5" />
+      New negotiation
+    </Button>
+  );
+
+  const dialog = (
+    <CreateNegotiationDialog
+      projectId={projectId}
+      open={createOpen}
+      onOpenChange={setCreateOpen}
+      onCreated={refetch}
+    />
+  );
 
   if (error) {
     return (
@@ -53,6 +80,7 @@ export function NegotiationsTab({ projectId }: { projectId: string }) {
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
           Failed to load negotiations: {error}
         </div>
+        {dialog}
       </div>
     );
   }
@@ -60,23 +88,25 @@ export function NegotiationsTab({ projectId }: { projectId: string }) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-slate-400">
         Loading negotiations…
+        {dialog}
       </div>
     );
   }
   if (negs.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="max-w-md text-center space-y-2 px-6">
+        <div className="max-w-md text-center space-y-3 px-6">
           <Handshake className="w-8 h-8 text-slate-300 mx-auto" />
           <p className="text-lg font-semibold text-slate-700">
             No negotiations yet
           </p>
           <p className="text-sm text-slate-400">
             Create a negotiation thread to track a specific deal scenario
-            (e.g., &ldquo;Scenario 1 — Developer + Partnership&rdquo;). The
-            deal-room UI lands in Phase 06.
+            (e.g., &ldquo;Scenario A — Developer + Partnership&rdquo;).
           </p>
+          <div className="pt-2">{createButton}</div>
         </div>
+        {dialog}
       </div>
     );
   }
@@ -84,6 +114,12 @@ export function NegotiationsTab({ projectId }: { projectId: string }) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-3">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[11px] font-['JetBrains_Mono'] font-semibold uppercase tracking-wider text-slate-400">
+            {negs.length} negotiation{negs.length === 1 ? "" : "s"}
+          </p>
+          {createButton}
+        </div>
         {negs.map((n) => (
           <div
             key={n.id}
@@ -119,6 +155,7 @@ export function NegotiationsTab({ projectId }: { projectId: string }) {
           </div>
         ))}
       </div>
+      {dialog}
     </div>
   );
 }
