@@ -90,8 +90,8 @@ export default function DoctrinesPage() {
   );
 
   return (
-    <div className="flex flex-1 flex-col bg-white overflow-hidden">
-      <main className="flex-1 overflow-y-auto">
+    <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
+      <main className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-3xl mx-auto px-6 py-10">
           {/* Header */}
           <h1 className="text-[28px] font-semibold text-slate-900 tracking-tight mb-1">Doctrines</h1>

@@ -164,8 +164,8 @@ export default function DocumentsPage() {
   );
 
   return (
-    <div className="flex flex-1 flex-col bg-white overflow-hidden">
-      <main className="flex-1 overflow-y-auto">
+    <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
+      <main className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-5xl mx-auto px-6 py-10">
           {/* Header */}
           <div className="flex items-end justify-between mb-2">

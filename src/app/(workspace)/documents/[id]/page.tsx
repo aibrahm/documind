@@ -197,7 +197,7 @@ export default function DocPage({
   /* 404 state */
   if (notFound) {
     return (
-      <div className="flex flex-1 flex-col bg-white overflow-hidden">
+      <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
         <div className="flex-1 flex items-center justify-center flex-col gap-2">
           <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-2">
             <FileText className="w-5 h-5 text-slate-300" />
@@ -219,7 +219,7 @@ export default function DocPage({
   /* Loading state */
   if (!doc) {
     return (
-      <div className="flex flex-1 flex-col bg-white overflow-hidden">
+      <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
         <div className="flex-1 flex items-center justify-center">
           <p className="text-[13px] text-slate-400">Loading document...</p>
         </div>
@@ -261,7 +261,7 @@ export default function DocPage({
   ];
 
   return (
-    <div className="flex flex-1 flex-col bg-white overflow-hidden">
+    <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
       <main className="flex overflow-hidden flex-1 min-h-0">
         {/* Left panel — metadata / extraction */}
         <div className="w-[360px] shrink-0 overflow-auto bg-white border-r border-slate-200 flex flex-col">
