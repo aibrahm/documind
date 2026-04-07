@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import {
   Plus,
@@ -93,6 +93,31 @@ export function ProjectSidebar({
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+
+  // Hydrate expanded-projects from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("documind:expanded-projects");
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) setExpandedProjects(new Set(arr));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Persist expanded-projects on change
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "documind:expanded-projects",
+        JSON.stringify([...expandedProjects]),
+      );
+    } catch {
+      // ignore
+    }
+  }, [expandedProjects]);
 
   // Group conversations by project_id
   const convosByProject = new Map<string | null, ConversationSummary[]>();

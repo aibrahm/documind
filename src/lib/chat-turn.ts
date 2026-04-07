@@ -226,26 +226,31 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
 
   // For pinned entities, ALSO run a name-based hybrid search across the corpus.
   // This catches documents that mention the entity but weren't formally linked
-  // in document_entities (which is most documents — entity extraction is incomplete).
+  // in document_entities (which is most documents — entity extraction is
+  // incomplete). All searches are run in PARALLEL — the previous serial loop
+  // could fire 6+ embedding+search calls back-to-back, adding seconds of
+  // latency for users with multiple pinned entities.
   if (pinnedEntityRows.length > 0) {
+    const queries: string[] = [];
     for (const ent of pinnedEntityRows) {
-      // Search using both the Arabic and English names
-      const queries = [ent.name, ent.name_en].filter(Boolean) as string[];
-      for (const q of queries) {
-        try {
-          const nameResults = await hybridSearch({
-            query: q,
-            matchCount: 4,
-            useRerank: false,
-            currentOnly: true,
-          });
-          for (const r of nameResults) {
-            if (!allPinnedDocIds.includes(r.documentId)) {
-              allPinnedDocIds.push(r.documentId);
-            }
-          }
-        } catch {
-          /* swallow — name search is best-effort */
+      if (ent.name) queries.push(ent.name);
+      if (ent.name_en && ent.name_en !== ent.name) queries.push(ent.name_en);
+    }
+    const settled = await Promise.allSettled(
+      queries.map((q) =>
+        hybridSearch({
+          query: q,
+          matchCount: 4,
+          useRerank: false,
+          currentOnly: true,
+        }),
+      ),
+    );
+    for (const result of settled) {
+      if (result.status !== "fulfilled") continue;
+      for (const r of result.value) {
+        if (!allPinnedDocIds.includes(r.documentId)) {
+          allPinnedDocIds.push(r.documentId);
         }
       }
     }
@@ -352,12 +357,14 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
       excludedDocIds.size > 0
         ? results.filter((r) => !excludedDocIds.has(r.documentId))
         : results;
-    // Also de-dupe against project-doc evidence (don't show the same chunk twice)
-    const projectChunkIds = new Set(
-      projectDocEvidence.map((p) => `${p.documentId}:${p.pageNumber}`),
+    // De-dupe against project-doc evidence by DOCUMENT id (not chunk).
+    // If the same doc surfaced in both passes, only the project-scoped pass
+    // gets the evidence label — global retrieval skips the entire document.
+    const projectDocIdSet = new Set(
+      projectDocEvidence.map((p) => p.documentId),
     );
     const deduped = filtered.filter(
-      (r) => !projectChunkIds.has(`${r.documentId}:${r.pageNumber}`),
+      (r) => !projectDocIdSet.has(r.documentId),
     );
     documentEvidence = deduped.map((r, i) => ({
       id: `DOC-${i + 1}`,
