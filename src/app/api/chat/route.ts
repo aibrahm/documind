@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
     attachments?: InboundAttachment[];
     pinnedDocumentIds?: string[];
     pinnedEntityIds?: string[];
+    project_id?: string;
   };
   try {
     body = await request.json();
@@ -56,12 +57,21 @@ export async function POST(request: NextRequest) {
   }
 
   const userMessage = (message || "").trim();
+  const projectId =
+    typeof body.project_id === "string" && body.project_id.length > 0
+      ? body.project_id
+      : null;
 
   // ── Create conversation row ──
   const title = userMessage.length > 60 ? userMessage.slice(0, 60) + "…" : userMessage;
   const { data: convo, error: convoErr } = await supabaseAdmin
     .from("conversations")
-    .insert({ title, mode: "chat", query: userMessage })
+    .insert({
+      title,
+      mode: "chat",
+      query: userMessage,
+      ...(projectId ? { project_id: projectId } : {}),
+    })
     .select("id")
     .single();
 
