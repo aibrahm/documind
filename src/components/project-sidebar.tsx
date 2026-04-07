@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   PanelLeftClose,
@@ -89,6 +90,7 @@ export function ProjectSidebar({
   isOpen,
   onToggle,
 }: ProjectSidebarProps) {
+  const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
@@ -167,6 +169,41 @@ export function ProjectSidebar({
         window.alert(result.error || "Failed to archive project");
       }
     });
+  };
+
+  const handleConversationRename = async (c: ConversationSummary) => {
+    setMenuOpen(null);
+    const next = window.prompt("Rename conversation", c.title);
+    if (!next || !next.trim() || next.trim() === c.title) return;
+    try {
+      const res = await fetch(`/api/conversations/${c.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next.trim() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      router.refresh();
+    } catch (err) {
+      window.alert(
+        `Failed to rename: ${err instanceof Error ? err.message : "unknown error"}`,
+      );
+    }
+  };
+
+  const handleConversationDelete = async (c: ConversationSummary) => {
+    setMenuOpen(null);
+    if (!window.confirm(`Delete "${c.title}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/conversations/${c.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      router.refresh();
+    } catch (err) {
+      window.alert(
+        `Failed to delete: ${err instanceof Error ? err.message : "unknown error"}`,
+      );
+    }
   };
 
   return (
@@ -309,23 +346,23 @@ export function ProjectSidebar({
                           No conversations yet
                         </p>
                       ) : (
-                        projectConvos.slice(0, 10).map((c) => {
-                          const active = activeConversationId === c.id;
-                          return (
-                            <Link
-                              key={c.id}
-                              href={`/?conversation=${c.id}`}
-                              className={`block mx-2 px-2 py-1 rounded text-[12px] truncate no-underline transition-colors ${
-                                active
-                                  ? "bg-slate-200/70 text-slate-900 font-medium"
-                                  : "text-slate-600 hover:bg-slate-200/40"
-                              }`}
-                              dir="auto"
-                            >
-                              {c.title}
-                            </Link>
-                          );
-                        })
+                        projectConvos.slice(0, 10).map((c) => (
+                          <ConversationRow
+                            key={c.id}
+                            conversation={c}
+                            isActive={activeConversationId === c.id}
+                            menuKey={`conv-${c.id}`}
+                            isMenuOpen={menuOpen === `conv-${c.id}`}
+                            onToggleMenu={() =>
+                              setMenuOpen(
+                                menuOpen === `conv-${c.id}` ? null : `conv-${c.id}`,
+                              )
+                            }
+                            onRename={() => handleConversationRename(c)}
+                            onDelete={() => handleConversationDelete(c)}
+                            sizeVariant="nested"
+                          />
+                        ))
                       )}
                     </div>
                   )}
@@ -355,23 +392,23 @@ export function ProjectSidebar({
                   <p className="px-3 mb-0.5 text-[9px] font-['JetBrains_Mono'] uppercase tracking-wider text-slate-300">
                     {bucket}
                   </p>
-                  {items.map((c) => {
-                    const active = activeConversationId === c.id;
-                    return (
-                      <Link
-                        key={c.id}
-                        href={`/?conversation=${c.id}`}
-                        className={`block mx-2 px-2.5 py-1.5 rounded text-[12px] truncate no-underline transition-colors ${
-                          active
-                            ? "bg-slate-200/70 text-slate-900 font-medium"
-                            : "text-slate-600 hover:bg-slate-200/40"
-                        }`}
-                        dir="auto"
-                      >
-                        {c.title}
-                      </Link>
-                    );
-                  })}
+                  {items.map((c) => (
+                    <ConversationRow
+                      key={c.id}
+                      conversation={c}
+                      isActive={activeConversationId === c.id}
+                      menuKey={`conv-${c.id}`}
+                      isMenuOpen={menuOpen === `conv-${c.id}`}
+                      onToggleMenu={() =>
+                        setMenuOpen(
+                          menuOpen === `conv-${c.id}` ? null : `conv-${c.id}`,
+                        )
+                      }
+                      onRename={() => handleConversationRename(c)}
+                      onDelete={() => handleConversationDelete(c)}
+                      sizeVariant="general"
+                    />
+                  ))}
                 </div>
               );
             })}
@@ -393,6 +430,90 @@ export function ProjectSidebar({
 
       {/* Create project dialog */}
       <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} />
+    </div>
+  );
+}
+
+// ── Conversation row with hover-revealed rename/delete menu ──
+
+interface ConversationRowProps {
+  conversation: ConversationSummary;
+  isActive: boolean;
+  menuKey: string;
+  isMenuOpen: boolean;
+  onToggleMenu: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  sizeVariant: "nested" | "general";
+}
+
+function ConversationRow({
+  conversation,
+  isActive,
+  isMenuOpen,
+  onToggleMenu,
+  onRename,
+  onDelete,
+  sizeVariant,
+}: ConversationRowProps) {
+  const padding = sizeVariant === "nested" ? "px-2 py-1" : "px-2.5 py-1.5";
+
+  return (
+    <div className="group relative mx-2">
+      <Link
+        href={`/?conversation=${conversation.id}`}
+        className={`block ${padding} rounded text-[12px] no-underline transition-colors pr-7 truncate ${
+          isActive
+            ? "bg-slate-200/70 text-slate-900 font-medium"
+            : "text-slate-600 hover:bg-slate-200/40"
+        }`}
+        dir="auto"
+        title={conversation.title}
+      >
+        {conversation.title}
+      </Link>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onToggleMenu();
+        }}
+        className={`absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-white border-none bg-transparent cursor-pointer transition-opacity ${
+          isActive || isMenuOpen
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100"
+        }`}
+        title="More"
+      >
+        <MoreHorizontal className="w-3 h-3" />
+      </button>
+      {isMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-20"
+            onClick={onToggleMenu}
+          />
+          <div className="absolute right-0 top-7 z-30 bg-white border border-slate-200 rounded-md shadow-lg py-1 min-w-[120px]">
+            <button
+              type="button"
+              onClick={onRename}
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer"
+            >
+              <Pencil className="w-3 h-3" />
+              Rename
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 border-none bg-transparent cursor-pointer"
+            >
+              <Trash2 className="w-3 h-3" />
+              Delete
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
