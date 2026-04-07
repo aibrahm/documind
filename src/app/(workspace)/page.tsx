@@ -2,32 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChatMessage } from "@/components/chat-message";
-import {
-  ChatInput,
-  type Attachment,
-  type ChatInputHandle,
-} from "@/components/chat-input";
+import { ChatInput, type ChatInputHandle } from "@/components/chat-input";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { X, FileText, Upload as UploadIcon, MessageSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { Source, AttachmentMeta, PinnedItem } from "@/lib/types";
+import type { Source } from "@/lib/types";
+import { useChat } from "@/lib/hooks/use-chat";
 
 // ── Types ──
-
-interface MessageMeta {
-  mode?: string;
-  doctrines?: string[];
-  sources?: Source[];
-  attachments?: AttachmentMeta[];
-  pinned?: PinnedItem[];
-}
-
-interface ChatMsg {
-  id?: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  metadata?: MessageMeta;
-}
 
 interface Conversation {
   id: string;
@@ -50,32 +32,37 @@ interface RecentDoc {
   status: string;
 }
 
-// ── Helpers ──
-
-function routingLabel(mode: string, doctrines?: string[]): string {
-  if (mode === "search") return "Searching documents...";
-  if (mode === "casual") return "Thinking...";
-  if (mode === "deep" && doctrines && doctrines.length > 0) {
-    return `Analyzing with ${doctrines.join(" + ")} doctrines...`;
-  }
-  return "Analyzing...";
-}
-
 // ── Main Component ──
 
 export default function Home() {
   const router = useRouter();
-  // Core state
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [streaming, setStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [routingStatus, setRoutingStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  // Sidebar
+  // Sidebar conversations list (separate from useChat — sidebar owns it)
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+
+  const refreshConversations = useCallback(() => {
+    fetch("/api/conversations")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.conversations) setConversations(data.conversations);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Chat state via hook
+  const {
+    conversationId,
+    messages,
+    streaming,
+    streamingContent,
+    routingStatus,
+    error,
+    send: sendMessage,
+    loadConversation,
+    newChat,
+    setError,
+  } = useChat({}, { onConversationCreated: refreshConversations });
 
   // Empty state data
   const [recentDocs, setRecentDocs] = useState<RecentDoc[]>([]);
@@ -91,27 +78,21 @@ export default function Home() {
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  // ── Load conversations on mount ──
+  // ── Load conversations + recent docs on mount ──
 
   useEffect(() => {
-    fetch("/api/conversations")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.conversations) setConversations(data.conversations);
-      })
-      .catch(() => {});
+    refreshConversations();
 
     fetch("/api/documents")
       .then((r) => r.json())
       .then((data) => {
         const docs: RecentDoc[] = data.documents || [];
         setDocCount(docs.length);
-        setRecentDocs(docs.filter(d => d.status === "ready").slice(0, 4));
+        setRecentDocs(docs.filter((d) => d.status === "ready").slice(0, 4));
       })
       .catch(() => {});
-  }, []);
+  }, [refreshConversations]);
 
   // ── Auto-scroll ──
 
@@ -119,248 +100,20 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
-  // ── Parse SSE stream ──
+  // ── Wrap loadConversation/newChat to also reset PDF panel ──
 
-  const parseSSE = useCallback(
-    async (response: Response, isNew: boolean) => {
-      const reader = response.body?.getReader();
-      if (!reader) return;
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let pendingSources: Source[] = [];
-      let pendingMode = "";
-      let pendingDoctrines: string[] = [];
-      let accumulated = "";
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const jsonStr = line.slice(6);
-
-            let event: Record<string, unknown>;
-            try {
-              event = JSON.parse(jsonStr);
-            } catch {
-              continue;
-            }
-
-            switch (event.type) {
-              case "session": {
-                const sessionId = event.id as string;
-                setConversationId(sessionId);
-                break;
-              }
-              case "routing": {
-                pendingMode = (event.mode as string) || "";
-                pendingDoctrines = (event.doctrines as string[]) || [];
-                setRoutingStatus(routingLabel(pendingMode, pendingDoctrines));
-                break;
-              }
-              case "sources": {
-                // Tool-discovered web sources are appended (deduped by id)
-                const newSources = (event.sources as Source[]) || [];
-                const existingIds = new Set(pendingSources.map((s) => s.id));
-                pendingSources = [
-                  ...pendingSources,
-                  ...newSources.filter((s) => !existingIds.has(s.id)),
-                ];
-                break;
-              }
-              case "tool": {
-                // Autonomous tool call from Claude (e.g. web_search)
-                if (event.status === "start") {
-                  setRoutingStatus(`🔍 Searching the web: ${event.query}`);
-                } else if (event.status === "end") {
-                  setRoutingStatus(null);
-                }
-                break;
-              }
-              case "text": {
-                accumulated += event.content as string;
-                setStreamingContent(accumulated);
-                setRoutingStatus(null);
-                break;
-              }
-              case "done": {
-                // Finalize assistant message
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    role: "assistant",
-                    content: accumulated,
-                    metadata: {
-                      mode: pendingMode,
-                      doctrines: pendingDoctrines.length > 0 ? pendingDoctrines : undefined,
-                      sources: pendingSources.length > 0 ? pendingSources : undefined,
-                    },
-                  },
-                ]);
-                setStreamingContent("");
-                setRoutingStatus(null);
-                setStreaming(false);
-                break;
-              }
-              case "error": {
-                setError((event.message as string) || "Something went wrong");
-                setStreaming(false);
-                setStreamingContent("");
-                setRoutingStatus(null);
-                break;
-              }
-            }
-          }
-        }
-      } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          setError("Connection lost. Please try again.");
-          setStreaming(false);
-          setStreamingContent("");
-        }
-      }
-
-      // Refresh sidebar after new conversation
-      if (isNew) {
-        fetch("/api/conversations")
-          .then((r) => r.json())
-          .then((data) => {
-            if (data.conversations) setConversations(data.conversations);
-          })
-          .catch(() => {});
-      }
+  const loadConversationAndClearPdf = useCallback(
+    async (id: string) => {
+      setPdf(null);
+      await loadConversation(id);
     },
-    []
+    [loadConversation],
   );
 
-  // ── Send message ──
-
-  const sendMessage = useCallback(
-    async (text: string, attachments: Attachment[] = [], pinned: PinnedItem[] = []) => {
-      setError(null);
-
-      const attachmentMeta: AttachmentMeta[] = attachments.map((a) => ({
-        title: a.title,
-        pageCount: a.pageCount,
-        size: a.size,
-      }));
-
-      // Add user message (with attachment + pinned meta for rendering chips)
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "user",
-          content: text,
-          metadata: {
-            ...(attachmentMeta.length > 0 ? { attachments: attachmentMeta } : {}),
-            ...(pinned.length > 0 ? { pinned } : {}),
-          },
-        },
-      ]);
-      setStreaming(true);
-      setStreamingContent("");
-      setRoutingStatus(null);
-
-      // Abort any existing request
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      try {
-        const isNew = !conversationId;
-        const url = conversationId ? `/api/chat/${conversationId}` : "/api/chat";
-
-        const pinnedDocumentIds = pinned
-          .filter((p) => p.kind === "document")
-          .map((p) => p.id);
-        const pinnedEntityIds = pinned
-          .filter((p) => p.kind === "entity")
-          .map((p) => p.id);
-
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: text,
-            attachments: attachments.map((a) => ({
-              title: a.title,
-              content: a.content,
-              pageCount: a.pageCount,
-              size: a.size,
-            })),
-            pinnedDocumentIds,
-            pinnedEntityIds,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error((errData as Record<string, string>).error || "Request failed");
-        }
-
-        await parseSSE(response, isNew);
-      } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          setError((err as Error).message || "Something went wrong");
-          setStreaming(false);
-          setStreamingContent("");
-          setRoutingStatus(null);
-        }
-      }
-    },
-    [conversationId, parseSSE],
-  );
-
-  // ── Load conversation from sidebar ──
-
-  const loadConversation = useCallback(async (id: string) => {
-    setError(null);
-    setStreaming(false);
-    setStreamingContent("");
-    setRoutingStatus(null);
+  const newChatAndClearPdf = useCallback(() => {
     setPdf(null);
-
-    try {
-      const response = await fetch(`/api/chat/${id}/messages`);
-      const data = await response.json();
-
-      if (data.messages) {
-        const loaded: ChatMsg[] = data.messages.map(
-          (m: { id: string; role: string; content: string; metadata?: MessageMeta }) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant" | "system",
-            content: m.content,
-            metadata: m.metadata || undefined,
-          })
-        );
-        setMessages(loaded);
-        setConversationId(id);
-      }
-    } catch {
-      setError("Failed to load conversation");
-    }
-  }, []);
-
-  // ── New chat ──
-
-  const newChat = useCallback(() => {
-    abortRef.current?.abort();
-    setConversationId(null);
-    setMessages([]);
-    setStreaming(false);
-    setStreamingContent("");
-    setRoutingStatus(null);
-    setError(null);
-    setPdf(null);
-  }, []);
+    newChat();
+  }, [newChat]);
 
   // ── Rename / delete conversations ──
 
@@ -380,17 +133,15 @@ export default function Home() {
   const deleteConversation = useCallback(async (id: string) => {
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (conversationId === id) {
-      setConversationId(null);
-      setMessages([]);
-      setStreamingContent("");
-      setStreaming(false);
+      newChat();
+      setPdf(null);
     }
     try {
       await fetch(`/api/conversations/${id}`, { method: "DELETE" });
     } catch {
       setError("Failed to delete");
     }
-  }, [conversationId]);
+  }, [conversationId, newChat, setError]);
 
   // ── Source click → open PDF (document) or new tab (web) ──
 
@@ -419,8 +170,8 @@ export default function Home() {
         <ChatSidebar
           conversations={conversations}
           activeId={conversationId}
-          onSelect={loadConversation}
-          onNew={newChat}
+          onSelect={loadConversationAndClearPdf}
+          onNew={newChatAndClearPdf}
           onRename={renameConversation}
           onDelete={deleteConversation}
           isOpen={sidebarOpen}
@@ -538,7 +289,7 @@ export default function Home() {
                           <button
                             key={c.id}
                             type="button"
-                            onClick={() => loadConversation(c.id)}
+                            onClick={() => loadConversationAndClearPdf(c.id)}
                             className="w-full flex items-center gap-2.5 text-left bg-transparent hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg px-2.5 py-2 transition-all cursor-pointer"
                           >
                             <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0" />
