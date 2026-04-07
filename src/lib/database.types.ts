@@ -93,6 +93,7 @@ export type Database = {
           id: string
           importance: number | null
           kind: string
+          project_id: string | null
           text: string
         }
         Insert: {
@@ -102,6 +103,7 @@ export type Database = {
           id?: string
           importance?: number | null
           kind: string
+          project_id?: string | null
           text: string
         }
         Update: {
@@ -111,6 +113,7 @@ export type Database = {
           id?: string
           importance?: number | null
           kind?: string
+          project_id?: string | null
           text?: string
         }
         Relationships: [
@@ -119,6 +122,13 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_memory_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -130,6 +140,7 @@ export type Database = {
           id: string
           mode: string
           model: string | null
+          project_id: string | null
           query: string
           response: string | null
           scores: Json | null
@@ -144,6 +155,7 @@ export type Database = {
           id?: string
           mode?: string
           model?: string | null
+          project_id?: string | null
           query: string
           response?: string | null
           scores?: Json | null
@@ -158,6 +170,7 @@ export type Database = {
           id?: string
           mode?: string
           model?: string | null
+          project_id?: string | null
           query?: string
           response?: string | null
           scores?: Json | null
@@ -166,7 +179,15 @@ export type Database = {
           title?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "conversations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       doctrines: {
         Row: {
@@ -513,6 +534,219 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      negotiation_documents: {
+        Row: {
+          added_at: string
+          document_id: string
+          negotiation_id: string
+          role: string | null
+        }
+        Insert: {
+          added_at?: string
+          document_id: string
+          negotiation_id: string
+          role?: string | null
+        }
+        Update: {
+          added_at?: string
+          document_id?: string
+          negotiation_id?: string
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negotiation_documents_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negotiation_documents_negotiation_id_fkey"
+            columns: ["negotiation_id"]
+            isOneToOne: false
+            referencedRelation: "negotiations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      negotiations: {
+        Row: {
+          closed_at: string | null
+          counterparty_entity_id: string | null
+          created_at: string
+          id: string
+          key_terms: Json | null
+          name: string
+          opened_at: string
+          project_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          closed_at?: string | null
+          counterparty_entity_id?: string | null
+          created_at?: string
+          id?: string
+          key_terms?: Json | null
+          name: string
+          opened_at?: string
+          project_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          closed_at?: string | null
+          counterparty_entity_id?: string | null
+          created_at?: string
+          id?: string
+          key_terms?: Json | null
+          name?: string
+          opened_at?: string
+          project_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "negotiations_counterparty_entity_id_fkey"
+            columns: ["counterparty_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "negotiations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_companies: {
+        Row: {
+          added_at: string
+          entity_id: string
+          project_id: string
+          role: string
+        }
+        Insert: {
+          added_at?: string
+          entity_id: string
+          project_id: string
+          role?: string
+        }
+        Update: {
+          added_at?: string
+          entity_id?: string
+          project_id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_companies_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_companies_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_documents: {
+        Row: {
+          added_at: string
+          added_by: string | null
+          document_id: string
+          project_id: string
+          role: string | null
+        }
+        Insert: {
+          added_at?: string
+          added_by?: string | null
+          document_id: string
+          project_id: string
+          role?: string | null
+        }
+        Update: {
+          added_at?: string
+          added_by?: string | null
+          document_id?: string
+          project_id?: string
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_documents_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_documents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          closed_at: string | null
+          color: string | null
+          context_summary: string | null
+          created_at: string
+          description: string | null
+          icon: string | null
+          id: string
+          name: string
+          slug: string
+          start_date: string | null
+          status: string
+          target_close: string | null
+          updated_at: string
+        }
+        Insert: {
+          closed_at?: string | null
+          color?: string | null
+          context_summary?: string | null
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name: string
+          slug: string
+          start_date?: string | null
+          status?: string
+          target_close?: string | null
+          updated_at?: string
+        }
+        Update: {
+          closed_at?: string | null
+          color?: string | null
+          context_summary?: string | null
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name?: string
+          slug?: string
+          start_date?: string | null
+          status?: string
+          target_close?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
