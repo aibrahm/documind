@@ -4,6 +4,7 @@ import { getOpenAI } from "./clients";
 import { canonicalizeEntities, normalizeName, similarity, type CanonicalEntity } from "./entities";
 import { embedQuery } from "./embeddings";
 import { PDFParse } from "pdf-parse";
+import { pdf as pdfToImg } from "pdf-to-img";
 
 /**
  * THE LIBRARIAN AGENT
@@ -165,10 +166,137 @@ Be precise and concise. This is a fast analysis pass.`,
     ],
   });
 
-  const parsed = JSON.parse(res.choices[0].message.content || "{}");
+  const rawContent = res.choices[0].message.content || "{}";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (err) {
+    console.error("librarian.quickAnalyze: JSON.parse failed:", (err as Error).message);
+    parsed = {};
+  }
   return {
     title: parsed.title || fileName.replace(/\.pdf$/i, ""),
     suggestedTitle: parsed.suggestedTitle || parsed.title || fileName.replace(/\.pdf$/i, ""),
+    documentType: parsed.documentType || "other",
+    language: parsed.language || "ar",
+    classification: parsed.classification || "PRIVATE",
+    classificationReason: parsed.classificationReason || "",
+    entities: Array.isArray(parsed.entities) ? parsed.entities : [],
+  };
+}
+
+/**
+ * Vision-based variant of quickAnalyze for scanned/image-only PDFs where
+ * pdf-parse returns no usable text. Renders the first page to PNG and uses
+ * GPT-4o vision for the same JSON output schema. Slightly slower (~3s) and
+ * costs ~$0.001 more per upload, but it actually classifies scanned legal
+ * docs correctly instead of falling back to "other".
+ */
+async function quickAnalyzeFromImage(
+  fileBuffer: Buffer,
+  fileName: string,
+): Promise<QuickAnalysis> {
+  // Render only the first page (cheap)
+  let firstPageBase64: string | null = null;
+  try {
+    for await (const page of await pdfToImg(fileBuffer, { scale: 2 })) {
+      firstPageBase64 = Buffer.from(page).toString("base64");
+      break; // Only need the first page
+    }
+  } catch (err) {
+    console.error("librarian.quickAnalyzeFromImage: pdf-to-img failed:", (err as Error).message);
+  }
+
+  if (!firstPageBase64) {
+    // Even rendering failed — return the dumb fallback
+    return {
+      title: fileName.replace(/\.pdf$/i, ""),
+      suggestedTitle: fileName.replace(/\.pdf$/i, "").replace(/[_-]+/g, " "),
+      documentType: "other",
+      language: "ar",
+      classification: "PRIVATE",
+      classificationReason:
+        "Could not render PDF for vision analysis. Full extraction will run on confirm.",
+      entities: [],
+    };
+  }
+
+  const openai = getOpenAI();
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
+    temperature: 0,
+    max_tokens: 2000,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `You are the librarian for a government economic authority's document intelligence system. You analyze the FIRST PAGE IMAGE of a new document (the PDF was image-only / scanned, so we couldn't extract text directly) to help organize the knowledge base.
+
+Return JSON:
+{
+  "title": "exact title as shown on the page, in original language",
+  "suggestedTitle": "cleaned-up canonical title",
+  "documentType": "memo | contract | mou | law | decree | report | presentation | letter | financial | policy | other",
+  "language": "ar | en | mixed",
+  "classification": "PRIVATE | PUBLIC | DOCTRINE",
+  "classificationReason": "one sentence why",
+  "entities": [
+    {"name": "entity name", "type": "company|organization|authority|ministry|person|place|project|law", "nameEn": "English name if Arabic original"}
+  ]
+}
+
+CLASSIFICATION GUIDE:
+- PRIVATE: internal memos, drafts, financial proposals, negotiations
+- PUBLIC: published laws (مشروع قانون / قانون رقم), decrees (قرار / مرسوم), official reports, public studies
+- DOCTRINE: foundational policy documents (rare)
+
+DOCUMENT TYPE HINTS (Arabic):
+- "مشروع قانون" / "قانون رقم" → law
+- "قرار رقم" / "مرسوم" → decree
+- "مذكرة" → memo
+- "عقد" → contract
+- "اتفاقية" → mou
+- "تقرير" → report
+- "خطة" / "دراسة" → report or policy
+
+Arabic legal documents that mention تعديل (amendment), أحكام (provisions), or refer to existing law numbers are typically classification=PUBLIC, type=law.
+
+Be precise. This is a fast analysis pass.`,
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `File name: ${fileName}\n\nClassify this document from its first page. Return JSON.`,
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:image/png;base64,${firstPageBase64}`,
+              detail: "high",
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const rawContent = res.choices[0].message.content || "{}";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (err) {
+    console.error("librarian.quickAnalyzeFromImage: JSON.parse failed:", (err as Error).message);
+    parsed = {};
+  }
+
+  return {
+    title: parsed.title || fileName.replace(/\.pdf$/i, ""),
+    suggestedTitle:
+      parsed.suggestedTitle || parsed.title || fileName.replace(/\.pdf$/i, ""),
     documentType: parsed.documentType || "other",
     language: parsed.language || "ar",
     classification: parsed.classification || "PRIVATE",
@@ -574,25 +702,27 @@ export async function analyzeUpload(
   // Step 1: Quick extract (no vision, just pdf-parse)
   const { text, pageCount } = await quickExtract(fileBuffer);
 
-  // If pdf-parse returned nothing, the file is likely scanned. We still want
-  // to give the user something to confirm — fall back to filename-derived data.
-  const usableText = text.trim().length >= 100 ? text : "";
+  // If pdf-parse returned no real content, the file is likely scanned/image-
+  // only. Fall back to vision-based quick analysis. We check the
+  // post-stripped length: pdf-parse injects "-- N of M --" page markers even
+  // for fully image-only PDFs, so a naive length check (>= 100) was passing
+  // junk input through to the text path and producing garbage classifications
+  // ("type=other, no entities, classificationReason: appears to be an
+  // internal file with no clear public content").
+  const stripped = text
+    .replace(/--\s*\d+\s*of\s*\d+\s*--/g, " ") // page markers from pdf-parse
+    .replace(/\s+/g, " ")
+    .trim();
+  const usableText = stripped.length >= 100 ? text : "";
 
-  // Step 2: Quick analyze (one LLM call) — title, type, language, classification, entities
+  // Step 2: Quick analyze — text path is one cheap GPT-4o-mini call;
+  // image path is one ~3s GPT-4o vision call. The image path eliminates
+  // the "type=other, lang=ar, no entities" failure mode for scanned PDFs.
   let analysis: QuickAnalysis;
   if (usableText) {
     analysis = await quickAnalyze(usableText, fileName);
   } else {
-    // Fallback for image-only PDFs
-    analysis = {
-      title: fileName.replace(/\.pdf$/i, ""),
-      suggestedTitle: fileName.replace(/\.pdf$/i, "").replace(/[_-]+/g, " "),
-      documentType: "other",
-      language: "ar",
-      classification: "PRIVATE",
-      classificationReason: "Unable to read PDF text — assuming PRIVATE by default. Full vision extraction will run on confirm.",
-      entities: [],
-    };
+    analysis = await quickAnalyzeFromImage(fileBuffer, fileName);
   }
 
   // Step 3: Find related documents + suggest projects (parallel)
