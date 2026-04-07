@@ -33,6 +33,7 @@ import {
   extractMemories,
   storeMemories,
 } from "@/lib/memory";
+import { logAudit } from "@/lib/audit";
 
 export interface InboundAttachment {
   title: string;
@@ -799,6 +800,27 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
       ],
     },
   });
+
+  // Audit log: one row per chat turn (closes the "audit_log underwritten"
+  // deferred enhancement from CONCERNS.md). Captures the routing decision,
+  // model used, project context, and message length so we can later compute
+  // costs and trace how a given response was generated.
+  logAudit("query", {
+    conversationId,
+    mode: routing.mode,
+    doctrines: routing.doctrines,
+    model: modelUsed,
+    projectId: projectId ?? null,
+    messageLength: userMessage.length,
+    responseLength: fullText.length,
+    sourcesCount:
+      pinnedEvidence.length +
+      projectDocEvidence.length +
+      documentEvidence.length +
+      webEvidence.length,
+    pinnedDocs: pinnedDocumentIds.length,
+    pinnedEntities: pinnedEntityIds.length,
+  }).catch((err) => console.error("audit logAudit failed:", err));
 
   // Fire-and-forget memory extraction (don't block response close).
   // New memories inherit the conversation's project_id (Phase 05).
