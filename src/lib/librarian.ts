@@ -75,8 +75,11 @@ export interface LibrarianProposal {
     confidence: "high" | "medium" | "low";
   };
 
-  // Phase 07: project suggestion based on entity overlap with project_companies
+  // Phase 07: project suggestion based on entity overlap with project_companies.
+  // suggestedProject is the top match (back-compat); suggestedProjects is the
+  // top 3 ranked list so the upload UI can offer alternates.
   suggestedProject: SuggestedProject | null;
+  suggestedProjects: SuggestedProject[];
 }
 
 interface QuickExtraction {
@@ -428,22 +431,21 @@ function formatRelativeShort(iso: string): string {
 // ────────────────────────────────────────
 
 /**
- * Given the entities detected on the new document, find the project (if any)
- * with the highest entity-overlap count via project_companies. Returns null
- * if no overlap exists.
+ * Given the entities detected on the new document, find the projects (up to
+ * 3) with the highest entity-overlap counts via project_companies. Returns
+ * empty array if no overlap exists.
  */
-async function suggestProject(
+async function suggestProjects(
   detectedEntities: Array<{ name: string; type: string; nameEn?: string }>,
-): Promise<SuggestedProject | null> {
-  if (detectedEntities.length === 0) return null;
+): Promise<SuggestedProject[]> {
+  if (detectedEntities.length === 0) return [];
 
   // Canonicalize the detected entities to get their IDs in the entities table.
-  // canonicalizeEntities also creates new entities — for the librarian's
-  // suggestion logic, that's harmless since they'll be re-used during the
-  // full upload pipeline anyway.
+  // canonicalizeEntities also creates new entities — harmless because they'll
+  // be re-used during the full upload pipeline anyway.
   const entityIds = await canonicalizeEntities(detectedEntities);
   const uniqueIds = [...new Set(entityIds)];
-  if (uniqueIds.length === 0) return null;
+  if (uniqueIds.length === 0) return [];
 
   // Find all project_companies rows that match any of these entities,
   // joined to projects (filter out archived projects).
@@ -458,7 +460,7 @@ async function suggestProject(
     )
     .in("entity_id", uniqueIds);
 
-  if (!links || links.length === 0) return null;
+  if (!links || links.length === 0) return [];
 
   // Tally overlap per project (skip archived)
   type ProjectMeta = {
@@ -486,26 +488,24 @@ async function suggestProject(
     byProject.get(project.id)!.overlapEntityIds.add(link.entity_id as string);
   }
 
-  if (byProject.size === 0) return null;
+  if (byProject.size === 0) return [];
 
-  // Pick the project with the highest overlap count
-  const ranked = [...byProject.values()].sort(
-    (a, b) => b.overlapEntityIds.size - a.overlapEntityIds.size,
-  );
-  const top = ranked[0];
-  if (top.overlapEntityIds.size === 0) return null;
-
-  return {
-    id: top.id,
-    slug: top.slug,
-    name: top.name,
-    color: top.color,
-    overlapCount: top.overlapEntityIds.size,
-    reason:
-      top.overlapEntityIds.size === 1
-        ? `1 entity matches a counterparty in this project`
-        : `${top.overlapEntityIds.size} entities match counterparties in this project`,
-  };
+  // Rank by overlap count, return top 3
+  return [...byProject.values()]
+    .filter((p) => p.overlapEntityIds.size > 0)
+    .sort((a, b) => b.overlapEntityIds.size - a.overlapEntityIds.size)
+    .slice(0, 3)
+    .map((p) => ({
+      id: p.id,
+      slug: p.slug,
+      name: p.name,
+      color: p.color,
+      overlapCount: p.overlapEntityIds.size,
+      reason:
+        p.overlapEntityIds.size === 1
+          ? `1 entity matches a counterparty in this project`
+          : `${p.overlapEntityIds.size} entities match counterparties in this project`,
+    }));
 }
 
 // ────────────────────────────────────────
@@ -567,6 +567,7 @@ export async function analyzeUpload(
         confidence: "high",
       },
       suggestedProject: null,
+      suggestedProjects: [],
     };
   }
 
@@ -594,10 +595,10 @@ export async function analyzeUpload(
     };
   }
 
-  // Step 3: Find related documents + suggest project (parallel)
-  const [related, projectSuggestion] = await Promise.all([
+  // Step 3: Find related documents + suggest projects (parallel)
+  const [related, projectSuggestions] = await Promise.all([
     findRelatedDocuments(analysis, usableText),
-    suggestProject(analysis.entities),
+    suggestProjects(analysis.entities),
   ]);
 
   // Step 4: Decide the action
@@ -618,7 +619,8 @@ export async function analyzeUpload(
     },
     related,
     recommendation,
-    suggestedProject: projectSuggestion,
+    suggestedProject: projectSuggestions[0] ?? null,
+    suggestedProjects: projectSuggestions,
   };
 }
 

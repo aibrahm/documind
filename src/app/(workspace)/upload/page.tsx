@@ -16,6 +16,7 @@ import {
   Link2,
   Plus,
 } from "lucide-react";
+import { CreateProjectDialog } from "@/components/create-project-dialog";
 
 // ============================================================
 // TYPES — mirror /api/librarian/analyze response
@@ -66,6 +67,7 @@ interface Proposal {
     confidence: "high" | "medium" | "low";
   };
   suggestedProject?: SuggestedProject | null;
+  suggestedProjects?: SuggestedProject[];
 }
 
 type Stage = "idle" | "analyzing" | "review" | "uploading" | "done" | "error";
@@ -135,6 +137,8 @@ export default function UploadPage() {
   const [chosenTargetId, setChosenTargetId] = useState<string | null>(null);
   // Phase 07: link-to-project toggle (set from librarian suggestion)
   const [linkToProjectId, setLinkToProjectId] = useState<string | null>(null);
+  // Phase 07-deferred: create new project from upload flow
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
 
   // Recent uploads sidebar
   const [recentDocs, setRecentDocs] = useState<
@@ -303,6 +307,7 @@ export default function UploadPage() {
               setChosenTargetId={setChosenTargetId}
               linkToProjectId={linkToProjectId}
               setLinkToProjectId={setLinkToProjectId}
+              setCreateProjectOpen={setCreateProjectOpen}
               onConfirm={confirmUpload}
               onSkipDuplicate={handleDuplicateSkip}
               onCancel={reset}
@@ -339,6 +344,29 @@ export default function UploadPage() {
           )}
         </div>
       </main>
+
+      {/* Phase 07-deferred: create-new-project flow from upload.
+          On success, the new project's slug is returned via onCreated.
+          We resolve it to an id by hitting /api/projects/[slug] and then
+          set linkToProjectId so the next confirm-and-process step links it. */}
+      <CreateProjectDialog
+        open={createProjectOpen}
+        onOpenChange={setCreateProjectOpen}
+        onCreated={async (slug) => {
+          try {
+            const res = await fetch(`/api/projects/${slug}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.project?.id) {
+                setLinkToProjectId(data.project.id);
+              }
+            }
+          } catch (err) {
+            console.error("post-create resolve failed:", err);
+          }
+          setCreateProjectOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -431,6 +459,7 @@ function ReviewCard({
   setChosenTargetId,
   linkToProjectId,
   setLinkToProjectId,
+  setCreateProjectOpen,
   onConfirm,
   onSkipDuplicate,
   onCancel,
@@ -447,6 +476,7 @@ function ReviewCard({
   setChosenTargetId: (id: string | null) => void;
   linkToProjectId: string | null;
   setLinkToProjectId: (id: string | null) => void;
+  setCreateProjectOpen: (open: boolean) => void;
   onConfirm: () => void;
   onSkipDuplicate: () => void;
   onCancel: () => void;
@@ -572,38 +602,76 @@ function ReviewCard({
         </div>
       </div>
 
-      {/* Phase 07: project suggestion pill */}
-      {suggestedProject && (
+      {/* Phase 07: project suggestion card (now supports up to 3 alternates
+          + a 'create new project from this doc' option) */}
+      {(suggestedProject || (proposal.suggestedProjects && proposal.suggestedProjects.length > 0)) && (
         <div className="border border-slate-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 bg-slate-50/50 border-b border-slate-100">
+          <div className="px-4 py-2.5 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
             <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
               Project match
             </p>
+            {(proposal.suggestedProjects?.length || 0) > 1 && (
+              <span className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-slate-400">
+                {proposal.suggestedProjects!.length} candidates
+              </span>
+            )}
           </div>
-          <div className="px-4 py-3 flex items-center gap-3">
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ background: suggestedProject.color || "#64748B" }}
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-medium text-slate-900 truncate">
-                {suggestedProject.name}
-              </p>
-              <p className="text-[11px] text-slate-500">
-                {suggestedProject.reason}
-              </p>
-            </div>
-            <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-slate-700">
-              <input
-                type="checkbox"
-                checked={linkToProjectId === suggestedProject.id}
-                onChange={(e) =>
-                  setLinkToProjectId(e.target.checked ? suggestedProject.id : null)
-                }
-                className="w-4 h-4 cursor-pointer"
-              />
-              Link on confirm
-            </label>
+          <div className="divide-y divide-slate-100">
+            {(proposal.suggestedProjects && proposal.suggestedProjects.length > 0
+              ? proposal.suggestedProjects
+              : suggestedProject
+                ? [suggestedProject]
+                : []
+            ).map((p) => {
+              const isPicked = linkToProjectId === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() =>
+                    setLinkToProjectId(isPicked ? null : p.id)
+                  }
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer border-none ${
+                    isPicked ? "bg-blue-50/60" : "bg-white hover:bg-slate-50"
+                  }`}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ background: p.color || "#64748B" }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-slate-900 truncate">
+                      {p.name}
+                    </p>
+                    <p className="text-[11px] text-slate-500">{p.reason}</p>
+                  </div>
+                  <input
+                    type="radio"
+                    name="projectMatch"
+                    checked={isPicked}
+                    onChange={() => {
+                      // handled by the wrapping button onClick
+                    }}
+                    className="w-4 h-4 pointer-events-none"
+                  />
+                </button>
+              );
+            })}
+          </div>
+          <div className="px-4 py-2 bg-slate-50/30 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-[11px] text-slate-500">
+              {linkToProjectId
+                ? "Selected project will be linked on confirm"
+                : "No link — pick a project above or create a new one"}
+            </p>
+            <button
+              type="button"
+              onClick={() => setCreateProjectOpen(true)}
+              className="text-[11px] font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md px-2 py-1 cursor-pointer flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" />
+              Create new project
+            </button>
           </div>
         </div>
       )}
