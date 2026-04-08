@@ -25,6 +25,14 @@ export interface Document {
   title: string;
   type: string;
   classification: "PRIVATE" | "DOCTRINE" | "PUBLIC";
+  access_level: "private" | "public" | null;
+  knowledge_scope:
+    | "project"
+    | "shared_reference"
+    | "institutional_doctrine"
+    | "thread_local"
+    | null;
+  summary_status: "none" | "queued" | "ready" | "error";
   language: string;
   file_url: string;
   file_size: number | null;
@@ -72,6 +80,16 @@ export interface DocumentReference {
   reference_type: string;
   resolved: boolean;
   created_at: string;
+}
+
+export interface DocumentArtifact {
+  id: string;
+  document_id: string;
+  kind: string;
+  version: number;
+  payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Doctrine {

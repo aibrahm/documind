@@ -38,6 +38,73 @@ export type Database = {
         }
         Relationships: []
       }
+      artifacts: {
+        Row: {
+          citations: Json | null
+          content: string
+          conversation_id: string | null
+          created_at: string | null
+          entity_id: string | null
+          id: string
+          kind: string
+          metadata: Json | null
+          project_id: string | null
+          status: string
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          citations?: Json | null
+          content: string
+          conversation_id?: string | null
+          created_at?: string | null
+          entity_id?: string | null
+          id?: string
+          kind: string
+          metadata?: Json | null
+          project_id?: string | null
+          status?: string
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          citations?: Json | null
+          content?: string
+          conversation_id?: string | null
+          created_at?: string | null
+          entity_id?: string | null
+          id?: string
+          kind?: string
+          metadata?: Json | null
+          project_id?: string | null
+          status?: string
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "artifacts_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "artifacts_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "artifacts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chunks: {
         Row: {
           chunk_index: number
@@ -133,19 +200,96 @@ export type Database = {
           },
         ]
       }
+      conversation_documents: {
+        Row: {
+          added_at: string
+          conversation_id: string
+          document_id: string
+          role: string | null
+        }
+        Insert: {
+          added_at?: string
+          conversation_id: string
+          document_id: string
+          role?: string | null
+        }
+        Update: {
+          added_at?: string
+          conversation_id?: string
+          document_id?: string
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_documents_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_documents_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_entities: {
+        Row: {
+          added_at: string
+          conversation_id: string
+          entity_id: string
+          role: string | null
+        }
+        Insert: {
+          added_at?: string
+          conversation_id: string
+          entity_id: string
+          role?: string | null
+        }
+        Update: {
+          added_at?: string
+          conversation_id?: string
+          entity_id?: string
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_entities_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_entities_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           classification: Json | null
           created_at: string | null
           id: string
+          kind: string
+          last_message_at: string | null
           mode: string
           model: string | null
           project_id: string | null
+          purpose: string | null
           query: string
           response: string | null
           scores: Json | null
           search_results: Json | null
           sources: Json | null
+          status: string
+          summary: string | null
           title: string
           updated_at: string | null
         }
@@ -153,14 +297,19 @@ export type Database = {
           classification?: Json | null
           created_at?: string | null
           id?: string
+          kind?: string
+          last_message_at?: string | null
           mode?: string
           model?: string | null
           project_id?: string | null
+          purpose?: string | null
           query: string
           response?: string | null
           scores?: Json | null
           search_results?: Json | null
           sources?: Json | null
+          status?: string
+          summary?: string | null
           title: string
           updated_at?: string | null
         }
@@ -168,14 +317,19 @@ export type Database = {
           classification?: Json | null
           created_at?: string | null
           id?: string
+          kind?: string
+          last_message_at?: string | null
           mode?: string
           model?: string | null
           project_id?: string | null
+          purpose?: string | null
           query?: string
           response?: string | null
           scores?: Json | null
           search_results?: Json | null
           sources?: Json | null
+          status?: string
+          summary?: string | null
           title?: string
           updated_at?: string | null
         }
@@ -225,6 +379,48 @@ export type Database = {
         }
         Relationships: []
       }
+      workspace_profile: {
+        Row: {
+          created_at: string
+          email: string | null
+          full_name: string
+          id: string
+          organization: string
+          organization_short: string | null
+          phone: string | null
+          preferred_language: string
+          signature: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          full_name: string
+          id?: string
+          organization: string
+          organization_short?: string | null
+          phone?: string | null
+          preferred_language?: string
+          signature: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          organization?: string
+          organization_short?: string | null
+          phone?: string | null
+          preferred_language?: string
+          signature?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       document_entities: {
         Row: {
           document_id: string
@@ -254,6 +450,44 @@ export type Database = {
             columns: ["entity_id"]
             isOneToOne: false
             referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      document_artifacts: {
+        Row: {
+          created_at: string | null
+          document_id: string
+          id: string
+          kind: string
+          payload: Json
+          updated_at: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string | null
+          document_id: string
+          id?: string
+          kind: string
+          payload: Json
+          updated_at?: string | null
+          version?: number
+        }
+        Update: {
+          created_at?: string | null
+          document_id?: string
+          id?: string
+          kind?: string
+          payload?: Json
+          updated_at?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_artifacts_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
             referencedColumns: ["id"]
           },
         ]
@@ -305,6 +539,7 @@ export type Database = {
       }
       documents: {
         Row: {
+          access_level: string | null
           classification: string
           created_at: string | null
           encrypted_content: string | null
@@ -313,11 +548,13 @@ export type Database = {
           file_url: string
           id: string
           is_current: boolean | null
+          knowledge_scope: string | null
           language: string
           metadata: Json | null
           page_count: number | null
           processing_error: string | null
           status: string
+          summary_status: string
           supersedes: string | null
           title: string
           type: string
@@ -326,6 +563,7 @@ export type Database = {
           version_of: string | null
         }
         Insert: {
+          access_level?: string | null
           classification?: string
           created_at?: string | null
           encrypted_content?: string | null
@@ -334,11 +572,13 @@ export type Database = {
           file_url: string
           id?: string
           is_current?: boolean | null
+          knowledge_scope?: string | null
           language?: string
           metadata?: Json | null
           page_count?: number | null
           processing_error?: string | null
           status?: string
+          summary_status?: string
           supersedes?: string | null
           title: string
           type?: string
@@ -347,6 +587,7 @@ export type Database = {
           version_of?: string | null
         }
         Update: {
+          access_level?: string | null
           classification?: string
           created_at?: string | null
           encrypted_content?: string | null
@@ -355,11 +596,13 @@ export type Database = {
           file_url?: string
           id?: string
           is_current?: boolean | null
+          knowledge_scope?: string | null
           language?: string
           metadata?: Json | null
           page_count?: number | null
           processing_error?: string | null
           status?: string
+          summary_status?: string
           supersedes?: string | null
           title?: string
           type?: string
@@ -446,6 +689,45 @@ export type Database = {
           },
         ]
       }
+      graph_edges: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          edge_type: string
+          evidence: Json | null
+          id: string
+          source_id: string
+          source_type: string
+          target_id: string
+          target_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string | null
+          edge_type: string
+          evidence?: Json | null
+          id?: string
+          source_id: string
+          source_type: string
+          target_id: string
+          target_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string | null
+          edge_type?: string
+          evidence?: Json | null
+          id?: string
+          source_id?: string
+          source_type?: string
+          target_id?: string
+          target_type?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       knowledge: {
         Row: {
           active: boolean | null
@@ -493,6 +775,63 @@ export type Database = {
           },
           {
             foreignKeyName: "knowledge_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      memory_items: {
+        Row: {
+          created_at: string | null
+          entities: string[] | null
+          id: string
+          importance: number | null
+          kind: string
+          scope_id: string | null
+          scope_type: string
+          source_conversation_id: string | null
+          source_document_id: string | null
+          text: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          entities?: string[] | null
+          id?: string
+          importance?: number | null
+          kind: string
+          scope_id?: string | null
+          scope_type: string
+          source_conversation_id?: string | null
+          source_document_id?: string | null
+          text: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          entities?: string[] | null
+          id?: string
+          importance?: number | null
+          kind?: string
+          scope_id?: string | null
+          scope_type?: string
+          source_conversation_id?: string | null
+          source_document_id?: string | null
+          text?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memory_items_source_conversation_id_fkey"
+            columns: ["source_conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_items_source_document_id_fkey"
             columns: ["source_document_id"]
             isOneToOne: false
             referencedRelation: "documents"
@@ -665,23 +1004,38 @@ export type Database = {
         Row: {
           added_at: string
           added_by: string | null
+          confidence: number | null
           document_id: string
+          is_primary: boolean | null
+          link_type: string | null
           project_id: string
+          relevance: number | null
           role: string | null
+          why_linked: string | null
         }
         Insert: {
           added_at?: string
           added_by?: string | null
+          confidence?: number | null
           document_id: string
+          is_primary?: boolean | null
+          link_type?: string | null
           project_id: string
+          relevance?: number | null
           role?: string | null
+          why_linked?: string | null
         }
         Update: {
           added_at?: string
           added_by?: string | null
+          confidence?: number | null
           document_id?: string
+          is_primary?: boolean | null
+          link_type?: string | null
           project_id?: string
+          relevance?: number | null
           role?: string | null
+          why_linked?: string | null
         }
         Relationships: [
           {
@@ -700,8 +1054,51 @@ export type Database = {
           },
         ]
       }
+      project_entities: {
+        Row: {
+          added_at: string
+          entity_id: string
+          importance: number | null
+          project_id: string
+          role: string
+          why_linked: string | null
+        }
+        Insert: {
+          added_at?: string
+          entity_id: string
+          importance?: number | null
+          project_id: string
+          role?: string
+          why_linked?: string | null
+        }
+        Update: {
+          added_at?: string
+          entity_id?: string
+          importance?: number | null
+          project_id?: string
+          role?: string
+          why_linked?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_entities_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_entities_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
+          brief: Json | null
           closed_at: string | null
           color: string | null
           context_summary: string | null
@@ -709,14 +1106,19 @@ export type Database = {
           description: string | null
           icon: string | null
           id: string
+          kind: string
           name: string
+          next_actions: Json | null
+          objective: string | null
           slug: string
           start_date: string | null
+          stage: string
           status: string
           target_close: string | null
           updated_at: string
         }
         Insert: {
+          brief?: Json | null
           closed_at?: string | null
           color?: string | null
           context_summary?: string | null
@@ -724,14 +1126,19 @@ export type Database = {
           description?: string | null
           icon?: string | null
           id?: string
+          kind?: string
           name: string
+          next_actions?: Json | null
+          objective?: string | null
           slug: string
           start_date?: string | null
+          stage?: string
           status?: string
           target_close?: string | null
           updated_at?: string
         }
         Update: {
+          brief?: Json | null
           closed_at?: string | null
           color?: string | null
           context_summary?: string | null
@@ -739,9 +1146,13 @@ export type Database = {
           description?: string | null
           icon?: string | null
           id?: string
+          kind?: string
           name?: string
+          next_actions?: Json | null
+          objective?: string | null
           slug?: string
           start_date?: string | null
+          stage?: string
           status?: string
           target_close?: string | null
           updated_at?: string

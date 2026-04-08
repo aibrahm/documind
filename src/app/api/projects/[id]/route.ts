@@ -26,10 +26,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     }
 
     // Pull membership counts in parallel
-    const [docs, companies, negs, convos] = await Promise.all([
+    const [docs, entities, convos] = await Promise.all([
       supabaseAdmin.from("project_documents").select("project_id", { count: "exact", head: true }).eq("project_id", projectId),
-      supabaseAdmin.from("project_companies").select("project_id", { count: "exact", head: true }).eq("project_id", projectId),
-      supabaseAdmin.from("negotiations").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supabaseAdmin.from("project_entities").select("project_id", { count: "exact", head: true }).eq("project_id", projectId),
       supabaseAdmin.from("conversations").select("id", { count: "exact", head: true }).eq("project_id", projectId),
     ]);
 
@@ -37,9 +36,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       project,
       counts: {
         documents: docs.count || 0,
-        companies: companies.count || 0,
-        negotiations: negs.count || 0,
-        conversations: convos.count || 0,
+        entities: entities.count || 0,
+        threads: convos.count || 0,
       },
     });
   } catch (err) {

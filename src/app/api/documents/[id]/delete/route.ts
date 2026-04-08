@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { deleteExtractionArtifact } from "@/lib/extraction-artifacts";
 
 export async function DELETE(
   _request: NextRequest,
@@ -16,7 +17,7 @@ export async function DELETE(
     // Get file_url before deleting the document
     const { data: doc } = await supabaseAdmin
       .from("documents")
-      .select("file_url")
+      .select("file_url, metadata")
       .eq("id", id)
       .single();
 
@@ -33,6 +34,11 @@ export async function DELETE(
 
     // Delete the file from storage
     if (doc?.file_url) {
+      const metadata =
+        doc.metadata && typeof doc.metadata === "object"
+          ? (doc.metadata as Record<string, unknown>)
+          : null;
+      await deleteExtractionArtifact(id, metadata);
       await supabaseAdmin.storage.from("documents").remove([doc.file_url]);
     }
 
