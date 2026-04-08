@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback, use, memo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, FileText } from "lucide-react";
+import type {
+  ExtractedTable,
+  NormalizedExtractionPayload,
+} from "@/lib/extraction-schema";
 import { Tag } from "@/components/ui-system";
 
 interface DocDetail {
@@ -41,6 +45,129 @@ interface ChunkData {
 type LeftTab = "details" | "extraction";
 type ExtractionView = "formatted" | "raw";
 
+interface DisplayBlock {
+  key: string;
+  pageNumber: number;
+  sectionTitle: string | null;
+  clauseNumber: string | null;
+  content: string;
+  confidence: number | null;
+  table: ExtractedTable | null;
+}
+
+function extractChunkTable(
+  metadata: Record<string, unknown> | null | undefined,
+): ExtractedTable | null {
+  if (!metadata || typeof metadata.table !== "object" || !metadata.table) return null;
+
+  const table = metadata.table as {
+    caption?: unknown;
+    headers?: unknown;
+    rows?: unknown;
+  };
+
+  if (!Array.isArray(table.rows) || table.rows.length === 0) return null;
+
+  const rows = table.rows
+    .map((row) =>
+      Array.isArray(row) ? row.map((cell) => String(cell ?? "")) : null,
+    )
+    .filter((row): row is string[] => Array.isArray(row) && row.length > 0);
+
+  if (rows.length === 0) return null;
+
+  const headers = Array.isArray(table.headers)
+    ? table.headers.map((header) => String(header ?? ""))
+    : undefined;
+  const caption =
+    typeof table.caption === "string" && table.caption.trim()
+      ? table.caption.trim()
+      : undefined;
+
+  return {
+    ...(caption ? { caption } : {}),
+    ...(headers && headers.length > 0 ? { headers } : {}),
+    rows,
+  };
+}
+
+function normalizeTableForRender(table: ExtractedTable): {
+  caption?: string;
+  headers: string[];
+  rows: string[][];
+} {
+  const rowWidths = table.rows.map((row) => row.length);
+  const maxColumns = Math.max(table.headers?.length || 0, ...rowWidths);
+  if (maxColumns <= 0) {
+    return { headers: [], rows: [] };
+  }
+
+  let headers = [...(table.headers || [])];
+  if (headers.length === maxColumns - 1) {
+    headers = ["", ...headers];
+  } else if (headers.length > 0 && headers.length < maxColumns) {
+    headers = [...headers, ...Array.from({ length: maxColumns - headers.length }, () => "")];
+  }
+
+  const rows = table.rows.map((row) =>
+    row.length >= maxColumns
+      ? row.slice(0, maxColumns)
+      : [...row, ...Array.from({ length: maxColumns - row.length }, () => "")],
+  );
+
+  return {
+    ...(table.caption ? { caption: table.caption } : {}),
+    headers,
+    rows,
+  };
+}
+
+function confidenceLabel(confidence: number | null): "high" | "medium" | "low" | null {
+  if (confidence === null || !Number.isFinite(confidence)) return null;
+  if (confidence >= 0.9) return "high";
+  if (confidence >= 0.7) return "medium";
+  return "low";
+}
+
+function buildDisplayBlocks(
+  payload: NormalizedExtractionPayload | null,
+  chunks: ChunkData[] | null,
+): DisplayBlock[] {
+  if (payload) {
+    return payload.pages.flatMap((page) =>
+      page.sections.map((section, index) => ({
+        key: `${page.pageNumber}-${index}-${section.type}`,
+        pageNumber: page.pageNumber,
+        sectionTitle: section.title,
+        clauseNumber: section.clauseNumber,
+        content: section.content,
+        confidence:
+          typeof section.confidence === "number" && Number.isFinite(section.confidence)
+            ? section.confidence
+            : null,
+        table: section.table || null,
+      })),
+    );
+  }
+
+  if (!chunks) return [];
+
+  return chunks.map((chunk) => ({
+    key: chunk.id,
+    pageNumber: chunk.page_number,
+    sectionTitle: chunk.section_title,
+    clauseNumber: chunk.clause_number,
+    content: chunk.content,
+    confidence:
+      typeof chunk.metadata?.confidence === "number"
+        ? chunk.metadata.confidence
+        : typeof chunk.metadata?.confidence === "string"
+          ? Number(chunk.metadata.confidence)
+          : null,
+    table: extractChunkTable(chunk.metadata),
+  }));
+}
+
 /**
  * Renders the iframe via a portal to document.body so DOM changes in the
  * left panel can never trigger a repaint of the Chrome PDF plugin.
@@ -50,11 +177,7 @@ type ExtractionView = "formatted" | "raw";
 const PdfViewer = memo(function PdfViewer({ url }: { url: string | null }) {
   const placeholderRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = typeof window !== "undefined";
 
   useEffect(() => {
     const el = placeholderRef.current;
@@ -134,42 +257,26 @@ export default function DocPage({
   const [notFound, setNotFound] = useState(false);
   const [leftTab, setLeftTab] = useState<LeftTab>("details");
   const [chunks, setChunks] = useState<ChunkData[] | null>(null);
+  const [payload, setPayload] = useState<NormalizedExtractionPayload | null>(null);
   const [chunksLoading, setChunksLoading] = useState(false);
+  // Refs mirror the latest state so loadChunks() can guard against
+  // concurrent/duplicate fetches WITHOUT depending on chunks/chunksLoading in
+  // its useCallback dep array. Without this, every successful fetch flipped
+  // chunks → loadChunks identity changed → effect at line 356 re-ran with
+  // force=true → infinite refetch loop and visible flicker on the EXTRACTION tab.
+  const chunksRef = useRef<ChunkData[] | null>(null);
+  const chunksLoadingRef = useRef(false);
+  useEffect(() => {
+    chunksRef.current = chunks;
+  }, [chunks]);
+  useEffect(() => {
+    chunksLoadingRef.current = chunksLoading;
+  }, [chunksLoading]);
   const [extractionView, setExtractionView] = useState<ExtractionView>("formatted");
   const [copied, setCopied] = useState(false);
 
-  const loadChunks = useCallback(() => {
-    if (chunks !== null || chunksLoading) return;
-    setChunksLoading(true);
-    fetch(`/api/documents/${id}/extraction`)
-      .then((r) => r.json())
-      .then((d) => setChunks(d.chunks || []))
-      .catch(() => setChunks([]))
-      .finally(() => setChunksLoading(false));
-  }, [id, chunks, chunksLoading]);
-
-  const handleTabClick = (tab: LeftTab) => {
-    setLeftTab(tab);
-    if (tab === "extraction") loadChunks();
-  };
-
-  const copyJson = () => {
-    if (!chunks) return;
-    navigator.clipboard.writeText(JSON.stringify(chunks, null, 2)).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  const confidenceVariant = (level: string): "green" | "amber" | "red" | "default" => {
-    if (level === "high") return "green";
-    if (level === "medium") return "amber";
-    if (level === "low") return "red";
-    return "default";
-  };
-
-  useEffect(() => {
-    fetch(`/api/documents/${id}`)
+  const fetchDoc = useCallback(() => {
+    return fetch(`/api/documents/${id}`)
       .then((r) => {
         if (r.status === 404) {
           setNotFound(true);
@@ -178,21 +285,109 @@ export default function DocPage({
         return r.json();
       })
       .then((d) => {
-        if (d?.document) setDoc(d.document);
-        else if (d) setNotFound(true);
-      })
-      .catch(() => setNotFound(true));
+        if (d?.document) {
+          setNotFound(false);
+          setDoc(d.document);
+        } else if (d) {
+          setNotFound(true);
+        }
+        return d?.document || null;
+      });
+  }, [id]);
 
-    fetch(`/api/documents/${id}/references`)
+  const fetchRefs = useCallback(() => {
+    return fetch(`/api/documents/${id}/references`)
       .then((r) => r.json())
       .then((d) => setRefs(d.references || []))
       .catch(() => {});
+  }, [id]);
 
-    fetch(`/api/documents/${id}/url`)
+  const fetchPdfUrl = useCallback(() => {
+    return fetch(`/api/documents/${id}/url`)
       .then((r) => r.json())
-      .then((d) => setPdfUrl(d.url))
+      .then((d) => setPdfUrl(d.url || null))
       .catch(() => {});
   }, [id]);
+
+  // Stable callback — only re-creates when `id` changes. Reads mutable guard
+  // state via refs so successful fetches don't churn the callback identity.
+  const docStatusRef = useRef(doc?.status);
+  useEffect(() => {
+    docStatusRef.current = doc?.status;
+  }, [doc?.status]);
+  const loadChunks = useCallback((force = false) => {
+    if (chunksLoadingRef.current) return;
+    if (!force && (chunksRef.current !== null || docStatusRef.current === "processing")) return;
+    setChunksLoading(true);
+    fetch(`/api/documents/${id}/extraction`)
+      .then((r) => r.json())
+      .then((d) => {
+        setChunks(d.chunks || []);
+        setPayload(d.payload || null);
+      })
+      .catch(() => {
+        setChunks([]);
+        setPayload(null);
+      })
+      .finally(() => setChunksLoading(false));
+  }, [id]);
+
+  const handleTabClick = (tab: LeftTab) => {
+    setLeftTab(tab);
+    if (tab === "extraction") loadChunks();
+  };
+
+  const copyJson = () => {
+    const jsonPayload =
+      extractionView === "raw"
+        ? payload ?? { error: "No extraction payload is available for this document." }
+        : chunks;
+    if (!jsonPayload) return;
+    navigator.clipboard.writeText(JSON.stringify(jsonPayload, null, 2)).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const confidenceVariant = (
+    level: "high" | "medium" | "low" | null,
+  ): "green" | "amber" | "red" | "default" => {
+    if (level === "high") return "green";
+    if (level === "medium") return "amber";
+    if (level === "low") return "red";
+    return "default";
+  };
+
+  useEffect(() => {
+    fetchDoc().catch(() => setNotFound(true));
+    fetchRefs();
+    fetchPdfUrl();
+  }, [id, fetchDoc, fetchRefs, fetchPdfUrl]);
+
+  useEffect(() => {
+    if (doc?.status !== "processing") return;
+    const interval = setInterval(() => {
+      fetchDoc().catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [doc?.status, fetchDoc]);
+
+  // When the document becomes ready, pull fresh references and — if the user
+  // is already sitting on the EXTRACTION tab — kick off a chunk load. We
+  // intentionally exclude `loadChunks` and `fetchRefs` from the dep array
+  // because they're stable per-id; including them caused an infinite refetch
+  // loop and visible flicker on the EXTRACTION tab.
+  useEffect(() => {
+    if (doc?.status !== "ready") return;
+    fetchRefs();
+    if (leftTab === "extraction") {
+      const timeout = window.setTimeout(() => {
+        loadChunks(true);
+      }, 0);
+      return () => window.clearTimeout(timeout);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.status, leftTab, id]);
 
   /* 404 state */
   if (notFound) {
@@ -229,8 +424,8 @@ export default function DocPage({
 
   const meta = (doc.metadata || {}) as Record<string, unknown>;
   const dates = Array.isArray(meta.dates)
-    ? (meta.dates as Array<{ iso?: string }>)
-        .map((d) => d.iso || "")
+    ? (meta.dates as Array<string | { iso?: string }>)
+        .map((d) => (typeof d === "string" ? d : d.iso || ""))
         .filter(Boolean)
         .join(", ")
     : null;
@@ -259,6 +454,7 @@ export default function DocPage({
     ],
     ...(dates ? ([["Key Dates", dates]] as [string, string][]) : []),
   ];
+  const displayBlocks = buildDisplayBlocks(payload, chunks);
 
   return (
     <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
@@ -430,6 +626,14 @@ export default function DocPage({
                   )}
                 </div>
 
+                {payload && (
+                  <p className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-slate-400 mb-4">
+                    {payload.source === "artifact"
+                      ? "Source: stored extraction artifact"
+                      : "Source: reconstructed from stored chunks"}
+                  </p>
+                )}
+
                 {/* Loading state */}
                 {chunksLoading && (
                   <p className="text-[13px] text-slate-500">
@@ -437,51 +641,51 @@ export default function DocPage({
                   </p>
                 )}
 
+                {!chunksLoading &&
+                  doc.status === "processing" &&
+                  chunks === null && (
+                    <p className="text-[13px] text-slate-500">
+                      This document is still processing. Extraction will appear automatically when it is ready.
+                    </p>
+                  )}
+
                 {/* Empty state */}
-                {!chunksLoading && chunks !== null && chunks.length === 0 && (
+                {!chunksLoading &&
+                  doc.status !== "processing" &&
+                  chunks !== null &&
+                  displayBlocks.length === 0 && (
                   <p className="text-[13px] text-slate-500">
-                    No extracted chunks found for this document.
+                    No extraction content is available for this document.
                   </p>
                 )}
 
                 {/* Formatted view */}
                 {!chunksLoading &&
                   chunks !== null &&
-                  chunks.length > 0 &&
+                  displayBlocks.length > 0 &&
                   extractionView === "formatted" && (
                     <div>
-                      {chunks.map((chunk) => {
-                        const confidence =
-                          typeof chunk.metadata?.confidence === "string"
-                            ? chunk.metadata.confidence
-                            : null;
-                        const table =
-                          chunk.metadata?.table &&
-                          typeof chunk.metadata.table === "object"
-                            ? (chunk.metadata.table as {
-                                caption?: string;
-                                headers?: string[];
-                                rows?: string[][];
-                              })
-                            : null;
+                      {displayBlocks.map((block) => {
+                        const confidence = confidenceLabel(block.confidence);
+                        const table = block.table ? normalizeTableForRender(block.table) : null;
                         return (
                           <div
-                            key={chunk.id}
+                            key={block.key}
                             className="pb-3 mb-3 border-b border-slate-100"
                           >
                             {/* Chunk header */}
                             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                               <span className="font-['JetBrains_Mono'] text-[10px] font-semibold text-slate-400">
-                                P.{chunk.page_number}
+                                P.{block.pageNumber}
                               </span>
-                              {chunk.section_title && (
+                              {block.sectionTitle && (
                                 <span className="font-['JetBrains_Mono'] text-[10px] text-slate-600">
-                                  {chunk.section_title}
+                                  {block.sectionTitle}
                                 </span>
                               )}
-                              {chunk.clause_number && (
+                              {block.clauseNumber && (
                                 <span className="font-['JetBrains_Mono'] text-[10px] text-slate-500">
-                                  Cl. {chunk.clause_number}
+                                  Cl. {block.clauseNumber}
                                 </span>
                               )}
                               {confidence && (
@@ -500,7 +704,7 @@ export default function DocPage({
                                   </p>
                                 )}
                                 <table className="w-full text-[11px] border-collapse border border-slate-200">
-                                  {table.headers && table.headers.length > 0 && (
+                                  {table.headers.length > 0 && (
                                     <thead>
                                       <tr>
                                         {table.headers.map((h, hi) => (
@@ -536,7 +740,7 @@ export default function DocPage({
                                 dir="auto"
                                 className="font-['IBM_Plex_Sans_Arabic'] text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap"
                               >
-                                {chunk.content}
+                                {block.content}
                               </p>
                             )}
                           </div>
@@ -547,12 +751,20 @@ export default function DocPage({
 
                 {/* Raw JSON view */}
                 {!chunksLoading &&
-                  chunks !== null &&
-                  chunks.length > 0 &&
+                  payload !== null &&
                   extractionView === "raw" && (
                     <pre className="font-['JetBrains_Mono'] text-[11px] bg-slate-50 p-4 rounded-lg overflow-auto max-h-[calc(100vh-200px)] text-slate-700 whitespace-pre-wrap">
-                      {JSON.stringify(chunks, null, 2)}
+                      {JSON.stringify(payload, null, 2)}
                     </pre>
+                  )}
+
+                {!chunksLoading &&
+                  doc.status !== "processing" &&
+                  payload === null &&
+                  extractionView === "raw" && (
+                    <p className="text-[13px] text-slate-500">
+                      No extraction payload is available for this document yet.
+                    </p>
                   )}
               </>
             )}

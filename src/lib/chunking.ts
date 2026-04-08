@@ -1,4 +1,4 @@
-import { ExtractedPage, ExtractedSection } from "./extraction";
+import type { ExtractedPage, ExtractedSection } from "./extraction-schema";
 
 export interface DocumentChunk {
   content: string;

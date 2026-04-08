@@ -17,6 +17,13 @@ import {
   Plus,
 } from "lucide-react";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
+import {
+  DOCUMENT_TYPES,
+  EXTRACTION_MODES,
+  type DocumentType,
+  type ExtractionMode,
+  type LanguageCode,
+} from "@/lib/extraction-schema";
 
 // ============================================================
 // TYPES — mirror /api/librarian/analyze response
@@ -51,7 +58,7 @@ interface Proposal {
     title: string;
     suggestedTitle: string;
     documentType: string;
-    language: "ar" | "en" | "mixed";
+    language: LanguageCode;
     pageCount: number;
     fileSize: number;
     suggestedClassification: Classification;
@@ -71,6 +78,7 @@ interface Proposal {
 }
 
 type Stage = "idle" | "analyzing" | "review" | "uploading" | "done" | "error";
+type DocumentTypeChoice = DocumentType | "auto";
 
 // ============================================================
 // CONSTANTS
@@ -100,6 +108,45 @@ const ACTION_COPY: Record<Action, { icon: typeof Plus; label: string; color: str
   duplicate: { icon: Copy, label: "Skip — duplicate", color: "text-amber-600" },
   related: { icon: Link2, label: "Add and link as related", color: "text-violet-600" },
 };
+
+const DOCUMENT_TYPE_COPY: Record<DocumentType, string> = {
+  law: "Law / statute",
+  decree: "Decree / official decision",
+  contract: "Contract",
+  mou: "MoU",
+  report: "Report",
+  memo: "Memo",
+  policy: "Policy",
+  letter: "Letter",
+  financial: "Financial",
+  other: "Other",
+};
+
+const EXTRACTION_MODE_COPY: Record<
+  ExtractionMode,
+  { label: string; description: string }
+> = {
+  auto: {
+    label: "Auto",
+    description: "Use the normal router. Good default when the scan is readable.",
+  },
+  fast: {
+    label: "Fast",
+    description: "Prioritize speed. Skip the slowest fallback path and verifier pass.",
+  },
+  high_fidelity: {
+    label: "High fidelity",
+    description: "Start with the heavy extraction path and allow dense-page fallback.",
+  },
+  verbatim_legal: {
+    label: "Verbatim legal",
+    description: "Bias hard toward faithful legal-style transcription on dense official scans.",
+  },
+};
+
+function normalizeDetectedDocumentType(value: string): DocumentType | null {
+  return DOCUMENT_TYPES.includes(value as DocumentType) ? (value as DocumentType) : null;
+}
 
 function formatRelative(iso: string): string {
   if (!iso) return "";
@@ -134,6 +181,8 @@ export default function UploadPage() {
   const [chosenAction, setChosenAction] = useState<Action>("new");
   const [chosenClassification, setChosenClassification] = useState<Classification>("PRIVATE");
   const [chosenTitle, setChosenTitle] = useState("");
+  const [chosenDocumentType, setChosenDocumentType] = useState<DocumentTypeChoice>("auto");
+  const [chosenExtractionMode, setChosenExtractionMode] = useState<ExtractionMode>("auto");
   const [chosenTargetId, setChosenTargetId] = useState<string | null>(null);
   // Phase 07: link-to-project toggle (set from librarian suggestion)
   const [linkToProjectId, setLinkToProjectId] = useState<string | null>(null);
@@ -180,6 +229,8 @@ export default function UploadPage() {
       setChosenAction(p.recommendation.action);
       setChosenClassification(p.detected.suggestedClassification);
       setChosenTitle(p.detected.suggestedTitle);
+      setChosenDocumentType(normalizeDetectedDocumentType(p.detected.documentType) || "auto");
+      setChosenExtractionMode("auto");
       setChosenTargetId(p.recommendation.targetDocumentId || null);
       // Phase 07: default to linking when the librarian found a project match
       setLinkToProjectId(p.suggestedProject?.id || null);
@@ -219,6 +270,16 @@ export default function UploadPage() {
       fd.append("file", file);
       fd.append("classification", chosenClassification);
       fd.append("title", chosenTitle);
+      const resolvedDocumentType =
+        chosenDocumentType === "auto"
+          ? normalizeDetectedDocumentType(proposal.detected.documentType)
+          : chosenDocumentType;
+      if (resolvedDocumentType) {
+        fd.append("documentType", resolvedDocumentType);
+        fd.append("skipClassification", "true");
+      }
+      fd.append("languageHint", proposal.detected.language);
+      fd.append("extractionMode", chosenExtractionMode);
       if (chosenAction === "version" && chosenTargetId) fd.append("versionOf", chosenTargetId);
       if (chosenAction === "related" && chosenTargetId) fd.append("relatedTo", chosenTargetId);
       if (linkToProjectId) fd.append("linkToProject", linkToProjectId);
@@ -232,7 +293,18 @@ export default function UploadPage() {
       setError((e as Error).message);
       setStage("error");
     }
-  }, [file, proposal, chosenAction, chosenClassification, chosenTitle, chosenTargetId, loadRecent]);
+  }, [
+    file,
+    proposal,
+    chosenAction,
+    chosenClassification,
+    chosenDocumentType,
+    chosenExtractionMode,
+    chosenTitle,
+    chosenTargetId,
+    linkToProjectId,
+    loadRecent,
+  ]);
 
   const handleDuplicateSkip = useCallback(() => {
     if (!chosenTargetId) return;
@@ -247,6 +319,8 @@ export default function UploadPage() {
     setChosenAction("new");
     setChosenClassification("PRIVATE");
     setChosenTitle("");
+    setChosenDocumentType("auto");
+    setChosenExtractionMode("auto");
     setChosenTargetId(null);
   }, []);
 
@@ -303,6 +377,10 @@ export default function UploadPage() {
               setChosenClassification={setChosenClassification}
               chosenTitle={chosenTitle}
               setChosenTitle={setChosenTitle}
+              chosenDocumentType={chosenDocumentType}
+              setChosenDocumentType={setChosenDocumentType}
+              chosenExtractionMode={chosenExtractionMode}
+              setChosenExtractionMode={setChosenExtractionMode}
               chosenTargetId={chosenTargetId}
               setChosenTargetId={setChosenTargetId}
               linkToProjectId={linkToProjectId}
@@ -455,6 +533,10 @@ function ReviewCard({
   setChosenClassification,
   chosenTitle,
   setChosenTitle,
+  chosenDocumentType,
+  setChosenDocumentType,
+  chosenExtractionMode,
+  setChosenExtractionMode,
   chosenTargetId,
   setChosenTargetId,
   linkToProjectId,
@@ -472,6 +554,10 @@ function ReviewCard({
   setChosenClassification: (c: Classification) => void;
   chosenTitle: string;
   setChosenTitle: (t: string) => void;
+  chosenDocumentType: DocumentTypeChoice;
+  setChosenDocumentType: (value: DocumentTypeChoice) => void;
+  chosenExtractionMode: ExtractionMode;
+  setChosenExtractionMode: (value: ExtractionMode) => void;
   chosenTargetId: string | null;
   setChosenTargetId: (id: string | null) => void;
   linkToProjectId: string | null;
@@ -482,7 +568,6 @@ function ReviewCard({
   onCancel: () => void;
 }) {
   const { detected, related, recommendation, suggestedProject } = proposal;
-  const RecommendedIcon = ACTION_COPY[recommendation.action].icon;
 
   return (
     <div className="space-y-4">
@@ -529,16 +614,66 @@ function ReviewCard({
             />
           </div>
 
-          {/* Type + entities */}
-          <div className="flex flex-wrap items-start gap-x-6 gap-y-3 text-[12px]">
+          {/* Type + extraction mode + entities */}
+          <div className="space-y-4 text-[12px]">
             <div>
-              <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                Type
+              <label className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">
+                Document type
+              </label>
+              <select
+                value={chosenDocumentType}
+                onChange={(e) => setChosenDocumentType(e.target.value as DocumentTypeChoice)}
+                className="w-full text-[13px] text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:border-slate-400 focus:outline-none"
+              >
+                <option value="auto">
+                  Auto from librarian
+                  {normalizeDetectedDocumentType(detected.documentType)
+                    ? ` (${normalizeDetectedDocumentType(detected.documentType)})`
+                    : ""}
+                </option>
+                {DOCUMENT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {DOCUMENT_TYPE_COPY[type]}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                The upload route will use this type directly instead of paying for a second
+                classifier pass.
               </p>
-              <span className="font-['JetBrains_Mono'] text-[11px] uppercase text-slate-700">
-                {detected.documentType}
-              </span>
             </div>
+
+            <div>
+              <label className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">
+                Extraction mode
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {EXTRACTION_MODES.map((mode) => {
+                  const meta = EXTRACTION_MODE_COPY[mode];
+                  const isActive = chosenExtractionMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setChosenExtractionMode(mode)}
+                      className={`text-left px-3 py-2 rounded-lg border transition-all cursor-pointer ${
+                        isActive
+                          ? "bg-slate-50 border-slate-300 shadow-sm"
+                          : "bg-white border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="text-[12px] font-medium text-slate-900 mb-0.5">
+                        {meta.label}
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-snug">
+                        {meta.description}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {detected.entities.length > 0 && (
               <div className="flex-1 min-w-0">
                 <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
@@ -810,7 +945,7 @@ function UploadingCard({ fileName }: { fileName: string }) {
         {fileName}
       </p>
       <p className="text-[12px] text-slate-400">
-        Running full extraction with vision OCR. This usually takes 30–90 seconds.
+        Running OCR and deterministic parsing. This usually takes 30–90 seconds.
       </p>
     </div>
   );

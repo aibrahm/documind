@@ -1,0 +1,308 @@
+import { createHash } from "node:crypto";
+import { supabaseAdmin } from "@/lib/supabase";
+import { extractDocumentV2 } from "@/lib/extraction-v2";
+import type { ExtractionArtifact, ExtractionPreferences } from "@/lib/extraction-schema";
+import { chunkDocument } from "@/lib/chunking";
+import { generateEmbeddings } from "@/lib/embeddings";
+import { encrypt } from "@/lib/encryption";
+import { writeExtractionArtifact } from "@/lib/extraction-artifacts";
+import { detectReferences, storeAndResolveReferences } from "@/lib/references";
+import { canonicalizeEntities } from "@/lib/entities";
+import { logAudit } from "@/lib/audit";
+
+interface ProcessDocumentInput {
+  docId: string;
+  fileBuffer: Buffer;
+  fileName: string;
+  classificationOverride: string | null;
+  extractionPreferences?: ExtractionPreferences | null;
+  versionOf: string | null;
+  relatedTo?: string | null;
+  titleOverride?: string | null;
+  replaceExistingDerivedData?: boolean;
+}
+
+interface PreservedReference {
+  target_id: string | null;
+  reference_text: string;
+  reference_type: string;
+  resolved: boolean;
+}
+
+function buildRelatedReference(targetId: string) {
+  return {
+    target_id: targetId,
+    reference_text: "Related document (linked at upload)",
+    reference_type: "related",
+    resolved: true,
+  };
+}
+
+async function loadPreservedRelatedReferences(docId: string): Promise<PreservedReference[]> {
+  const { data, error } = await supabaseAdmin
+    .from("document_references")
+    .select("target_id, reference_text, reference_type, resolved")
+    .eq("source_id", docId)
+    .eq("reference_type", "related");
+
+  if (error) {
+    console.error("Failed to load preserved related references:", error);
+    return [];
+  }
+
+  return (data || []).map((ref) => ({
+    target_id: ref.target_id,
+    reference_text: ref.reference_text,
+    reference_type: ref.reference_type,
+    resolved: ref.resolved === true,
+  }));
+}
+
+async function clearDerivedDocumentData(docId: string) {
+  await supabaseAdmin.from("chunks").delete().eq("document_id", docId);
+  await supabaseAdmin.from("document_entities").delete().eq("document_id", docId);
+  await supabaseAdmin.from("document_references").delete().eq("source_id", docId);
+}
+
+async function restoreRelatedReferences(docId: string, references: PreservedReference[]) {
+  if (references.length === 0) return;
+
+  await supabaseAdmin.from("document_references").upsert(
+    references.map((ref) => ({
+      source_id: docId,
+      target_id: ref.target_id,
+      reference_text: ref.reference_text,
+      reference_type: ref.reference_type,
+      resolved: ref.resolved,
+    })),
+    { onConflict: "source_id,reference_text" },
+  );
+}
+
+export async function processDocumentContent({
+  docId,
+  fileBuffer,
+  fileName,
+  classificationOverride,
+  extractionPreferences = null,
+  versionOf,
+  relatedTo = null,
+  titleOverride = null,
+  replaceExistingDerivedData = false,
+}: ProcessDocumentInput): Promise<{ title: string; warningText: string | null }> {
+  const extraction = await extractDocumentV2(
+    fileBuffer,
+    fileName,
+    extractionPreferences || undefined,
+  );
+
+  await logAudit("extraction", {
+    documentId: docId,
+    pagesExtracted: extraction.pages.length,
+    documentType: extraction.classification.documentType,
+    validationIssues: extraction.validation.issues.length,
+    corrections: extraction.validation.corrections.length,
+    costs: extraction.costs,
+  });
+
+  const chunks = chunkDocument(extraction.pages);
+  const chunkTexts = chunks.map((c) => c.content);
+  const embeddings = await generateEmbeddings(chunkTexts, "search_document");
+
+  const classification =
+    classificationOverride ??
+    (extraction.classification.documentType === "policy" ? "DOCTRINE" : "PRIVATE");
+  const fullText = extraction.pages.flatMap((p) => p.sections.map((s) => s.content)).join("\n\n");
+  const encryptedContent = classification === "PRIVATE" ? encrypt(fullText) : null;
+
+  const finalTitle = titleOverride?.trim() || extraction.classification.title;
+  const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
+  const w = extraction.warnings;
+  const validationErrorCount = extraction.validation.issues.filter(
+    (issue) => issue.severity === "error",
+  ).length;
+
+  const artifact: ExtractionArtifact = {
+    version: 1,
+    storedAt: new Date().toISOString(),
+    classification: extraction.classification,
+    pages: extraction.pages,
+    referencedLaws: extraction.referencedLaws,
+    validation: extraction.validation,
+    metadata: extraction.metadata,
+    warnings: extraction.warnings,
+    verifier: extraction.verifier,
+    costs: extraction.costs,
+    pipeline: extraction.pipeline,
+    rawOcr: extraction.rawOcr as unknown as Record<string, unknown>,
+    normalized: extraction.normalized as unknown as Record<string, unknown>,
+  };
+
+  const preservedRelatedReferences = replaceExistingDerivedData
+    ? await loadPreservedRelatedReferences(docId)
+    : [];
+  if (replaceExistingDerivedData) {
+    await clearDerivedDocumentData(docId);
+  }
+
+  const chunkRecords = chunks.map((chunk, i) => ({
+    document_id: docId,
+    content: chunk.content,
+    embedding: embeddings[i] ? `[${embeddings[i].join(",")}]` : null,
+    page_number: chunk.pageNumber,
+    section_title: chunk.sectionTitle,
+    clause_number: chunk.clauseNumber,
+    chunk_index: chunk.chunkIndex,
+    metadata: chunk.metadata,
+  }));
+
+  for (let i = 0; i < chunkRecords.length; i += 50) {
+    const batch = chunkRecords.slice(i, i + 50);
+    await supabaseAdmin.from("chunks").insert(batch);
+  }
+
+  const entities = extraction.metadata.entities || [];
+  if (entities.length > 0) {
+    const candidates = entities.map((e) => ({
+      name: e.name,
+      type: e.type,
+      nameEn: e.nameEn || null,
+    }));
+    const entityIds = await canonicalizeEntities(candidates);
+    const uniqueIds = [...new Set(entityIds)];
+    if (uniqueIds.length > 0) {
+      const links = uniqueIds.map((eid) => ({
+        document_id: docId,
+        entity_id: eid,
+      }));
+      await supabaseAdmin
+        .from("document_entities")
+        .upsert(links, { onConflict: "document_id,entity_id" });
+    }
+  }
+
+  const references = detectReferences(fullText);
+  if (extraction.metadata.references) {
+    for (const ref of extraction.metadata.references) {
+      references.push({
+        text: ref.text,
+        type: ref.type as "law" | "article" | "decree" | "regulation",
+      });
+    }
+  }
+  await storeAndResolveReferences(docId, references);
+  await restoreRelatedReferences(docId, preservedRelatedReferences);
+  if (relatedTo) {
+    await restoreRelatedReferences(docId, [buildRelatedReference(relatedTo)]);
+  }
+
+  const { error: extractionArtifactError } = await writeExtractionArtifact(docId, artifact);
+  if (extractionArtifactError) {
+    console.error("Failed to persist extraction artifact:", extractionArtifactError);
+  }
+
+  const hasWarnings =
+    w.failedPages.length > 0 ||
+    w.classificationFailed ||
+    w.metadataFailed ||
+    w.correctionBatchesFailed > 0 ||
+    w.verifierMismatches.length > 0 ||
+    w.schemaWarnings.length > 0 ||
+    validationErrorCount > 0 ||
+    Boolean(extractionArtifactError);
+  const warningText = hasWarnings
+    ? [
+        w.failedPages.length > 0
+          ? `Pages with extraction failures: ${w.failedPages.join(", ")} of ${extraction.pages.length}`
+          : null,
+        w.classificationFailed ? "Classification call failed" : null,
+        w.metadataFailed ? "Metadata extraction call failed" : null,
+        w.correctionBatchesFailed > 0
+          ? `${w.correctionBatchesFailed} Arabic-correction batch(es) failed`
+          : null,
+        w.verifierMismatches.length > 0
+          ? `Verifier flagged ${w.verifierMismatches.length} potential extraction error${w.verifierMismatches.length === 1 ? "" : "s"}`
+          : null,
+        w.schemaWarnings.length > 0
+          ? `${w.schemaWarnings.length} schema validation warning${w.schemaWarnings.length === 1 ? "" : "s"} handled during extraction`
+          : null,
+        validationErrorCount > 0
+          ? `${validationErrorCount} validation error${validationErrorCount === 1 ? "" : "s"} detected in extracted content`
+          : null,
+        extractionArtifactError ? "Full extraction artifact could not be persisted" : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+
+  const mergedMetadata = {
+    ...(extraction.metadata || {}),
+    sha256,
+    ...(extractionPreferences
+      ? {
+          extractionPreferences: {
+            documentTypeHint: extractionPreferences.documentTypeHint || null,
+            languageHint: extractionPreferences.languageHint || null,
+            titleHint: extractionPreferences.titleHint || null,
+            mode: extractionPreferences.mode || "auto",
+            skipClassification: extractionPreferences.skipClassification === true,
+          },
+        }
+      : {}),
+    ...(hasWarnings
+      ? {
+          extractionWarnings: {
+            ...w,
+            artifactPersistFailed: Boolean(extractionArtifactError),
+          },
+        }
+      : {}),
+  };
+
+  await supabaseAdmin
+    .from("documents")
+    .update({
+      title: finalTitle,
+      type: extraction.classification.documentType,
+      classification: classificationOverride || classification,
+      language: extraction.classification.language,
+      page_count: extraction.pages.length,
+      metadata: mergedMetadata,
+      entities: (extraction.metadata.entities || []).map((e: { name: string }) => e.name),
+      encrypted_content: encryptedContent,
+      status: "ready",
+      processing_error: warningText,
+    })
+    .eq("id", docId);
+
+  if (hasWarnings) {
+    console.error(`processDocument(${docId}): partial extraction. ${warningText}`);
+  }
+
+  if (versionOf) {
+    await supabaseAdmin
+      .from("documents")
+      .update({ is_current: false })
+      .eq("id", versionOf);
+
+    const { data: parent } = await supabaseAdmin
+      .from("documents")
+      .select("version_number")
+      .eq("id", versionOf)
+      .single();
+
+    await supabaseAdmin
+      .from("documents")
+      .update({
+        version_of: versionOf,
+        supersedes: versionOf,
+        version_number: (parent?.version_number || 1) + 1,
+      })
+      .eq("id", docId);
+  }
+
+  return {
+    title: finalTitle,
+    warningText,
+  };
+}
