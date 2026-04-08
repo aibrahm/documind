@@ -1,17 +1,15 @@
 // src/lib/tools/extract-key-terms.ts
 //
-// Tool: extract structured deal facts from a project's documents (or a
-// specific list of documents) using GPT-4o-mini. Optionally merges the
-// extracted terms into a negotiation row's key_terms JSONB.
+// Tool: extract structured commercial facts from a project's documents (or a
+// specific list of documents) using GPT-4o-mini.
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { getOpenAI } from "@/lib/clients";
 import { resolveProjectId } from "@/lib/projects";
-import type { Json } from "@/lib/database.types";
 
 const MAX_CONTEXT_CHARS = 30000;
 
-const EXTRACTION_SYSTEM_PROMPT = `You extract structured deal facts from document text for an Egyptian special economic zone authority. Output STRICT JSON only — no prose, no markdown.
+const EXTRACTION_SYSTEM_PROMPT = `You extract structured commercial facts from document text for an Egyptian special economic zone authority. Output STRICT JSON only — no prose, no markdown.
 
 Fields to extract when present (omit any field not clearly stated in the source):
 
@@ -42,7 +40,6 @@ Rules:
 interface ExtractInput {
   project?: string;
   document_ids?: string[];
-  negotiation_id?: string;
   focus?: string;
 }
 
@@ -173,7 +170,7 @@ export async function runExtractKeyTerms(rawInput: unknown): Promise<string> {
         { role: "system", content: EXTRACTION_SYSTEM_PROMPT + focusLine },
         {
           role: "user",
-          content: `Extract deal facts from the following documents:${combinedText}`,
+          content: `Extract structured commercial facts from the following documents:${combinedText}`,
         },
       ],
     });
@@ -185,40 +182,11 @@ export async function runExtractKeyTerms(rawInput: unknown): Promise<string> {
     });
   }
 
-  // 4. Optionally merge into a negotiation row (additive — existing keys win
-  //    only when the new extraction omits the same key)
-  let writeResult: { ok: boolean; merged_into?: string; error?: string } | null =
-    null;
-  if (input.negotiation_id) {
-    const { data: existing, error: fetchErr } = await supabaseAdmin
-      .from("negotiations")
-      .select("id, key_terms")
-      .eq("id", input.negotiation_id)
-      .maybeSingle();
-    if (fetchErr || !existing) {
-      writeResult = { ok: false, error: "Negotiation not found" };
-    } else {
-      const previous = (existing.key_terms || {}) as Record<string, unknown>;
-      const merged = { ...previous, ...extracted };
-      const { error: updateErr } = await supabaseAdmin
-        .from("negotiations")
-        .update({
-          key_terms: merged as Json,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", input.negotiation_id);
-      writeResult = updateErr
-        ? { ok: false, error: updateErr.message }
-        : { ok: true, merged_into: input.negotiation_id };
-    }
-  }
-
   return JSON.stringify({
-    operation: "extract_key_terms",
+    operation: "extract_workspace_facts",
     document_count: docs.length,
     documents: docs.map((d) => ({ id: d.id, title: d.title })),
     truncated,
     extracted,
-    ...(writeResult ? { negotiation_write: writeResult } : {}),
   });
 }

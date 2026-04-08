@@ -3,14 +3,13 @@ import { getAnthropic } from "@/lib/clients";
 import { webSearch } from "@/lib/web-search";
 import { runFinancialModel } from "@/lib/tools/financial-model";
 import { runFetchUrl } from "@/lib/tools/fetch-url";
-import { runExtractKeyTerms } from "@/lib/tools/extract-key-terms";
-import { runCompareDeals } from "@/lib/tools/compare-deals";
+import { runExtractKeyTerms as runExtractWorkspaceFacts } from "@/lib/tools/extract-key-terms";
 
 /**
  * Claude streaming with autonomous web_search tool use.
  *
  * The model can call `web_search` whenever it needs fresh external context
- * (current pricing, recent comparable deals, news on counterparties, etc).
+ * (current pricing, recent comparable deals, news on relevant companies, etc).
  * The system runs Tavily, returns results, and the model continues — possibly
  * calling the tool again. After the model produces final text without tool
  * calls, that text is streamed to the user.
@@ -47,7 +46,7 @@ interface RunOpts {
 const WEB_SEARCH_TOOL: Anthropic.Tool = {
   name: "web_search",
   description:
-    "Search the public web for fresh external information. Use this autonomously whenever you need current data that the indexed corpus doesn't contain — for example: current commodity prices, recent comparable deals (KIZAD, JAFZA, Tangier MED, Suez SCZone), news about a counterparty company, recent regulatory changes, latest IFC project benchmarks, or any factual question requiring information beyond the user's documents. Do not ask the user for permission — just call this tool when you need fresh data.",
+    "Search the public web for fresh external information. Use this autonomously whenever you need current data that the indexed corpus doesn't contain — for example: current commodity prices, recent comparable deals (KIZAD, JAFZA, Tangier MED, Suez SCZone), news about a relevant company, recent regulatory changes, latest IFC project benchmarks, or any factual question requiring information beyond the user's documents. Do not ask the user for permission — just call this tool when you need fresh data.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -131,10 +130,10 @@ const FETCH_URL_TOOL: Anthropic.Tool = {
   },
 };
 
-const EXTRACT_KEY_TERMS_TOOL: Anthropic.Tool = {
-  name: "extract_key_terms",
+const EXTRACT_WORKSPACE_FACTS_TOOL: Anthropic.Tool = {
+  name: "extract_workspace_facts",
   description:
-    "Read a project's linked documents (or a specific list of documents) and extract structured deal facts: land area, tenor, royalty, revenue share, equity split, milestones, governing law, etc. Optionally writes the extracted terms into a negotiation row's key_terms JSONB (additive merge — existing fields are preserved). Use this whenever the user wants to populate a negotiation from the source documents, or whenever you need a structured snapshot of what the deal actually says. DO NOT extract by hand — call this tool. The extracted output is more reliable than your own reading.",
+    "Read a project's linked documents (or a specific list of documents) and extract structured commercial facts: land area, tenor, royalty, revenue share, equity split, milestones, governing law, dispute resolution, and related economic terms. Use this whenever the user wants a structured snapshot of what the source documents actually say. DO NOT extract these facts by hand — call this tool.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -149,35 +148,12 @@ const EXTRACT_KEY_TERMS_TOOL: Anthropic.Tool = {
         description:
           "Explicit list of document UUIDs. Use this when the user pinned specific documents instead of working from a project.",
       },
-      negotiation_id: {
-        type: "string",
-        description:
-          "Optional: a negotiation UUID to merge the extracted terms into. The merge is ADDITIVE — existing key_terms fields are preserved unless the extraction provides a fresh value.",
-      },
       focus: {
         type: "string",
         description:
           "Optional natural-language hint to narrow the extraction (e.g. 'focus on financial terms' or 'milestones and timelines only').",
       },
     },
-  },
-};
-
-const COMPARE_DEALS_TOOL: Anthropic.Tool = {
-  name: "compare_deals",
-  description:
-    "Side-by-side comparison of 2 to 5 negotiations across their key_terms fields. Returns a structured matrix where every unique field becomes a row and each negotiation becomes a column. Highlights which fields differ across scenarios. Use this whenever the user asks to compare scenarios, contrast deal structures, or review what changed between versions of a proposal. DO NOT manually re-state each negotiation's terms in narrative form when the user wants a comparison — call this tool to get a clean structured layout, then narrate the highlights.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      negotiation_ids: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "Array of 2 to 5 negotiation UUIDs to compare. Order is preserved in the output columns.",
-      },
-    },
-    required: ["negotiation_ids"],
   },
 };
 
@@ -229,8 +205,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
         WEB_SEARCH_TOOL,
         FINANCIAL_MODEL_TOOL,
         FETCH_URL_TOOL,
-        EXTRACT_KEY_TERMS_TOOL,
-        COMPARE_DEALS_TOOL,
+        EXTRACT_WORKSPACE_FACTS_TOOL,
       ],
       messages: workingMessages as Anthropic.MessageParam[],
     });
@@ -379,8 +354,8 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
           }
         }
 
-        // ── extract_key_terms (slow — LLM + DB) ──
-        if (tu.name === "extract_key_terms") {
+        // ── extract_workspace_facts (slow — LLM + DB) ──
+        if (tu.name === "extract_workspace_facts") {
           const label =
             (typeof tu.input.project === "string"
               ? `project: ${tu.input.project}`
@@ -388,17 +363,17 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
             (Array.isArray(tu.input.document_ids)
               ? `${(tu.input.document_ids as string[]).length} docs`
               : "documents");
-          onToolStart?.(`Extracting key terms (${label})`, "extract_key_terms");
+          onToolStart?.(`Extracting structured facts (${label})`, "extract_workspace_facts");
           try {
-            const resultText = await runExtractKeyTerms(tu.input);
+            const resultText = await runExtractWorkspaceFacts(tu.input);
             const parsed = JSON.parse(resultText) as {
               document_count?: number;
               error?: string;
             };
             onToolEnd?.(
-              `Extracting key terms (${label})`,
+              `Extracting structured facts (${label})`,
               parsed.document_count ?? 0,
-              "extract_key_terms",
+              "extract_workspace_facts",
             );
             return {
               type: "tool_result" as const,
@@ -407,32 +382,14 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
             };
           } catch (err) {
             onToolEnd?.(
-              `Extracting key terms (${label})`,
+              `Extracting structured facts (${label})`,
               0,
-              "extract_key_terms",
+              "extract_workspace_facts",
             );
             return {
               type: "tool_result" as const,
               tool_use_id: tu.id,
               content: `Extraction failed: ${(err as Error).message}`,
-            };
-          }
-        }
-
-        // ── compare_deals (instant DB read, no SSE event) ──
-        if (tu.name === "compare_deals") {
-          try {
-            const resultText = await runCompareDeals(tu.input);
-            return {
-              type: "tool_result" as const,
-              tool_use_id: tu.id,
-              content: resultText,
-            };
-          } catch (err) {
-            return {
-              type: "tool_result" as const,
-              tool_use_id: tu.id,
-              content: `Compare failed: ${(err as Error).message}`,
             };
           }
         }

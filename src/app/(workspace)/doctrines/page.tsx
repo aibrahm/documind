@@ -21,6 +21,10 @@ const DOCTRINE_DOT: Record<string, string> = {
   negotiation: "bg-rose-500",
 };
 
+const DOCTRINE_LABEL: Record<string, string> = {
+  negotiation: "commercial",
+};
+
 export default function DoctrinesPage() {
   const [doctrines, setDoctrines] = useState<Doctrine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,6 +130,7 @@ export default function DoctrinesPage() {
               const isExpanded = expanded.has(d.id);
               const isEditing = editing === d.id;
               const dot = DOCTRINE_DOT[d.name] || "bg-slate-400";
+              const label = DOCTRINE_LABEL[d.name] || d.name;
 
               return (
                 <div
@@ -148,7 +153,7 @@ export default function DoctrinesPage() {
                       <div className="flex items-baseline gap-2">
                         <span className="text-[14px] font-semibold text-slate-900">{d.title}</span>
                         <span className="font-['JetBrains_Mono'] text-[10px] text-slate-400 uppercase tracking-wider">
-                          {d.name}
+                          {label}
                         </span>
                       </div>
                     </div>
