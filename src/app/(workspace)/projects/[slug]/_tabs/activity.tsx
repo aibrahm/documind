@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { MessageSquare } from "lucide-react";
+import { Clock3, MessageSquare, MessageSquarePlus } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
 
 interface ConversationItem {
   id: string;
@@ -12,7 +13,7 @@ interface ConversationItem {
   created_at: string | null;
 }
 
-export function ChatsTab({ projectSlug }: { projectSlug: string }) {
+export function ActivityTab({ projectSlug }: { projectSlug: string }) {
   const [convos, setConvos] = useState<ConversationItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,7 +28,7 @@ export function ChatsTab({ projectSlug }: { projectSlug: string }) {
       } catch (err) {
         if (!cancelled)
           setError(
-            err instanceof Error ? err.message : "Failed to load conversations",
+            err instanceof Error ? err.message : "Failed to load thread activity",
           );
       }
     })();
@@ -36,11 +37,22 @@ export function ChatsTab({ projectSlug }: { projectSlug: string }) {
     };
   }, [projectSlug]);
 
+  const newThreadHref = `/projects/${projectSlug}?tab=threads&new=${Date.now()}`;
+  const newChatButton = (
+    <Link
+      href={newThreadHref}
+      className={`${buttonVariants({ variant: "outline" })} gap-1.5 no-underline`}
+    >
+      <MessageSquarePlus className="w-3.5 h-3.5" />
+      New thread
+    </Link>
+  );
+
   if (error) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="max-w-md rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
-          Failed to load conversations: {error}
+          Failed to load thread activity: {error}
         </div>
       </div>
     );
@@ -48,21 +60,23 @@ export function ChatsTab({ projectSlug }: { projectSlug: string }) {
   if (convos === null) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-slate-400">
-        Loading conversations…
+        Loading activity…
       </div>
     );
   }
   if (convos.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="max-w-md text-center space-y-2">
+        <div className="max-w-md text-center space-y-3">
           <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
           <p className="text-lg font-semibold text-slate-700">
-            No conversations yet
+            No thread activity yet
           </p>
           <p className="text-sm text-slate-400">
-            Start chatting in the Overview tab — new conversations will appear here.
+            Start a new thread and it will appear here once the first message is
+            sent.
           </p>
+          <div className="pt-2">{newChatButton}</div>
         </div>
       </div>
     );
@@ -71,10 +85,16 @@ export function ChatsTab({ projectSlug }: { projectSlug: string }) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-2">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] font-['JetBrains_Mono'] font-semibold uppercase tracking-wider text-slate-400">
+            {convos.length} thread{convos.length === 1 ? "" : "s"}
+          </p>
+          {newChatButton}
+        </div>
         {convos.map((c) => (
           <Link
             key={c.id}
-            href={`/?conversation=${c.id}`}
+            href={`/projects/${projectSlug}?tab=threads&conversation=${c.id}`}
             className="block rounded-lg border border-slate-200 px-4 py-3 hover:bg-slate-50 hover:border-slate-300 transition-colors no-underline"
           >
             <div className="flex items-start justify-between gap-2">
@@ -99,9 +119,10 @@ export function ChatsTab({ projectSlug }: { projectSlug: string }) {
               </p>
             )}
             {c.created_at && (
-              <p className="mt-1 text-[10px] text-slate-400 font-['JetBrains_Mono']">
-                {new Date(c.created_at).toLocaleString()}
-              </p>
+              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-slate-400 font-['JetBrains_Mono']">
+                <Clock3 className="w-3 h-3" />
+                <span>{new Date(c.created_at).toLocaleString()}</span>
+              </div>
             )}
           </Link>
         ))}

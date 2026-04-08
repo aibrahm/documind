@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ChevronDown,
   Folder,
+  MessageSquarePlus,
 } from "lucide-react";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
 import {
@@ -173,7 +174,7 @@ export function ProjectSidebar({
 
   const handleConversationRename = async (c: ConversationSummary) => {
     setMenuOpen(null);
-    const next = window.prompt("Rename conversation", c.title);
+    const next = window.prompt("Rename thread", c.title);
     if (!next || !next.trim() || next.trim() === c.title) return;
     try {
       const res = await fetch(`/api/conversations/${c.id}`, {
@@ -192,7 +193,7 @@ export function ProjectSidebar({
 
   const handleConversationDelete = async (c: ConversationSummary) => {
     setMenuOpen(null);
-    if (!window.confirm(`Delete "${c.title}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete "${c.title}"? This thread cannot be recovered.`)) return;
     try {
       const res = await fetch(`/api/conversations/${c.id}`, {
         method: "DELETE",
@@ -214,19 +215,29 @@ export function ProjectSidebar({
         }`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-3 border-b border-slate-200 shrink-0">
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 hover:bg-slate-50 transition-colors cursor-pointer shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New project
-          </button>
+        <div className="flex items-center justify-between gap-1.5 px-3 py-3 border-b border-slate-200 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Link
+              href="/"
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 hover:bg-slate-50 transition-colors cursor-pointer shadow-sm no-underline"
+              title="Start a new general thread"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5" />
+              New thread
+            </Link>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-md p-1.5 hover:bg-slate-50 transition-colors cursor-pointer shadow-sm"
+              title="New project"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <button
             type="button"
             onClick={onToggle}
-            className="text-slate-400 hover:text-slate-700 bg-transparent border-none cursor-pointer p-1"
+            className="text-slate-400 hover:text-slate-700 bg-transparent border-none cursor-pointer p-1 shrink-0"
             title="Collapse sidebar"
           >
             <PanelLeftClose className="w-4 h-4" />
@@ -343,13 +354,14 @@ export function ProjectSidebar({
                     <div className="ml-7 mt-0.5 mb-1">
                       {projectConvos.length === 0 ? (
                         <p className="text-[11px] text-slate-400 px-2 py-1">
-                          No conversations yet
+                          No threads yet
                         </p>
                       ) : (
                         projectConvos.slice(0, 10).map((c) => (
                           <ConversationRow
                             key={c.id}
                             conversation={c}
+                            href={`/projects/${p.slug}?tab=threads&conversation=${c.id}`}
                             isActive={activeConversationId === c.id}
                             menuKey={`conv-${c.id}`}
                             isMenuOpen={menuOpen === `conv-${c.id}`}
@@ -381,7 +393,7 @@ export function ProjectSidebar({
             </div>
             {generalConvos.length === 0 && (
               <p className="px-3 text-xs text-slate-400 py-2">
-                No unassigned conversations
+                No unassigned threads
               </p>
             )}
             {BUCKET_ORDER.map((bucket) => {
@@ -396,6 +408,7 @@ export function ProjectSidebar({
                     <ConversationRow
                       key={c.id}
                       conversation={c}
+                      href={`/?conversation=${c.id}`}
                       isActive={activeConversationId === c.id}
                       menuKey={`conv-${c.id}`}
                       isMenuOpen={menuOpen === `conv-${c.id}`}
@@ -438,6 +451,7 @@ export function ProjectSidebar({
 
 interface ConversationRowProps {
   conversation: ConversationSummary;
+  href: string;
   isActive: boolean;
   menuKey: string;
   isMenuOpen: boolean;
@@ -449,6 +463,7 @@ interface ConversationRowProps {
 
 function ConversationRow({
   conversation,
+  href,
   isActive,
   isMenuOpen,
   onToggleMenu,
@@ -461,7 +476,7 @@ function ConversationRow({
   return (
     <div className="group relative mx-2">
       <Link
-        href={`/?conversation=${conversation.id}`}
+        href={href}
         className={`block ${padding} rounded text-[12px] no-underline transition-colors pr-7 truncate ${
           isActive
             ? "bg-slate-200/70 text-slate-900 font-medium"

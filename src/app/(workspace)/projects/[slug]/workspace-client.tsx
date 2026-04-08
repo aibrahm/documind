@@ -5,14 +5,14 @@ import type { Database } from "@/lib/database.types";
 import { useChat } from "@/lib/hooks/use-chat";
 import {
   ProjectWorkspaceHeader,
-  type Counterparty,
+  type ProjectParticipant,
 } from "@/components/project-workspace-header";
 import { ProjectTabs, type TabId } from "@/components/project-tabs";
-import { OverviewTab } from "./_tabs/overview";
-import { DocumentsTab } from "./_tabs/documents";
-import { NegotiationsTab } from "./_tabs/negotiations";
-import { ChatsTab } from "./_tabs/chats";
-import { MemoryTab } from "./_tabs/memory";
+import { BriefTab } from "./_tabs/brief";
+import { ThreadsTab } from "./_tabs/threads";
+import { KnowledgeTab } from "./_tabs/knowledge";
+import { ActivityTab } from "./_tabs/activity";
+import { OutputsTab } from "./_tabs/outputs";
 
 type Project = Database["public"]["Tables"]["projects"]["Row"];
 
@@ -21,66 +21,80 @@ interface WorkspaceClientProps {
   initialTab: string;
   counts: {
     documents: number;
-    companies: number;
-    negotiations: number;
-    conversations: number;
+    entities: number;
+    threads: number;
   };
-  counterparties: Counterparty[];
+  participants: ProjectParticipant[];
 }
 
 const VALID_TABS: TabId[] = [
-  "overview",
-  "documents",
-  "negotiations",
-  "chats",
-  "memory",
+  "brief",
+  "knowledge",
+  "threads",
+  "outputs",
+  "activity",
 ];
 
 function isValidTab(t: string): t is TabId {
   return (VALID_TABS as string[]).includes(t);
 }
 
+function normalizeTab(rawTab: string): TabId {
+  const legacyMap: Record<string, TabId> = {
+    overview: "brief",
+    documents: "knowledge",
+    negotiations: "threads",
+    chats: "threads",
+    memory: "activity",
+  };
+  const mapped = legacyMap[rawTab] ?? rawTab;
+  return isValidTab(mapped) ? mapped : "brief";
+}
+
 export function WorkspaceClient({
   project,
   initialTab,
   counts,
-  counterparties,
+  participants,
 }: WorkspaceClientProps) {
   const searchParams = useSearchParams();
   const rawTab = searchParams.get("tab") ?? initialTab;
-  const activeTab: TabId = isValidTab(rawTab) ? rawTab : "overview";
+  const activeTab = normalizeTab(rawTab);
 
-  // Chat state lifted to workspace level so it survives tab switches
+  // Thread workspace state is lifted to the project level so it survives tab switches.
   const chat = useChat({ projectId: project.id });
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       <ProjectWorkspaceHeader
         project={project}
-        counterparties={counterparties}
-        counts={counts}
+        participants={participants}
       />
       <ProjectTabs activeTab={activeTab} />
 
       {/*
         Tab content uses `hidden` CSS so inactive tabs stay mounted.
-        This preserves chat state in the Overview tab across tab switches.
+        This preserves the active thread state across tab switches.
       */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
-        <div hidden={activeTab !== "overview"} className="h-full">
-          <OverviewTab project={project} counts={counts} chat={chat} />
+        <div hidden={activeTab !== "brief"} className="h-full">
+          <BriefTab
+            project={project}
+            counts={counts}
+            participants={participants}
+          />
         </div>
-        <div hidden={activeTab !== "documents"} className="h-full">
-          <DocumentsTab projectSlug={project.slug} />
+        <div hidden={activeTab !== "knowledge"} className="h-full">
+          <KnowledgeTab projectSlug={project.slug} />
         </div>
-        <div hidden={activeTab !== "negotiations"} className="h-full">
-          <NegotiationsTab projectId={project.id} projectSlug={project.slug} />
+        <div hidden={activeTab !== "threads"} className="h-full">
+          <ThreadsTab project={project} counts={counts} chat={chat} />
         </div>
-        <div hidden={activeTab !== "chats"} className="h-full">
-          <ChatsTab projectSlug={project.slug} />
+        <div hidden={activeTab !== "outputs"} className="h-full">
+          <OutputsTab projectId={project.id} />
         </div>
-        <div hidden={activeTab !== "memory"} className="h-full">
-          <MemoryTab />
+        <div hidden={activeTab !== "activity"} className="h-full">
+          <ActivityTab projectSlug={project.slug} />
         </div>
       </div>
     </div>

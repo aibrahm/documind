@@ -112,6 +112,31 @@ export default function Home() {
     [openDocument, setError],
   );
 
+  const handleSaveSharedMemory = useCallback(
+    async (payload: {
+      text: string;
+      kind: "decision" | "fact" | "instruction" | "preference" | "risk" | "question";
+      scopeType: "shared";
+    }) => {
+      const response = await fetch("/api/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: payload.text,
+          kind: payload.kind,
+          scopeType: "shared",
+          sourceConversationId: conversationId,
+          importance: 0.7,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save memory");
+      }
+    },
+    [conversationId],
+  );
+
   // ── Determine UI state ──
   const isIdle = messages.length === 0 && !streaming;
 
@@ -248,6 +273,20 @@ export default function Home() {
                       content={msg.content}
                       metadata={msg.metadata}
                       onSourceClick={handleSourceClick}
+                      memoryScopes={
+                        msg.role === "assistant"
+                          ? [{ id: "shared", label: "Save to shared memory" }]
+                          : []
+                      }
+                      onSaveMemory={
+                        msg.role === "assistant"
+                          ? (payload) =>
+                              handleSaveSharedMemory({
+                                ...payload,
+                                scopeType: "shared",
+                              })
+                          : undefined
+                      }
                     />
                   ))}
 

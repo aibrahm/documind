@@ -10,7 +10,7 @@ export default async function ProjectWorkspacePage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { slug } = await params;
-  const { tab = "overview" } = await searchParams;
+  const { tab = "brief" } = await searchParams;
 
   const { data: project, error } = await supabaseAdmin
     .from("projects")
@@ -22,14 +22,14 @@ export default async function ProjectWorkspacePage({
     notFound();
   }
 
-  // Membership counts + companies fetched in parallel
-  const [docsCount, companiesLinks, negsCount, convosCount] = await Promise.all([
+  // Membership counts + linked participants fetched in parallel
+  const [docsCount, entityLinks, convosCount] = await Promise.all([
     supabaseAdmin
       .from("project_documents")
       .select("project_id", { count: "exact", head: true })
       .eq("project_id", project.id),
     supabaseAdmin
-      .from("project_companies")
+      .from("project_entities")
       .select(
         `
         role,
@@ -38,16 +38,12 @@ export default async function ProjectWorkspacePage({
       )
       .eq("project_id", project.id),
     supabaseAdmin
-      .from("negotiations")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", project.id),
-    supabaseAdmin
       .from("conversations")
       .select("id", { count: "exact", head: true })
       .eq("project_id", project.id),
   ]);
 
-  const counterparties = (companiesLinks.data || [])
+  const participants = (entityLinks.data || [])
     .filter((l) => l.entity)
     .map((l) => {
       const e = l.entity as { id: string; name: string; name_en: string | null };
@@ -61,9 +57,8 @@ export default async function ProjectWorkspacePage({
 
   const counts = {
     documents: docsCount.count || 0,
-    companies: counterparties.length,
-    negotiations: negsCount.count || 0,
-    conversations: convosCount.count || 0,
+    entities: participants.length,
+    threads: convosCount.count || 0,
   };
 
   return (
@@ -71,7 +66,7 @@ export default async function ProjectWorkspacePage({
       project={project}
       initialTab={tab}
       counts={counts}
-      counterparties={counterparties}
+      participants={participants}
     />
   );
 }

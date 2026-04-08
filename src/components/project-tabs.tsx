@@ -3,11 +3,11 @@
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
 const TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "documents", label: "Documents" },
-  { id: "negotiations", label: "Negotiations" },
-  { id: "chats", label: "Chats" },
-  { id: "memory", label: "Memory" },
+  { id: "brief", label: "Brief" },
+  { id: "knowledge", label: "Knowledge" },
+  { id: "threads", label: "Threads" },
+  { id: "outputs", label: "Outputs" },
+  { id: "activity", label: "Activity" },
 ] as const;
 
 export type TabId = (typeof TABS)[number]["id"];
@@ -23,7 +23,7 @@ export function ProjectTabs({ activeTab }: ProjectTabsProps) {
 
   const handleClick = (tab: TabId) => {
     const sp = new URLSearchParams(searchParams.toString());
-    if (tab === "overview") {
+    if (tab === "brief") {
       sp.delete("tab");
     } else {
       sp.set("tab", tab);
