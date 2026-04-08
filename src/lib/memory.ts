@@ -1,16 +1,34 @@
 import { supabaseAdmin } from "./supabase";
 import { getOpenAI } from "./clients";
 
-export type MemoryKind = "decision" | "fact" | "recommendation" | "concern" | "preference";
+export type MemoryKind =
+  | "decision"
+  | "fact"
+  | "recommendation"
+  | "concern"
+  | "preference";
 
-export interface ConversationMemory {
+type MemoryItemKind =
+  | "decision"
+  | "fact"
+  | "instruction"
+  | "preference"
+  | "risk"
+  | "question";
+
+type MemoryScope = "thread" | "project" | "shared" | "institution";
+
+export interface RelevantMemory {
   id: string;
-  conversation_id: string | null;
   text: string;
-  kind: MemoryKind;
+  kind: MemoryKind | MemoryItemKind;
   entities: string[];
   importance: number;
   created_at: string;
+  scope_type: MemoryScope;
+  scope_id: string | null;
+  source_conversation_id: string | null;
+  source_document_id: string | null;
 }
 
 interface ExtractedMemory {
@@ -20,28 +38,11 @@ interface ExtractedMemory {
   importance: number;
 }
 
-/**
- * Extract durable memories from a single conversation turn (user message +
- * assistant response). Runs in the background after the response is streamed.
- *
- * Memories are NOT just summaries — they're the things the user would want
- * surfaced again in a future unrelated conversation.
- *
- * Examples of good memories:
- * - "User decided to reject the El Sewedy Scenario 2 in favor of negotiating Scenario 1 + 20% partnership"
- * - "GTEZ has 88-page master plan for Golden Triangle (المخطط العام الشامل)"
- * - "User is preparing recommendations for the financial & investment committee"
- *
- * Examples of BAD memories (to avoid):
- * - "User asked about the document" (not actionable)
- * - "Assistant provided a list of documents" (low information value)
- */
 export async function extractMemories(
   userMessage: string,
   assistantMessage: string,
   conversationId: string,
 ): Promise<ExtractedMemory[]> {
-  // Skip extraction for trivial exchanges
   if (assistantMessage.length < 200) return [];
 
   try {
@@ -53,13 +54,13 @@ export async function extractMemories(
       messages: [
         {
           role: "system",
-          content: `You distill durable institutional memory from conversation turns. Your output will be injected into FUTURE conversations as context, so the user can pick up where they left off.
+          content: `You distill durable workspace memory from conversation turns. The result will be reused later across project threads, so only keep durable context.
 
 EXTRACT 0-3 memories per turn. Return JSON: {"memories": [{"text": "...", "kind": "...", "entities": [...], "importance": 0.0-1.0}]}.
 
 KIND must be one of:
 - "decision": user made a choice or commitment
-- "fact": factual information about the org, deals, documents, people
+- "fact": factual information about the org, projects, documents, people
 - "recommendation": advisor recommended a specific action
 - "concern": user flagged a risk, blocker, or issue
 - "preference": user expressed a working style or format preference
@@ -70,37 +71,36 @@ IMPORTANCE 0.0-1.0:
 - 1.0: critical decisions, major findings
 - 0.7-0.9: substantive recommendations or facts
 - 0.4-0.6: useful context
-- 0.0-0.3: trivial — just don't return these
+- 0.0-0.3: trivial — do not return these
 
-GOOD MEMORIES (extract):
-- "Vice Chairman is reviewing two scenarios from El Sewedy Electric for Safaga industrial zone — Scenario 1 (developer + 20% partnership) and Scenario 2 (developer only)"
-- "GTEZ master plan exists as 88-page document covering mining, infrastructure, sectors"
+GOOD MEMORIES:
+- "Vice Chairman is reviewing two scenarios from El Sewedy Electric for Safaga industrial zone"
+- "GTEZ master plan exists as an 88-page document covering mining, infrastructure, and sector priorities"
 - "Recommended renegotiating land price from $1/m² to $3/m² and tying utilities cost to phases"
 
-BAD (do NOT extract):
-- "User asked about documents" (too generic)
-- "Assistant explained the difference between attachments and uploads" (system-level, not domain)
-- Anything that's just a paraphrase of the message
+BAD MEMORIES:
+- "User asked about documents"
+- "Assistant explained the UI"
+- Anything that just paraphrases the turn without future value
 
 If nothing durable was discussed, return {"memories": []}.`,
         },
         {
           role: "user",
-          content: `USER MESSAGE:\n${userMessage.slice(0, 2000)}\n\nASSISTANT RESPONSE:\n${assistantMessage.slice(0, 4000)}`,
+          content: `CONVERSATION ID:\n${conversationId}\n\nUSER MESSAGE:\n${userMessage.slice(0, 2000)}\n\nASSISTANT RESPONSE:\n${assistantMessage.slice(0, 4000)}`,
         },
       ],
     });
 
     const parsed = JSON.parse(res.choices[0].message.content || "{}");
-    const memories: ExtractedMemory[] = Array.isArray(parsed.memories) ? parsed.memories : [];
+    const memories: ExtractedMemory[] = Array.isArray(parsed.memories)
+      ? parsed.memories
+      : [];
     return memories
       .filter((m) => m && typeof m.text === "string" && m.text.length > 10)
       .filter((m) => m.importance >= 0.4)
       .slice(0, 3);
   } catch (err) {
-    // Fail-loud per CLAUDE.md: log the failure prominently so we can diagnose.
-    // Returning [] is intentional (memory is best-effort, not blocking) but
-    // the log makes the degraded state visible.
     const message = err instanceof Error ? err.message : String(err);
     console.error(
       "memory: extractMemories FAILED — this turn's context will NOT be persisted:",
@@ -110,124 +110,114 @@ If nothing durable was discussed, return {"memories": []}.`,
   }
 }
 
-/**
- * Persist extracted memories to the conversation_memory table.
- */
 export async function storeMemories(
   memories: ExtractedMemory[],
   conversationId: string,
   projectId?: string | null,
 ): Promise<void> {
   if (memories.length === 0) return;
-  const rows = memories.map((m) => ({
-    conversation_id: conversationId,
+
+  const threadRows = memories.map((m) => ({
+    scope_type: "thread" as const,
+    scope_id: conversationId,
+    kind: mapLegacyKindToMemoryItemKind(m.kind),
     text: m.text,
-    kind: m.kind,
     entities: m.entities || [],
     importance: m.importance,
-    ...(projectId ? { project_id: projectId } : {}),
+    source_conversation_id: conversationId,
   }));
-  const { error } = await supabaseAdmin.from("conversation_memory").insert(rows);
-  if (error) console.error("Memory store failed:", error);
+
+  const workspaceRows = memories
+    .filter((m) => m.importance >= 0.6)
+    .map((m) => ({
+      scope_type: (projectId ? "project" : "shared") as MemoryScope,
+      scope_id: projectId ?? null,
+      kind: mapLegacyKindToMemoryItemKind(m.kind),
+      text: m.text,
+      entities: m.entities || [],
+      importance: m.importance,
+      source_conversation_id: conversationId,
+    }));
+
+  const { error: memoryItemsError } = await supabaseAdmin
+    .from("memory_items")
+    .insert([...threadRows, ...workspaceRows]);
+  if (memoryItemsError) {
+    console.error("Memory store failed (memory_items):", memoryItemsError);
+  }
 }
 
-/**
- * Retrieve relevant memories for a new user message. Strategy:
- * 1. Extract candidate entities from the message text (regex on quoted/Arabic
- *    or capitalized terms is enough for the first pass).
- * 2. Match memories whose entities[] overlaps with extracted entities.
- * 3. Always also include the top-N most important recent memories regardless
- *    of entity match — these are the "general standing" of the org.
- * 4. Cap total to keep token budget reasonable.
- */
 export async function retrieveRelevantMemories(
   userMessage: string,
   excludeConversationId?: string | null,
   maxResults = 8,
   projectId?: string | null,
-): Promise<ConversationMemory[]> {
+): Promise<RelevantMemory[]> {
   const candidateEntities = extractCandidateEntities(userMessage);
 
-  // Pull a generous superset by entity OR by importance, then dedupe & rank
-  let query = supabaseAdmin
-    .from("conversation_memory")
+  const { data: scopedRows, error } = await supabaseAdmin
+    .from("memory_items")
     .select("*")
     .order("importance", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(120);
 
-  if (excludeConversationId) {
-    query = query.neq("conversation_id", excludeConversationId);
-  }
+  if (error || !scopedRows || scopedRows.length === 0) return [];
 
-  const { data, error } = await query;
-  if (error || !data) return [];
-
-  const memories = data as ConversationMemory[];
-
-  // Score each memory: entity overlap is the strongest signal.
-  // Project-scoped chat: boost memories tagged with the current project,
-  // penalize memories tagged with a DIFFERENT project (don't leak between deals),
-  // global memories (project_id IS NULL) stay neutral so cross-cutting context
-  // (e.g. "VC won't go below 18% rev share") still surfaces.
-  const scored = memories.map((m) => {
-    const entityOverlap = candidateEntities.filter((e) =>
-      m.entities.some(
-        (me) =>
-          me.toLowerCase().includes(e.toLowerCase()) ||
-          e.toLowerCase().includes(me.toLowerCase()),
+  const filtered = (scopedRows as Array<Record<string, unknown>>)
+    .filter((row) =>
+      isRelevantScope(
+        row.scope_type as string,
+        row.scope_id as string | null | undefined,
+        excludeConversationId ?? null,
+        projectId ?? null,
       ),
-    ).length;
-    let score = entityOverlap * 2 + m.importance;
-    if (projectId) {
-      const memProjectId = (m as ConversationMemory & { project_id?: string | null })
-        .project_id;
-      if (memProjectId === projectId) score += 3;
-      else if (memProjectId && memProjectId !== projectId) score -= 2;
-    }
-    return { memory: m, score };
-  });
+    )
+    .map((row) => ({
+      id: row.id as string,
+      text: row.text as string,
+      kind: row.kind as RelevantMemory["kind"],
+      entities: (row.entities as string[] | null) ?? [],
+      importance: typeof row.importance === "number" ? row.importance : 0.5,
+      created_at: row.created_at as string,
+      scope_type: row.scope_type as MemoryScope,
+      scope_id: (row.scope_id as string | null | undefined) ?? null,
+      source_conversation_id:
+        (row.source_conversation_id as string | null | undefined) ?? null,
+      source_document_id:
+        (row.source_document_id as string | null | undefined) ?? null,
+    }));
 
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, maxResults).map((s) => s.memory);
+  return rankMemories(filtered, candidateEntities, excludeConversationId ?? null, projectId ?? null)
+    .slice(0, maxResults);
 }
 
-/**
- * Format memories as a system-prompt section for injection.
- */
-export function formatMemoriesForPrompt(memories: ConversationMemory[]): string {
+export function formatMemoriesForPrompt(memories: RelevantMemory[]): string {
   if (memories.length === 0) return "";
-  const grouped: Record<MemoryKind, string[]> = {
-    decision: [],
-    fact: [],
-    recommendation: [],
-    concern: [],
-    preference: [],
+
+  const scopeOrder: MemoryScope[] = ["project", "thread", "shared", "institution"];
+  const scopeLabels: Record<MemoryScope, string> = {
+    project: "PROJECT MEMORY",
+    thread: "THREAD MEMORY",
+    shared: "SHARED WORKSPACE MEMORY",
+    institution: "INSTITUTIONAL MEMORY",
   };
-  for (const m of memories) {
-    grouped[m.kind].push(m.text);
-  }
 
-  const sections: string[] = [];
-  if (grouped.decision.length > 0) {
-    sections.push("DECISIONS MADE:\n" + grouped.decision.map((t) => `- ${t}`).join("\n"));
-  }
-  if (grouped.recommendation.length > 0) {
-    sections.push("PRIOR RECOMMENDATIONS:\n" + grouped.recommendation.map((t) => `- ${t}`).join("\n"));
-  }
-  if (grouped.fact.length > 0) {
-    sections.push("INSTITUTIONAL CONTEXT:\n" + grouped.fact.map((t) => `- ${t}`).join("\n"));
-  }
-  if (grouped.concern.length > 0) {
-    sections.push("OPEN CONCERNS:\n" + grouped.concern.map((t) => `- ${t}`).join("\n"));
-  }
-  if (grouped.preference.length > 0) {
-    sections.push("USER PREFERENCES:\n" + grouped.preference.map((t) => `- ${t}`).join("\n"));
-  }
+  const sections = scopeOrder
+    .map((scope) => {
+      const scoped = memories.filter((m) => m.scope_type === scope);
+      if (scoped.length === 0) return null;
+      return `${scopeLabels[scope]}:\n${scoped
+        .map((m) => `- [${formatMemoryKindLabel(m.kind)}] ${m.text}`)
+        .join("\n")}`;
+    })
+    .filter((section): section is string => Boolean(section));
 
-  return `═══ MEMORY FROM PRIOR CONVERSATIONS ═══
+  if (sections.length === 0) return "";
 
-These are durable insights distilled from your previous exchanges with this user. Reference them naturally when relevant — e.g. "كما ناقشنا في المحادثات السابقة..." Do not invent memories not listed here.
+  return `═══ DURABLE WORKSPACE MEMORY ═══
+
+These are saved decisions, facts, preferences, and risks from prior work. Use them when relevant, but do not treat them as stronger than direct document evidence in this turn.
 
 ${sections.join("\n\n")}
 
@@ -235,27 +225,92 @@ ${sections.join("\n\n")}
 `;
 }
 
-/**
- * Extract candidate entities from a user message via lightweight regex.
- * Catches: quoted strings, Arabic word groups (3+ char runs), capitalized
- * English phrases. Good enough for the first-pass match.
- */
+function rankMemories(
+  memories: RelevantMemory[],
+  candidateEntities: string[],
+  excludeConversationId: string | null,
+  projectId: string | null,
+): RelevantMemory[] {
+  const scored = memories.map((memory) => {
+    const entityOverlap = candidateEntities.filter((entity) =>
+      memory.entities.some(
+        (saved) =>
+          saved.toLowerCase().includes(entity.toLowerCase()) ||
+          entity.toLowerCase().includes(saved.toLowerCase()),
+      ),
+    ).length;
+
+    let score = entityOverlap * 2 + memory.importance;
+
+    if (
+      memory.scope_type === "thread" &&
+      memory.scope_id &&
+      memory.scope_id === excludeConversationId
+    ) {
+      score -= 3;
+    }
+
+    if (memory.scope_type === "project") {
+      if (projectId && memory.scope_id === projectId) score += 3;
+      else if (memory.scope_id && projectId && memory.scope_id !== projectId) score -= 4;
+    } else if (memory.scope_type === "shared") {
+      score += 0.6;
+    } else if (memory.scope_type === "institution") {
+      score += 0.3;
+    }
+
+    return { memory, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((item) => item.memory);
+}
+
+function isRelevantScope(
+  scopeType: string,
+  scopeId: string | null | undefined,
+  excludeConversationId: string | null,
+  projectId: string | null,
+): boolean {
+  if (scopeType === "thread") {
+    return Boolean(scopeId && scopeId !== excludeConversationId);
+  }
+  if (scopeType === "project") {
+    return Boolean(projectId && scopeId === projectId);
+  }
+  return scopeType === "shared" || scopeType === "institution";
+}
+
+function formatMemoryKindLabel(kind: RelevantMemory["kind"]): string {
+  if (kind === "recommendation") return "recommendation";
+  if (kind === "concern") return "risk";
+  return kind;
+}
+
+function mapLegacyKindToMemoryItemKind(kind: MemoryKind): MemoryItemKind {
+  switch (kind) {
+    case "recommendation":
+      return "instruction";
+    case "concern":
+      return "risk";
+    default:
+      return kind;
+  }
+}
+
 function extractCandidateEntities(text: string): string[] {
   const candidates = new Set<string>();
 
-  // Quoted strings
-  for (const m of text.matchAll(/["«»“”'']([^"«»“”'']{3,40})["«»“”'']/g)) {
-    candidates.add(m[1].trim());
+  for (const match of text.matchAll(/["«»“”'']([^"«»“”'']{3,40})["«»“”'']/g)) {
+    candidates.add(match[1].trim());
   }
 
-  // Capitalized English phrases (2+ words)
-  for (const m of text.matchAll(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,4})\b/g)) {
-    candidates.add(m[1].trim());
+  for (const match of text.matchAll(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,4})\b/g)) {
+    candidates.add(match[1].trim());
   }
 
-  // Long Arabic word groups (4+ chars, mainly Arabic letters)
-  for (const m of text.matchAll(/([\u0600-\u06FF]{4,}(?:\s+[\u0600-\u06FF]{2,}){0,4})/g)) {
-    if (m[1].length >= 6) candidates.add(m[1].trim());
+  for (const match of text.matchAll(/([\u0600-\u06FF]{4,}(?:\s+[\u0600-\u06FF]{2,}){0,4})/g)) {
+    if (match[1].length >= 6) candidates.add(match[1].trim());
   }
 
   return Array.from(candidates).slice(0, 20);

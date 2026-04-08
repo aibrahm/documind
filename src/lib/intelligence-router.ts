@@ -1,6 +1,8 @@
 import { getOpenAI } from "@/lib/clients";
 import type { DoctrineName } from "./doctrine";
 
+const ROUTER_MODEL = "gpt-5.4";
+
 export type ResponseMode = "casual" | "search" | "deep";
 
 export interface RoutingDecision {
@@ -71,9 +73,10 @@ export async function routeMessage(
   ).join("\n");
 
   const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: ROUTER_MODEL,
     temperature: 0,
     response_format: { type: "json_object" },
+    max_completion_tokens: 512,
     messages: [
       {
         role: "system",
@@ -154,7 +157,7 @@ If the query has NOTHING to do with documents or web search (like "tell me a jok
     // so the UI shows the degraded state instead of pretending the routing
     // worked.
     console.error(
-      "intelligence-router: failed to parse JSON response from gpt-4o-mini:",
+      `intelligence-router: failed to parse JSON response from ${ROUTER_MODEL}:`,
       (err as Error).message,
       "\n  raw content:",
       rawContent.slice(0, 500),

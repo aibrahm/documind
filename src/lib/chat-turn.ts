@@ -34,6 +34,14 @@ import {
   storeMemories,
 } from "@/lib/memory";
 import { logAudit } from "@/lib/audit";
+import {
+  formatKnowledgeLabel,
+  isPrivateDocument,
+} from "@/lib/document-knowledge";
+import { resolveDocumentTargetsFromInventory } from "@/lib/query-resolution";
+import { buildWorkspaceProfilePromptBlock, getWorkspaceProfile } from "@/lib/workspace-profile";
+
+const PRIMARY_CHAT_MODEL = "gpt-5.4";
 
 export interface InboundAttachment {
   title: string;
@@ -58,6 +66,26 @@ export interface RunChatTurnResult {
   modelUsed: string;
 }
 
+function openAiCompletionLimit(
+  model: string,
+  maxCompletionTokens: number,
+): { max_tokens: number } | { max_completion_tokens: number } {
+  if (model.startsWith("gpt-5")) {
+    return { max_completion_tokens: maxCompletionTokens };
+  }
+  return { max_tokens: maxCompletionTokens };
+}
+
+function openAiTemperature(
+  model: string,
+  value: number,
+): Record<string, never> | { temperature: number } {
+  if (model.startsWith("gpt-5")) {
+    return {};
+  }
+  return { temperature: value };
+}
+
 export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnResult> {
   const {
     conversationId,
@@ -69,12 +97,11 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     emit,
   } = args;
 
-  // ── Project context (Phase 05) ──
-  // The conversation row may carry a project_id. When set, this turn runs in
-  // "project-scoped" mode: the project's documents are seeded as primary
-  // evidence, the project's context_summary is injected into the system
-  // prompt, and OTHER projects' PRIVATE documents are excluded from
-  // retrieval. PUBLIC and DOCTRINE docs remain available globally.
+  // ── Project context ──
+  // A conversation may carry a project_id. When set, the thread gets project
+  // workspace context, the project's linked documents are seeded as primary
+  // evidence, and private documents linked only to OTHER projects are
+  // excluded from retrieval.
   const { data: convoRow } = await supabaseAdmin
     .from("conversations")
     .select("project_id")
@@ -90,13 +117,13 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     color: string | null;
   } | null = null;
   let projectDocIds: string[] = [];
-  let excludedDocIds = new Set<string>();
-  let counterpartyNames: string[] = [];
+  const excludedDocIds = new Set<string>();
+  let participantNames: string[] = [];
 
   if (projectId) {
-    // Fetch project + linked-doc IDs + counterparties + other-projects' private
+    // Fetch project + linked-doc IDs + participants + other-projects' private
     // doc IDs in parallel — these are independent reads.
-    const [projectRes, projectLinksRes, companiesRes, otherLinksRes] =
+    const [projectRes, projectLinksRes, participantLinksRes, otherLinksRes] =
       await Promise.all([
         supabaseAdmin
           .from("projects")
@@ -108,7 +135,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
           .select("document_id")
           .eq("project_id", projectId),
         supabaseAdmin
-          .from("project_companies")
+          .from("project_entities")
           .select(
             `entity:entities ( name, name_en )`,
           )
@@ -125,15 +152,15 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
       (r) => r.document_id as string,
     );
 
-    counterpartyNames = (companiesRes.data ?? [])
+    participantNames = (participantLinksRes.data ?? [])
       .map((l) => {
         const e = l.entity as { name?: string; name_en?: string | null } | null;
         return e?.name_en || e?.name || null;
       })
       .filter((s): s is string => Boolean(s));
 
-    // Exclusion: PRIVATE docs that are linked to OTHER projects but NOT to
-    // this one. Public and doctrine classifications are always allowed.
+    // Exclusion: docs linked only to other projects stay out of scope when
+    // they are private. Shared/public reference material remains available.
     const otherDocIdSet = new Set(
       (otherLinksRes.data ?? [])
         .map((r) => r.document_id as string)
@@ -142,10 +169,10 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     if (otherDocIdSet.size > 0) {
       const { data: otherDocs } = await supabaseAdmin
         .from("documents")
-        .select("id, classification")
+        .select("id, classification, access_level, knowledge_scope")
         .in("id", [...otherDocIdSet]);
       for (const d of otherDocs ?? []) {
-        if (d.classification === "PRIVATE") {
+        if (isPrivateDocument(d)) {
           excludedDocIds.add(d.id as string);
         }
       }
@@ -156,14 +183,54 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
   // The continue-path passes history to the router so it can rebuild a
   // topical search query from earlier turns when the current message is
   // terse ("retry", "this is old data", etc).
-  const [routing, priorMemories] = await Promise.all([
+  const [routing, priorMemories, allDocs, workspaceProfile] = await Promise.all([
     routeMessage(userMessage, history),
     retrieveRelevantMemories(userMessage, conversationId, 8, projectId),
+    supabaseAdmin
+      .from("documents")
+      .select(
+        "id, title, type, classification, access_level, knowledge_scope, language, page_count, status, created_at",
+      )
+      .eq("status", "ready")
+      .order("created_at", { ascending: false }),
+    getWorkspaceProfile(),
   ]);
   const memoryBlock = formatMemoriesForPrompt(priorMemories);
+  const workspaceProfileBlock = buildWorkspaceProfilePromptBlock(workspaceProfile);
+
+  const visibleDocs =
+    excludedDocIds.size > 0
+      ? (allDocs.data || []).filter((d) => !excludedDocIds.has(d.id as string))
+      : allDocs.data || [];
+
+  const docInventory = visibleDocs
+    .map(
+      (d, i) =>
+        `${i + 1}. "${d.title}" — ${d.type}, ${formatKnowledgeLabel(d)}, ${d.page_count} pages, ${d.language}`,
+    )
+    .join("\n");
+
+  const resolvedDocumentTargets = resolveDocumentTargetsFromInventory(
+    userMessage,
+    visibleDocs.map((doc) => ({
+      id: doc.id as string,
+      title: doc.title as string,
+    })),
+  ).slice(0, 2);
+  const resolvedDocIds = resolvedDocumentTargets.map((target) => target.id);
 
   // Search documents if needed
   let documentEvidence: Array<{
+    id: string;
+    type: "document";
+    title: string;
+    pageNumber: number;
+    sectionTitle: string | null;
+    clauseNumber: string | null;
+    documentId: string;
+    content: string;
+  }> = [];
+  let resolvedDocEvidence: Array<{
     id: string;
     type: "document";
     title: string;
@@ -261,7 +328,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     // Pull metadata + ALL chunks for the pinned documents
     const { data: pinnedDocs } = await supabaseAdmin
       .from("documents")
-      .select("id, title, type, classification")
+      .select("id, title, type, classification, access_level, knowledge_scope")
       .in("id", allPinnedDocIds);
     pinnedDocTitles = (pinnedDocs || []).map((d) => d.title);
 
@@ -288,11 +355,47 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     });
   }
 
+  // Deterministic document resolution from inventory references ("the first
+  // one", exact quoted titles, etc). When we can resolve the user's target to
+  // 1-2 specific docs, load ordered chunks from those docs up front so the
+  // model reasons over the correct file rather than relying on global search.
+  if (allPinnedDocIds.length === 0 && resolvedDocIds.length > 0) {
+    const { data: targetChunks } = await supabaseAdmin
+      .from("chunks")
+      .select(
+        "id, document_id, content, page_number, section_title, clause_number, chunk_index",
+      )
+      .in("document_id", resolvedDocIds)
+      .order("document_id", { ascending: true })
+      .order("chunk_index", { ascending: true })
+      .limit(Math.min(48, resolvedDocIds.length * 24));
+
+    const targetMetaMap = new Map(
+      visibleDocs.map((doc) => [doc.id as string, doc]),
+    );
+
+    resolvedDocEvidence = (targetChunks || []).map((chunk, index) => {
+      const meta = targetMetaMap.get(chunk.document_id as string);
+      return {
+        id: `TARGET-DOC-${index + 1}`,
+        type: "document" as const,
+        title: (meta?.title as string) || "Unknown",
+        pageNumber: chunk.page_number as number,
+        sectionTitle: chunk.section_title as string | null,
+        clauseNumber: chunk.clause_number as string | null,
+        documentId: chunk.document_id as string,
+        content: chunk.content as string,
+      };
+    });
+  }
+
   // Detect known entities in the user message — if any are mentioned (and the
   // user didn't already pin something), pre-filter retrieval to docs linked to
   // those entities. Skipped when pinned docs exist (the user was explicit).
   const mentionedEntities =
-    allPinnedDocIds.length > 0 ? [] : await findEntitiesInText(userMessage, 5);
+    allPinnedDocIds.length > 0 || resolvedDocIds.length > 0
+      ? []
+      : await findEntitiesInText(userMessage, 5);
   let entityScopedDocIds: string[] | null = null;
   if (mentionedEntities.length > 0) {
     const { data: links } = await supabaseAdmin
@@ -306,11 +409,10 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     if (ids.length > 0) entityScopedDocIds = ids;
   }
 
-  // ── Project-doc evidence (Phase 05) ──
+  // ── Project knowledge evidence ──
   // When in a project, run an additional retrieval pass restricted to the
   // project's linked documents. These chunks become the FIRST evidence block
-  // labeled PROJECT-DOC-N. Always runs (regardless of routing.shouldSearch)
-  // because the project context should always be available.
+  // labeled PROJECT-DOC-N because they are the primary workspace context.
   let projectDocEvidence: Array<{
     id: string;
     type: "document";
@@ -321,13 +423,14 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     documentId: string;
     content: string;
   }> = [];
-  if (projectId && projectDocIds.length > 0) {
+  if (projectId && projectDocIds.length > 0 && resolvedDocIds.length === 0) {
     try {
       const projectResults = await hybridSearch({
         query: routing.searchQuery || userMessage,
         matchCount: 6,
         useRerank: false,
         documentIds: projectDocIds,
+        excludedDocumentIds: [...excludedDocIds],
       });
       projectDocEvidence = projectResults.map((r, i) => ({
         id: `PROJECT-DOC-${i + 1}`,
@@ -351,20 +454,16 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
       useRerank: true,
       // If the user mentioned a known entity, restrict to its linked docs.
       // Otherwise normal corpus-wide search.
-      documentIds: entityScopedDocIds,
+      documentIds: resolvedDocIds.length > 0 ? resolvedDocIds : entityScopedDocIds,
+      excludedDocumentIds: [...excludedDocIds],
     });
-    // Phase 05: filter out PRIVATE docs that belong to OTHER projects
-    const filtered =
-      excludedDocIds.size > 0
-        ? results.filter((r) => !excludedDocIds.has(r.documentId))
-        : results;
     // De-dupe against project-doc evidence by DOCUMENT id (not chunk).
     // If the same doc surfaced in both passes, only the project-scoped pass
     // gets the evidence label — global retrieval skips the entire document.
     const projectDocIdSet = new Set(
       projectDocEvidence.map((p) => p.documentId),
     );
-    const deduped = filtered.filter(
+    const deduped = results.filter(
       (r) => !projectDocIdSet.has(r.documentId),
     );
     documentEvidence = deduped.map((r, i) => ({
@@ -383,6 +482,29 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
         documentEvidence.map(s => `[${s.id}] ${s.title} | Page ${s.pageNumber}${s.sectionTitle ? ` | ${s.sectionTitle}` : ""}\n${s.content}`).join("\n\n") +
         "\n\n";
     }
+  }
+
+  if (resolvedDocEvidence.length > 0) {
+    const targetDescriptions = resolvedDocumentTargets
+      .map((target) => `- "${target.title}" (${target.detail})`)
+      .join("\n");
+    const targetBlock =
+      `═══ EXACT DOCUMENT TARGETS ═══
+
+The user explicitly referred to these document(s), resolved from the visible inventory:
+${targetDescriptions}
+
+The TARGET-DOC blocks below are the exact primary evidence for this request. Prioritize them over generic retrieval and cite them as [TARGET-DOC-N].
+
+` +
+      resolvedDocEvidence
+        .map(
+          (section) =>
+            `[${section.id}] ${section.title} | Page ${section.pageNumber}${section.sectionTitle ? ` | ${section.sectionTitle}` : ""}\n${section.content}`,
+        )
+        .join("\n\n") +
+      "\n\n";
+    evidencePackage = targetBlock + evidencePackage;
   }
 
   // Prepend project-doc evidence to the package (after the regular block has
@@ -492,33 +614,11 @@ Document mentions follow:
 
   const evidenceSources = [
     ...pinnedEvidence,
+    ...resolvedDocEvidence,
     ...projectDocEvidence,
     ...documentEvidence,
     ...webEvidence,
   ];
-
-  // Load document inventory (always — it's tiny metadata, not content).
-  // Order is stable (created_at desc) so position numbers don't drift between
-  // turns of the same conversation. Phase 05: filter out excluded docs (other
-  // projects' PRIVATE material) when in a project so the model doesn't see
-  // titles it isn't allowed to read.
-  const { data: allDocs } = await supabaseAdmin
-    .from("documents")
-    .select("id, title, type, classification, language, page_count, status, created_at")
-    .eq("status", "ready")
-    .order("created_at", { ascending: false });
-
-  const visibleDocs =
-    excludedDocIds.size > 0
-      ? (allDocs || []).filter((d) => !excludedDocIds.has(d.id as string))
-      : allDocs || [];
-
-  const docInventory = visibleDocs
-    .map(
-      (d, i) =>
-        `${i + 1}. "${d.title}" — ${d.type}, ${d.classification}, ${d.page_count} pages, ${d.language}`,
-    )
-    .join("\n");
 
   // ── Project context block (Phase 05) ──
   // Injected into BOTH deep and casual prompts when the conversation has a
@@ -531,25 +631,33 @@ You are working inside the **${projectContext.name}** project.${projectContext.d
 
 Description: ${projectContext.description}` : ""}${projectContext.context_summary ? `
 
-Context summary: ${projectContext.context_summary}` : ""}${counterpartyNames.length > 0 ? `
+Context summary: ${projectContext.context_summary}` : ""}${participantNames.length > 0 ? `
 
-Counterparties: ${counterpartyNames.join(", ")}` : ""}
+Participants: ${participantNames.join(", ")}` : ""}
 
-The PROJECT-DOC blocks in the user message are this project's linked documents — they are the primary context for any question. Other DOC blocks are general retrieval; WEB blocks are external sources. Cite project documents as [PROJECT-DOC-N] inline. If you reference a counterparty by pronoun ("they", "the developer"), the user means a counterparty above.
+The PROJECT-DOC blocks in the user message are this project's linked documents — they are the primary context for any question. Other DOC blocks are general retrieval; WEB blocks are external sources. Cite project documents as [PROJECT-DOC-N] inline. If you reference a linked participant by pronoun ("they", "the developer", "the ministry"), the user means a participant above.
 
 `
     : "";
 
   // Build system prompt based on mode
+  const deliverableFormattingBlock = `DELIVERABLE FORMATTING:
+- When the user asks for a concrete draft deliverable, keep any setup outside the deliverable brief and put the deliverable itself inside a fenced block with one of these labels: email, memo, brief, talking-points, meeting-prep, deck, note.
+- For email blocks, the first line inside the block must be "Subject: ...".
+- Use these blocks only for actual deliverables, not ordinary analysis.`;
+
   let systemPrompt: string;
   if (routing.mode === "deep") {
     systemPrompt =
       projectContextBlock +
+      workspaceProfileBlock +
       (await buildDoctrinePrompt(routing.doctrines, "ar")) +
       "\n\n" +
-      memoryBlock;
+      memoryBlock +
+      "\n\n" +
+      deliverableFormattingBlock;
   } else {
-    systemPrompt = projectContextBlock + `You are DocuMind, an intelligent document assistant for a government economic authority. You have access to institutional documents including contracts, laws, reports, and decrees.
+    systemPrompt = projectContextBlock + workspaceProfileBlock + `You are DocuMind, an intelligent document assistant for a government economic authority. You have access to institutional documents including contracts, laws, reports, and decrees.
 
 ${memoryBlock}
 
@@ -567,13 +675,18 @@ LANGUAGE & NUMERALS:
 ENUMERATION QUESTIONS ("what documents do I have", "list documents", "give me a summary"):
 - Use the DOCUMENT INVENTORY above as the authoritative source.
 - Output a numbered list matching the inventory order exactly.
-- Each line: number, classification badge, type, page count, then the title in its original language.
+- Each line: number, access/scope badge, type, page count, then the title in its original language.
 - Do NOT call hybrid search for this — the inventory has everything.
 
 POSITIONAL REFERENCES ("document #6", "the third one", "tell me about number 2"):
 - Read the inventory line at that exact position FIRST.
 - Quote that line's title verbatim — never confuse it with another document.
 - If you need content from that document (to summarize, compare, or analyze), the retrieved evidence chunks from hybrid search will be in the user message under [DOC-N]. Match them to the correct inventory entry by title — DO NOT assume DOC-1 corresponds to inventory item #1.
+
+EXACT DOCUMENT TARGETS:
+- When TARGET-DOC blocks are present, the system already resolved the user's reference to a specific document from the inventory.
+- Treat TARGET-DOC blocks as the primary evidence for this turn.
+- Cite them inline as [TARGET-DOC-N].
 
 CONTENT QUESTIONS ("what does the contract say about...", "summarize the report"):
 - Use the [DOC-N] evidence in the user message.
@@ -611,6 +724,8 @@ ${pinnedDocTitles.length > 0 && pinnedEntityRows.length === 0 ? `- Currently pin
 ATTACHED FILES:
 - When the user attaches a file (appears in evidence as [FILE-N]), it's EPHEMERAL CONTEXT for the current turn only.
 - "This document" or "this file" always means the attached file, not the knowledge base.
+
+${deliverableFormattingBlock}
 
 TONE: You work for senior decision-makers. Be precise, concise, professional. Skip filler. Lead with the answer.`;
   }
@@ -666,6 +781,14 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
     emit("sources", {
       sources: [
         ...pinnedSourcePills,
+        ...resolvedDocEvidence.map((s) => ({
+          id: s.id,
+          type: s.type,
+          title: s.title,
+          pageNumber: s.pageNumber,
+          sectionTitle: s.sectionTitle,
+          documentId: s.documentId,
+        })),
         ...projectDocEvidence.map((s) => ({
           id: s.id,
           type: s.type,
@@ -688,9 +811,9 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
   }
 
   // ── LLM streaming ──
-  // Deep mode → Claude Opus 4.6 with autonomous tool use (web_search)
-  // Casual mode → GPT-4o-mini direct stream
-  // Fallback inside deep mode → GPT-4o if Claude errors (rate limit, etc.)
+  // Default path → GPT-5.4 direct stream for all visible chat responses.
+  // Deep mode may still use Claude tool-use when available, but the OpenAI
+  // fallback stays on the same GPT-5.4 family for consistency.
   let fullText = "";
   const useClaudeForDeep = routing.mode === "deep" && hasAnthropic();
   const additionalWebSources: Array<{ id: string; type: "web"; title: string; url: string }> = [];
@@ -732,12 +855,11 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
         webEvidence.push(...additionalWebSources);
       }
     } catch (claudeErr) {
-      console.error("Claude failed, falling back to GPT-4o:", claudeErr);
-      // Fallback to GPT-4o
+      console.error(`Claude failed, falling back to ${PRIMARY_CHAT_MODEL}:`, claudeErr);
       const llmStream = await getOpenAI().chat.completions.create({
-        model: "gpt-4o",
-        temperature: 0.1,
-        max_tokens: 4096,
+        model: PRIMARY_CHAT_MODEL,
+        ...openAiTemperature(PRIMARY_CHAT_MODEL, 0.1),
+        ...openAiCompletionLimit(PRIMARY_CHAT_MODEL, 4096),
         stream: true,
         messages: llmMessages,
       });
@@ -748,15 +870,15 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
           emit("text", { content: delta });
         }
       }
-      modelUsed = "gpt-4o";
+      modelUsed = PRIMARY_CHAT_MODEL;
     }
   } else {
-    // GPT-4o-mini for casual, GPT-4o for deep without Anthropic
-    const model = routing.mode === "casual" ? "gpt-4o-mini" : "gpt-4o";
+    // All visible chat replies now use GPT-5.4 for consistency and drafting quality.
+    const model = PRIMARY_CHAT_MODEL;
     const llmStream = await getOpenAI().chat.completions.create({
       model,
-      temperature: 0.2,
-      max_tokens: 4096,
+      ...openAiTemperature(model, 0.2),
+      ...openAiCompletionLimit(model, 4096),
       stream: true,
       messages: llmMessages,
     });
@@ -782,6 +904,13 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
       doctrines: routing.doctrines,
       model: modelUsed,
       sources: [
+        ...resolvedDocEvidence.map((s) => ({
+          id: s.id,
+          type: s.type,
+          title: s.title,
+          pageNumber: s.pageNumber,
+          documentId: s.documentId,
+        })),
         ...projectDocEvidence.map((s) => ({
           id: s.id,
           type: s.type,
@@ -800,6 +929,11 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
       ],
     },
   });
+
+  await supabaseAdmin
+    .from("conversations")
+    .update({ last_message_at: new Date().toISOString() })
+    .eq("id", conversationId);
 
   // Audit log: one row per chat turn (closes the "audit_log underwritten"
   // deferred enhancement from CONCERNS.md). Captures the routing decision,

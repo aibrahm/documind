@@ -1,14 +1,24 @@
 import { supabaseAdmin, type HybridSearchResult } from "./supabase";
 import { embedQuery } from "./embeddings";
 import { getCohere } from "@/lib/clients";
+import {
+  type AccessLevel,
+  type KnowledgeScope,
+  normalizeAccessLevel,
+  normalizeKnowledgeScope,
+} from "@/lib/document-knowledge";
 
 export interface SearchOptions {
   query: string;
   matchCount?: number;
   classification?: "PRIVATE" | "DOCTRINE" | "PUBLIC" | null;
+  accessLevels?: AccessLevel[] | null;
+  knowledgeScopes?: KnowledgeScope[] | null;
   documentId?: string | null;
   /** Restrict to specific documents (e.g. user-pinned) */
   documentIds?: string[] | null;
+  /** Explicitly exclude documents after search + enrichment */
+  excludedDocumentIds?: string[] | null;
   /** When true (default), only return chunks from documents marked is_current=true */
   currentOnly?: boolean;
   useRerank?: boolean;
@@ -26,6 +36,8 @@ export interface SearchResult {
     title: string;
     type: string;
     classification: string;
+    accessLevel: AccessLevel;
+    knowledgeScope: KnowledgeScope;
   };
 }
 
@@ -37,8 +49,11 @@ export async function hybridSearch(options: SearchOptions): Promise<SearchResult
     query,
     matchCount = 10,
     classification = null,
+    accessLevels = null,
+    knowledgeScopes = null,
     documentId = null,
     documentIds = null,
+    excludedDocumentIds = null,
     currentOnly = true,
     useRerank = true,
   } = options;
@@ -68,7 +83,7 @@ export async function hybridSearch(options: SearchOptions): Promise<SearchResult
   const docIds = [...new Set(results.map((r) => r.document_id))];
   const { data: docs } = await supabaseAdmin
     .from("documents")
-    .select("id, title, type, classification, is_current")
+    .select("id, title, type, classification, access_level, knowledge_scope, is_current")
     .in("id", docIds);
 
   const docMap = new Map(docs?.map((d) => [d.id, d]) || []);
@@ -81,7 +96,23 @@ export async function hybridSearch(options: SearchOptions): Promise<SearchResult
     sectionTitle: r.section_title,
     clauseNumber: r.clause_number,
     score: r.combined_score,
-    document: docMap.get(r.document_id) as SearchResult["document"],
+    document: (() => {
+      const meta = docMap.get(r.document_id);
+      if (!meta) return undefined;
+      return {
+        title: meta.title as string,
+        type: meta.type as string,
+        classification: meta.classification as string,
+        accessLevel: normalizeAccessLevel(
+          meta.access_level as string | null | undefined,
+          meta.classification as string | null | undefined,
+        ),
+        knowledgeScope: normalizeKnowledgeScope(
+          meta.knowledge_scope as string | null | undefined,
+          meta.classification as string | null | undefined,
+        ),
+      };
+    })(),
   }));
 
   // Filter out chunks from non-current document versions (avoids old/superseded
@@ -98,6 +129,25 @@ export async function hybridSearch(options: SearchOptions): Promise<SearchResult
   if (documentIds && documentIds.length > 0) {
     const allowed = new Set(documentIds);
     searchResults = searchResults.filter((r) => allowed.has(r.documentId));
+  }
+
+  if (excludedDocumentIds && excludedDocumentIds.length > 0) {
+    const excluded = new Set(excludedDocumentIds);
+    searchResults = searchResults.filter((r) => !excluded.has(r.documentId));
+  }
+
+  if (accessLevels && accessLevels.length > 0) {
+    const allowedLevels = new Set(accessLevels);
+    searchResults = searchResults.filter((r) =>
+      r.document ? allowedLevels.has(r.document.accessLevel) : true,
+    );
+  }
+
+  if (knowledgeScopes && knowledgeScopes.length > 0) {
+    const allowedScopes = new Set(knowledgeScopes);
+    searchResults = searchResults.filter((r) =>
+      r.document ? allowedScopes.has(r.document.knowledgeScope) : true,
+    );
   }
 
   // Rerank with Cohere for better quality
