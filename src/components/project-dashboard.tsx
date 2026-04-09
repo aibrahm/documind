@@ -840,7 +840,6 @@ function AddSourceDialog({
         title,
         documentType: proposal.detected.documentType,
         languageHint: proposal.detected.language,
-        extractionMode: "auto",
         skipClassification: true,
       };
 

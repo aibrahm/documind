@@ -20,9 +20,7 @@ import {
 import { CreateProjectDialog } from "@/components/create-project-dialog";
 import {
   DOCUMENT_TYPES,
-  EXTRACTION_MODES,
   type DocumentType,
-  type ExtractionMode,
   type LanguageCode,
 } from "@/lib/extraction-schema";
 
@@ -130,13 +128,6 @@ const DOCUMENT_TYPE_COPY: Record<DocumentType, string> = {
   other: "Other",
 };
 
-const EXTRACTION_MODE_COPY: Record<ExtractionMode, string> = {
-  auto: "Auto",
-  fast: "Fast",
-  high_fidelity: "High fidelity",
-  verbatim_legal: "Verbatim legal",
-};
-
 function normalizeDetectedDocumentType(value: string): DocumentType | null {
   return DOCUMENT_TYPES.includes(value as DocumentType) ? (value as DocumentType) : null;
 }
@@ -173,8 +164,6 @@ export default function UploadPage() {
   const [chosenTitle, setChosenTitle] = useState("");
   const [chosenDocumentType, setChosenDocumentType] =
     useState<DocumentTypeChoice>("auto");
-  const [chosenExtractionMode, setChosenExtractionMode] =
-    useState<ExtractionMode>("auto");
   const [chosenTargetId, setChosenTargetId] = useState<string | null>(null);
 
   const [placementMode, setPlacementMode] = useState<PlacementMode>("library");
@@ -273,7 +262,6 @@ export default function UploadPage() {
       setChosenDocumentType(
         normalizeDetectedDocumentType(nextProposal.detected.documentType) || "auto",
       );
-      setChosenExtractionMode("auto");
       setChosenTargetId(nextProposal.recommendation.targetDocumentId || null);
       setLinkToProjectId((current) => current || nextProposal.suggestedProject?.id || null);
       setStage("review");
@@ -325,7 +313,6 @@ export default function UploadPage() {
         classification: chosenClassification,
         title: chosenTitle,
         languageHint: proposal.detected.language,
-        extractionMode: chosenExtractionMode,
       };
 
       if (resolvedDocumentType) {
@@ -360,7 +347,6 @@ export default function UploadPage() {
     chosenAction,
     chosenClassification,
     chosenDocumentType,
-    chosenExtractionMode,
     chosenTargetId,
     chosenTitle,
     file,
@@ -386,7 +372,6 @@ export default function UploadPage() {
     setChosenClassification("PRIVATE");
     setChosenTitle("");
     setChosenDocumentType("auto");
-    setChosenExtractionMode("auto");
     setChosenTargetId(null);
   }, []);
 
@@ -466,8 +451,6 @@ export default function UploadPage() {
               setChosenTitle={setChosenTitle}
               chosenDocumentType={chosenDocumentType}
               setChosenDocumentType={setChosenDocumentType}
-              chosenExtractionMode={chosenExtractionMode}
-              setChosenExtractionMode={setChosenExtractionMode}
               chosenTargetId={chosenTargetId}
               setChosenTargetId={setChosenTargetId}
               setCreateProjectOpen={setCreateProjectOpen}
@@ -752,8 +735,6 @@ function ReviewCard({
   setChosenTitle,
   chosenDocumentType,
   setChosenDocumentType,
-  chosenExtractionMode,
-  setChosenExtractionMode,
   chosenTargetId,
   setChosenTargetId,
   setCreateProjectOpen,
@@ -778,8 +759,6 @@ function ReviewCard({
   setChosenTitle: (value: string) => void;
   chosenDocumentType: DocumentTypeChoice;
   setChosenDocumentType: (value: DocumentTypeChoice) => void;
-  chosenExtractionMode: ExtractionMode;
-  setChosenExtractionMode: (value: ExtractionMode) => void;
   chosenTargetId: string | null;
   setChosenTargetId: (value: string | null) => void;
   setCreateProjectOpen: (value: boolean) => void;
@@ -1024,25 +1003,6 @@ function ReviewCard({
                   <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
                     {detected.classificationReason}
                   </p>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Extraction mode
-                  </label>
-                  <select
-                    value={chosenExtractionMode}
-                    onChange={(e) =>
-                      setChosenExtractionMode(e.target.value as ExtractionMode)
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-400 focus:outline-none"
-                  >
-                    {EXTRACTION_MODES.map((mode) => (
-                      <option key={mode} value={mode}>
-                        {EXTRACTION_MODE_COPY[mode]}
-                      </option>
-                    ))}
-                  </select>
                 </div>
 
                 {detected.entities.length > 0 && (

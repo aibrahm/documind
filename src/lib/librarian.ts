@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { supabaseAdmin } from "./supabase";
 import { canonicalizeEntities, normalizeName, similarity, type CanonicalEntity } from "./entities";
 import { embedQuery } from "./embeddings";
-import { PDFParse } from "pdf-parse";
 import {
   analyzeDocumentWithAzureLayout,
   isAzureDocumentIntelligenceConfigured,
@@ -11,10 +10,6 @@ import {
   buildStructuredDocumentFromNormalized,
   normalizeAzureLayoutDocument,
 } from "@/lib/ocr-normalization";
-import {
-  analyzeDocumentWithPdfTextLayer,
-  isConfidentNativeTextLaneCandidate,
-} from "@/lib/pdf-text-extraction";
 import { normalizeNumbers } from "@/lib/normalize";
 import type { ExtractionPreferences } from "@/lib/extraction-schema";
 
@@ -24,8 +19,8 @@ import type { ExtractionPreferences } from "@/lib/extraction-schema";
  * The librarian is the intelligent layer that sits between an upload and the
  * knowledge base. When a new document arrives, it:
  *
- * 1. Quickly extracts document text through the same OCR/text lanes as the
- *    real extraction pipeline
+ * 1. Quickly extracts document text through the same Azure-backed intake
+ *    pipeline used by the full processor
  * 2. Classifies the document type and language deterministically
  * 3. Extracts named entities
  * 4. Searches the existing KB for similar/related documents
@@ -36,9 +31,10 @@ import type { ExtractionPreferences } from "@/lib/extraction-schema";
  *    - RELATED (linked)       → add as new but cross-link via reference
  * 6. Returns a structured proposal that the UI shows the user before commit
  *
- * The librarian intentionally avoids image-prompt OCR. For native PDFs it uses
- * the text layer; for scanned PDFs it uses Azure Layout when configured.
- * The full extraction pipeline still runs only after the user confirms.
+ * The librarian intentionally avoids image-prompt OCR. It uses Azure Document
+ * Intelligence Layout to read every uploaded PDF, then runs deterministic
+ * normalization and overlap detection before the full extraction pipeline runs
+ * after the user confirms.
  */
 
 export type LibrarianAction = "new" | "version" | "duplicate" | "related";
@@ -95,28 +91,6 @@ export interface LibrarianProposal {
   // top 3 ranked list so the upload UI can offer alternates.
   suggestedProject: SuggestedProject | null;
   suggestedProjects: SuggestedProject[];
-}
-
-interface QuickExtraction {
-  text: string;
-  pageCount: number;
-}
-
-// ────────────────────────────────────────
-// QUICK EXTRACTION / FALLBACK INSPECTION
-// ────────────────────────────────────────
-
-async function quickExtract(buffer: Buffer): Promise<QuickExtraction> {
-  const parser = new PDFParse({ data: new Uint8Array(buffer) });
-  try {
-    const result = await parser.getText();
-    return {
-      text: result.text || "",
-      pageCount: result.total || result.pages.length || 0,
-    };
-  } finally {
-    await parser.destroy().catch(() => {});
-  }
 }
 
 interface QuickAnalysis {
@@ -202,51 +176,15 @@ async function quickAnalyzeDocument(
   previewText: string;
   similarityText: string;
 }> {
-  const nativeTextResult = await analyzeDocumentWithPdfTextLayer({
-    fileBuffer,
-    fileName,
-    preferences,
-  });
-
-  const shouldUseNativeTextLane = isConfidentNativeTextLaneCandidate(
-    nativeTextResult?.normalized,
-    preferences,
-  );
-
-  let pageCount = shouldUseNativeTextLane ? nativeTextResult?.rawOcr.pageCount ?? 0 : 0;
-  let normalized = shouldUseNativeTextLane ? nativeTextResult?.normalized ?? null : null;
-
-  if (!normalized && isAzureDocumentIntelligenceConfigured()) {
-    const azureResponse = await analyzeDocumentWithAzureLayout(fileBuffer);
-    normalized = normalizeAzureLayoutDocument(azureResponse, fileName, preferences);
-    pageCount = azureResponse.analyzeResult?.pages?.length || 0;
+  if (!isAzureDocumentIntelligenceConfigured()) {
+    throw new Error(
+      "Azure Document Intelligence is required for document intake but is not configured.",
+    );
   }
 
-  if (!normalized && nativeTextResult?.normalized) {
-    normalized = nativeTextResult.normalized;
-    pageCount = nativeTextResult.rawOcr.pageCount;
-  }
-
-  if (!normalized) {
-    const fallbackExtraction = await quickExtract(fileBuffer);
-    const fallbackTitle = cleanSuggestedTitle("", fileName);
-    const previewText = fallbackExtraction.text.slice(0, 600);
-    return {
-      analysis: {
-        title: fallbackTitle,
-        suggestedTitle: fallbackTitle,
-        documentType: "other",
-        language: "ar",
-        classification: "PRIVATE",
-        classificationReason:
-          "Text extraction was too weak for deterministic routing. Full OCR parsing will run after confirmation.",
-        entities: [],
-      },
-      pageCount: fallbackExtraction.pageCount,
-      previewText,
-      similarityText: fallbackExtraction.text.slice(0, 6000),
-    };
-  }
+  const azureResponse = await analyzeDocumentWithAzureLayout(fileBuffer);
+  const normalized = normalizeAzureLayoutDocument(azureResponse, fileName, preferences);
+  const pageCount = azureResponse.analyzeResult?.pages?.length || 0;
 
   const structured = buildStructuredDocumentFromNormalized({
     normalized,
@@ -669,9 +607,8 @@ export async function analyzeUpload(
     };
   }
 
-  // Step 1: Fast deterministic analysis using the same OCR/text lanes as the
-  // real extraction pipeline. Native PDFs stay cheap; scanned PDFs use Azure
-  // OCR when configured instead of an image-prompt fallback.
+  // Step 1: Fast deterministic analysis using the same Azure-backed intake
+  // pipeline as the real extraction flow.
   const {
     analysis,
     pageCount,

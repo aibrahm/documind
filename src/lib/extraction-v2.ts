@@ -5,10 +5,6 @@ import {
   isAzureDocumentIntelligenceConfigured,
 } from "@/lib/azure-document-intelligence";
 import {
-  analyzeDocumentWithPdfTextLayer,
-  isConfidentNativeTextLaneCandidate,
-} from "@/lib/pdf-text-extraction";
-import {
   buildStructuredDocumentFromNormalized,
   normalizeAzureLayoutDocument,
   summarizeRawOcrArtifact,
@@ -19,34 +15,15 @@ export async function extractDocumentV2(
   fileName: string,
   preferences?: ExtractionPreferences,
 ): Promise<ExtractionV2Result> {
-  const nativeTextResult = await analyzeDocumentWithPdfTextLayer({
-    fileBuffer,
-    fileName,
-    preferences,
-  });
-
-  const shouldUseNativeTextLane = isConfidentNativeTextLaneCandidate(
-    nativeTextResult?.normalized,
-    preferences,
-  );
-
-  let rawOcr = shouldUseNativeTextLane ? nativeTextResult?.rawOcr : null;
-  let normalized = shouldUseNativeTextLane ? nativeTextResult?.normalized : null;
-
-  if (!rawOcr || !normalized) {
-    if (isAzureDocumentIntelligenceConfigured()) {
-      const azureResponse = await analyzeDocumentWithAzureLayout(fileBuffer);
-      rawOcr = summarizeRawOcrArtifact(azureResponse);
-      normalized = normalizeAzureLayoutDocument(azureResponse, fileName, preferences);
-    } else if (nativeTextResult?.rawOcr && nativeTextResult?.normalized) {
-      rawOcr = nativeTextResult.rawOcr;
-      normalized = nativeTextResult.normalized;
-    } else {
-      throw new Error(
-        "PDF appears to be scanned/image-only and Azure Document Intelligence is not configured.",
-      );
-    }
+  if (!isAzureDocumentIntelligenceConfigured()) {
+    throw new Error(
+      "Azure Document Intelligence is required for document intake but is not configured.",
+    );
   }
+
+  const azureResponse = await analyzeDocumentWithAzureLayout(fileBuffer);
+  const rawOcr = summarizeRawOcrArtifact(azureResponse);
+  const normalized = normalizeAzureLayoutDocument(azureResponse, fileName, preferences);
 
   const structured = buildStructuredDocumentFromNormalized({
     normalized,

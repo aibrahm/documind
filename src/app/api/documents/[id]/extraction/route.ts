@@ -6,10 +6,8 @@ import { processDocumentContent } from "@/lib/document-processing";
 import { logAudit } from "@/lib/audit";
 import {
   DOCUMENT_TYPES,
-  EXTRACTION_MODES,
   LANGUAGE_CODES,
   type DocumentType,
-  type ExtractionMode,
   type ExtractionPreferences,
   type LanguageCode,
 } from "@/lib/extraction-schema";
@@ -31,14 +29,10 @@ function readStoredExtractionPreferences(metadata: Record<string, unknown> | nul
     typeof raw.languageHint === "string" && LANGUAGE_CODES.includes(raw.languageHint as LanguageCode)
       ? (raw.languageHint as LanguageCode)
       : null;
-  const mode =
-    typeof raw.mode === "string" && EXTRACTION_MODES.includes(raw.mode as ExtractionMode)
-      ? (raw.mode as ExtractionMode)
-      : null;
   const titleHint = typeof raw.titleHint === "string" ? raw.titleHint : null;
   const skipClassification = raw.skipClassification === true;
 
-  if (!documentTypeHint && !languageHint && !mode && !titleHint && !skipClassification) {
+  if (!documentTypeHint && !languageHint && !titleHint && !skipClassification) {
     return null;
   }
 
@@ -46,7 +40,6 @@ function readStoredExtractionPreferences(metadata: Record<string, unknown> | nul
     documentTypeHint,
     languageHint,
     titleHint,
-    mode: mode || "auto",
     skipClassification,
   };
 }
