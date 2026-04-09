@@ -20,7 +20,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         added_by,
         added_at,
         document:documents (
-          id, title, type, classification, language, page_count, status, is_current, created_at
+          id, title, type, classification, language, page_count, status, processing_error, context_card, is_current, created_at
         )
       `)
       .eq("project_id", projectId)

@@ -22,6 +22,7 @@ import type { UseChatResult } from "@/lib/hooks/use-chat";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput } from "@/components/chat-input";
 import { usePdfViewer } from "@/components/pdf-viewer-context";
+import { DocumentContextCard } from "@/components/document-context-card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -54,7 +55,10 @@ interface ProjectDocument {
   title: string;
   type: string;
   classification: string;
+  language: string | null;
   page_count: number | null;
+  processing_error?: string | null;
+  context_card?: Record<string, unknown> | null;
   created_at: string;
   link?: {
     role?: string | null;
@@ -628,6 +632,18 @@ export function ProjectDashboard({
                               {doc.link?.role ? ` · ${doc.link.role}` : ""}
                               {doc.created_at ? ` · ${formatRelative(doc.created_at)}` : ""}
                             </p>
+                            <DocumentContextCard
+                              card={doc.context_card}
+                              preferredLanguage={doc.language}
+                              variant="compact"
+                              bordered={false}
+                              className="mt-2"
+                            />
+                            {doc.processing_error && (
+                              <p className="mt-2 text-[12px] leading-relaxed text-amber-700">
+                                Extraction warning: {doc.processing_error}
+                              </p>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <button

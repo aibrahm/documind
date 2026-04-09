@@ -8,7 +8,9 @@ import type {
   ExtractedTable,
   NormalizedExtractionPayload,
 } from "@/lib/extraction-schema";
+import { DocumentContextCard } from "@/components/document-context-card";
 import { Tag } from "@/components/ui-system";
+import { EntityEditor } from "@/components/entity-editor";
 
 interface DocDetail {
   id: string;
@@ -18,8 +20,10 @@ interface DocDetail {
   language: string;
   page_count: number;
   status: string;
+  processing_error: string | null;
   metadata: Record<string, unknown>;
   entities: string[];
+  context_card: Record<string, unknown> | null;
   created_at: string;
   version_number: number;
   is_current: boolean;
@@ -423,6 +427,7 @@ export default function DocPage({
   }
 
   const meta = (doc.metadata || {}) as Record<string, unknown>;
+  const extractionWarnings = meta.extractionWarnings as Record<string, unknown> | undefined;
   const dates = Array.isArray(meta.dates)
     ? (meta.dates as Array<string | { iso?: string }>)
         .map((d) => (typeof d === "string" ? d : d.iso || ""))
@@ -526,6 +531,35 @@ export default function DocPage({
                   {doc.title}
                 </h1>
 
+                <DocumentContextCard
+                  card={doc.context_card}
+                  preferredLanguage={doc.language}
+                  className="mb-6"
+                />
+
+                <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Processing
+                  </p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-slate-700">
+                    This document was read through Azure Layout and stored as structured extraction. Open the
+                    extraction tab to inspect the normalized text and raw payload.
+                  </p>
+                  <div className="mt-3 space-y-1.5 text-[12px] text-slate-500">
+                    <p>Pages processed: {doc.page_count}</p>
+                    {doc.processing_error ? (
+                      <p className="text-amber-700">Warnings: {doc.processing_error}</p>
+                    ) : (
+                      <p className="text-green-700">No extraction warnings were recorded.</p>
+                    )}
+                    {extractionWarnings && (
+                      <p className="text-slate-500">
+                        Intake warnings are stored in document metadata and can be reviewed without rerunning OCR.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 {/* Details section */}
                 <div className="mb-6">
                   <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
@@ -544,25 +578,13 @@ export default function DocPage({
                   ))}
                 </div>
 
-                {/* Entities section */}
-                {doc.entities.length > 0 && (
-                  <div className="mb-6">
-                    <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                      ENTITIES
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {doc.entities.map((e, i) => (
-                        <span
-                          key={i}
-                          dir="auto"
-                          className="text-xs text-slate-600 bg-slate-100 rounded px-2 py-0.5 font-['IBM_Plex_Sans_Arabic']"
-                        >
-                          {e}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Entities section — editable */}
+                <div className="mb-6">
+                  <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                    ENTITIES
+                  </p>
+                  <EntityEditor documentId={doc.id} />
+                </div>
 
                 {/* References section */}
                 {refs.length > 0 && (
