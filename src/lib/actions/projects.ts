@@ -22,6 +22,9 @@ export async function createProjectAction(
   const description = (String(formData.get("description") || "") || null) as
     | string
     | null;
+  const contextSummary = (String(formData.get("context_summary") || "") || null) as
+    | string
+    | null;
   const color = (String(formData.get("color") || "") || null) as string | null;
   const icon = (String(formData.get("icon") || "") || null) as string | null;
 
@@ -35,6 +38,7 @@ export async function createProjectAction(
       name,
       slug,
       description,
+      context_summary: contextSummary,
       color,
       icon,
       status: "active",
