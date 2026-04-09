@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Folder,
   MessageSquarePlus,
+  Search,
 } from "lucide-react";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
 import {
@@ -48,6 +49,8 @@ interface ProjectSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
 }
+
+const FOCUS_HISTORY_SEARCH_EVENT = "documind:focus-history-search";
 
 // ── Date bucketing for the General section ──
 
@@ -95,7 +98,9 @@ export function ProjectSidebar({
   const [createOpen, setCreateOpen] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [historyQuery, setHistoryQuery] = useState("");
   const [, startTransition] = useTransition();
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Hydrate expanded-projects from localStorage on mount
   useEffect(() => {
@@ -122,6 +127,18 @@ export function ProjectSidebar({
     }
   }, [expandedProjects]);
 
+  useEffect(() => {
+    const focusSearch = () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+
+    window.addEventListener(FOCUS_HISTORY_SEARCH_EVENT, focusSearch);
+    return () => {
+      window.removeEventListener(FOCUS_HISTORY_SEARCH_EVENT, focusSearch);
+    };
+  }, []);
+
   // Group conversations by project_id
   const convosByProject = new Map<string | null, ConversationSummary[]>();
   for (const c of conversations) {
@@ -130,10 +147,29 @@ export function ProjectSidebar({
     convosByProject.get(key)!.push(c);
   }
   const generalConvos = convosByProject.get(null) || [];
+  const normalizedHistoryQuery = historyQuery.trim().toLowerCase();
+  const matchesHistoryQuery = (value: string | null | undefined) =>
+    !normalizedHistoryQuery || value?.toLowerCase().includes(normalizedHistoryQuery);
+
+  const visibleProjects = projects.filter((project) => {
+    if (matchesHistoryQuery(project.name)) return true;
+    const projectConvos = convosByProject.get(project.id) || [];
+    return projectConvos.some(
+      (conversation) =>
+        matchesHistoryQuery(conversation.title) ||
+        matchesHistoryQuery(conversation.created_at),
+    );
+  });
+
+  const filteredGeneralConvos = generalConvos.filter(
+    (conversation) =>
+      matchesHistoryQuery(conversation.title) ||
+      matchesHistoryQuery(conversation.created_at),
+  );
 
   // Group General convos into date buckets
   const generalGrouped = new Map<Bucket, ConversationSummary[]>();
-  for (const c of generalConvos) {
+  for (const c of filteredGeneralConvos) {
     const b = bucketFor(c.created_at);
     if (!generalGrouped.has(b)) generalGrouped.set(b, []);
     generalGrouped.get(b)!.push(c);
@@ -244,6 +280,20 @@ export function ProjectSidebar({
           </button>
         </div>
 
+        <div className="px-3 py-2 border-b border-slate-200 bg-white/80">
+          <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-2 shadow-sm">
+            <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={historyQuery}
+              onChange={(e) => setHistoryQuery(e.target.value)}
+              placeholder="Search chats and projects"
+              className="w-full border-none bg-transparent text-[12px] text-slate-700 outline-none placeholder:text-slate-400"
+            />
+          </div>
+        </div>
+
         {/* Scrollable list */}
         <div className="flex-1 overflow-y-auto py-2">
           {/* ── PROJECTS section ── */}
@@ -251,15 +301,20 @@ export function ProjectSidebar({
             <p className="px-3 mb-1 text-[10px] font-['JetBrains_Mono'] uppercase tracking-wider text-slate-400 font-semibold">
               Projects
             </p>
-            {projects.length === 0 && (
+            {visibleProjects.length === 0 && !normalizedHistoryQuery && (
               <p className="px-3 text-xs text-slate-400 py-2">
                 No projects yet. Click + to create one.
               </p>
             )}
-            {projects.map((p) => {
-              const isExpanded = expandedProjects.has(p.id);
+            {visibleProjects.map((p) => {
+              const isExpanded = expandedProjects.has(p.id) || Boolean(normalizedHistoryQuery);
               const isActive = activeProjectSlug === p.slug;
-              const projectConvos = convosByProject.get(p.id) || [];
+              const projectConvos = (convosByProject.get(p.id) || []).filter(
+                (conversation) =>
+                  !normalizedHistoryQuery ||
+                  matchesHistoryQuery(conversation.title) ||
+                  matchesHistoryQuery(conversation.created_at),
+              );
               return (
                 <div key={p.id} className="mb-0.5">
                   {/* Project row */}
@@ -391,7 +446,7 @@ export function ProjectSidebar({
                 General
               </p>
             </div>
-            {generalConvos.length === 0 && (
+            {filteredGeneralConvos.length === 0 && !normalizedHistoryQuery && (
               <p className="px-3 text-xs text-slate-400 py-2">
                 No unassigned threads
               </p>
@@ -425,6 +480,13 @@ export function ProjectSidebar({
                 </div>
               );
             })}
+            {normalizedHistoryQuery &&
+              visibleProjects.length === 0 &&
+              filteredGeneralConvos.length === 0 && (
+                <p className="px-3 py-3 text-xs text-slate-400">
+                  No chats or projects match “{historyQuery.trim()}”.
+                </p>
+              )}
           </div>
         </div>
       </div>

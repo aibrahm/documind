@@ -11,8 +11,10 @@ import {
 import {
   ArrowUp,
   Paperclip,
+  Square,
   X,
   FileText,
+  History,
   Loader2,
   AlertCircle,
   Building2,
@@ -23,6 +25,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { PinnedItem } from "@/lib/types";
+import {
+  CHAT_MODEL_CHOICES,
+  getChatModelLabel,
+  type ChatModelChoice,
+} from "@/lib/chat-models";
 
 export interface ChatInputHandle {
   addFiles: (files: File[]) => void;
@@ -38,8 +45,17 @@ export interface Attachment {
 
 interface ChatInputProps {
   onSend: (message: string, attachments: Attachment[], pinned: PinnedItem[]) => void;
+  /**
+   * When true, the send button is replaced with a stop button that calls
+   * onStop. The textarea remains disabled (you can't type while streaming)
+   * but the stop button stays clickable.
+   */
+  isStreaming?: boolean;
+  onStop?: () => void;
   disabled?: boolean;
   placeholder?: string;
+  modelChoice?: ChatModelChoice;
+  onModelChoiceChange?: (model: ChatModelChoice) => void;
 }
 
 interface PendingAttachment {
@@ -88,7 +104,15 @@ const ENTITY_ICON: Record<string, React.ComponentType<{ className?: string }>> =
 };
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-  { onSend, disabled, placeholder },
+  {
+    onSend,
+    onStop,
+    isStreaming,
+    disabled,
+    placeholder,
+    modelChoice = "auto",
+    onModelChoiceChange,
+  },
   ref,
 ) {
   const [value, setValue] = useState("");
@@ -294,6 +318,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const removePending = useCallback((id: string) => {
     setPendingAttachments((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const handleOpenHistory = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("documind:open-history"));
   }, []);
 
   // ── Send ──
@@ -601,17 +629,60 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             dir="auto"
             className="flex-1 resize-none border-none outline-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 font-['IBM_Plex_Sans_Arabic'] leading-6 disabled:opacity-50"
           />
+          {isStreaming ? (
+            <button
+              type="button"
+              onClick={() => onStop?.()}
+              className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-slate-900 text-white hover:bg-slate-800 cursor-pointer border-none transition-colors"
+              title="Stop generating"
+              aria-label="Stop generating"
+            >
+              <Square className="w-3 h-3 fill-white" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!canSend}
+              className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-colors border-none cursor-pointer ${
+                canSend
+                  ? "bg-slate-900 text-white hover:bg-slate-800"
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
+              }`}
+              title="Send"
+              aria-label="Send message"
+            >
+              <ArrowUp className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-3 pb-2 pt-1.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-slate-400 shrink-0">
+              Model
+            </span>
+            <select
+              value={modelChoice}
+              onChange={(e) => onModelChoiceChange?.(e.target.value as ChatModelChoice)}
+              className="max-w-[180px] rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-600 outline-none transition-colors hover:border-slate-300 focus:border-slate-400"
+              aria-label="Choose chat model"
+            >
+              {CHAT_MODEL_CHOICES.map((model) => (
+                <option key={model} value={model}>
+                  {getChatModelLabel(model)}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button
             type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-colors border-none cursor-pointer ${
-              canSend
-                ? "bg-slate-900 text-white hover:bg-slate-800"
-                : "bg-slate-200 text-slate-400 cursor-not-allowed"
-            }`}
+            onClick={handleOpenHistory}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
           >
-            <ArrowUp className="w-4 h-4" />
+            <History className="h-3.5 w-3.5" />
+            History
           </button>
         </div>
       </div>

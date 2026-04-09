@@ -167,6 +167,8 @@ export function ProjectDashboard({
     streamingContent,
     routingStatus,
     error,
+    modelChoice,
+    setModelChoice,
     send,
     stop: stopGeneration,
     retry: retryLastTurn,
@@ -501,6 +503,8 @@ export function ProjectDashboard({
                   onStop={stopGeneration}
                   isStreaming={streaming}
                   disabled={streaming}
+                  modelChoice={modelChoice}
+                  onModelChoiceChange={setModelChoice}
                   placeholder={`New chat in ${project.name}`}
                 />
               </div>
@@ -680,6 +684,8 @@ export function ProjectDashboard({
               onStop={stopGeneration}
               isStreaming={streaming}
               disabled={streaming}
+              modelChoice={modelChoice}
+              onModelChoiceChange={setModelChoice}
               placeholder="Continue this chat"
             />
             <p className="mt-2 text-center font-['JetBrains_Mono'] text-[10px] text-slate-400">
@@ -813,7 +819,7 @@ function AddSourceDialog({
         }
 
         setStoragePath(signData.storagePath as string);
-        const analysisRes = await fetch("/api/librarian/analyze", {
+        const analysisRes = await fetch("/api/intake/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

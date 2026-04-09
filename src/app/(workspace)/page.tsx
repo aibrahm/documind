@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput, type ChatInputHandle } from "@/components/chat-input";
-import { FileText, Upload as UploadIcon } from "lucide-react";
+import { FileText, Upload as UploadIcon, AlertTriangle, RotateCw, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Source } from "@/lib/types";
 import { useChat } from "@/lib/hooks/use-chat";
@@ -21,8 +21,21 @@ interface RecentDoc {
 }
 
 // ── Main Component ──
-
+//
+// Next.js 16 requires any client component that calls useSearchParams() to
+// live inside a <Suspense> boundary, otherwise static prerendering fails
+// during `next build`. We wrap the actual workspace UI in a Suspense child
+// so the default export is safe to pre-render while the inner component
+// reads search params on the client.
 export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <WorkspaceHome />
+    </Suspense>
+  );
+}
+
+function WorkspaceHome() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedConvoId = searchParams.get("conversation");
@@ -42,7 +55,11 @@ export default function Home() {
     streamingContent,
     routingStatus,
     error,
+    modelChoice,
+    setModelChoice,
     send: sendMessage,
+    stop: stopGeneration,
+    retry: retryLastTurn,
     loadConversation,
     newChat,
     setError,
@@ -62,6 +79,8 @@ export default function Home() {
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
   // ── Load recent docs on mount ──
 
@@ -89,10 +108,34 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedConvoId]);
 
-  // ── Auto-scroll ──
-
+  // ── Auto-scroll (sticky bottom, no jank) ──
+  //
+  //   - Only auto-scroll if the user is already near the bottom — otherwise
+  //     they scrolled up to read something and we must not yank them back.
+  //   - Use instant scroll, not smooth — "smooth" queues animations on every
+  //     token and produces visible jitter during streaming.
+  //   - Throttle via requestAnimationFrame so we scroll at most once per
+  //     paint frame even when tokens arrive faster than that.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    const end = messagesEndRef.current;
+    if (!container || !end) return;
+    if (scrollRafRef.current !== null) {
+      cancelAnimationFrame(scrollRafRef.current);
+    }
+    scrollRafRef.current = requestAnimationFrame(() => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distanceFromBottom < 120) {
+        end.scrollIntoView({ behavior: "auto", block: "end" });
+      }
+    });
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
   }, [messages, streamingContent]);
 
   // ── Source click → open PDF (document) or new tab (web) ──
@@ -196,7 +239,15 @@ export default function Home() {
 
                 {/* Input */}
                 <div className="mb-10">
-                  <ChatInput ref={idleInputRef} onSend={sendMessage} disabled={streaming} />
+                  <ChatInput
+                    ref={idleInputRef}
+                    onSend={sendMessage}
+                    onStop={stopGeneration}
+                    isStreaming={streaming}
+                    disabled={streaming}
+                    modelChoice={modelChoice}
+                    onModelChoiceChange={setModelChoice}
+                  />
                 </div>
 
                 {/* Two columns: recent docs / recent threads */}
@@ -264,7 +315,7 @@ export default function Home() {
             /* ── Active state: messages + input ── */
             <>
               {/* Messages area */}
-              <div className="flex-1 overflow-y-auto">
+              <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
                 <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
                   {messages.map((msg, i) => (
                     <ChatMessage
@@ -290,7 +341,7 @@ export default function Home() {
                     />
                   ))}
 
-                  {/* Routing status (visible only until first text chunk) */}
+                  {/* Pre-first-token state: avatar + status pill */}
                   {streaming && !streamingContent && routingStatus && (
                     <div className="flex gap-4">
                       <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-slate-800 to-slate-600 flex items-center justify-center">
@@ -311,11 +362,61 @@ export default function Home() {
                     />
                   )}
 
-                  {/* Error display */}
+                  {/*
+                    Mid-stream tool status: shown BELOW the streaming message
+                    whenever there's text AND a routing status is set. This
+                    covers the case where Claude streams some text, then
+                    pauses to call a tool — without this block, the UI looks
+                    hung during tool rounds because the status was hidden.
+                  */}
+                  {streaming && streamingContent && routingStatus && (
+                    <div className="flex gap-4 -mt-4">
+                      <div className="shrink-0 w-8 h-8" />
+                      <div className="flex items-center gap-2 text-[12px] text-slate-400">
+                        <span className="inline-block w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse" />
+                        {routingStatus}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error banner — fail-loud with retry */}
                   {error && (
-                    <div className="flex justify-center">
-                      <div className="bg-red-50 text-red-600 text-sm rounded-lg px-4 py-2 max-w-md">
-                        {error}
+                    <div className="flex gap-4">
+                      <div className="shrink-0 w-8 h-8 rounded-full bg-red-50 border border-red-200 flex items-center justify-center">
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                      </div>
+                      <div className="flex-1 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-red-500">
+                              Turn failed
+                            </p>
+                            <p className="mt-1 text-[13px] leading-snug text-red-700" dir="auto">
+                              {error}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setError(null)}
+                            className="shrink-0 rounded p-1 text-red-400 hover:bg-red-100 hover:text-red-600 cursor-pointer border-none bg-transparent"
+                            title="Dismiss"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => retryLastTurn()}
+                            className="flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5 py-1 text-[12px] font-medium text-red-700 hover:bg-red-100 cursor-pointer"
+                          >
+                            <RotateCw className="h-3 w-3" />
+                            Retry
+                          </button>
+                          <span className="text-[11px] text-red-400">
+                            Re-sends the last message
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -327,7 +428,15 @@ export default function Home() {
               {/* Input fixed at bottom */}
               <div className="shrink-0 bg-gradient-to-t from-white via-white to-transparent pt-4 pb-6 px-6">
                 <div className="max-w-3xl mx-auto">
-                  <ChatInput ref={inputRef} onSend={sendMessage} disabled={streaming} />
+                  <ChatInput
+                    ref={inputRef}
+                    onSend={sendMessage}
+                    onStop={stopGeneration}
+                    isStreaming={streaming}
+                    disabled={streaming}
+                    modelChoice={modelChoice}
+                    onModelChoiceChange={setModelChoice}
+                  />
                   <p className="text-center text-[10px] text-slate-400 mt-2 font-['JetBrains_Mono']">
                     DocuMind can make mistakes. Verify critical information against original sources.
                   </p>

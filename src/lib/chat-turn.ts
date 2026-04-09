@@ -45,6 +45,7 @@ import {
 } from "@/lib/document-knowledge";
 import { resolveDocumentTargetsFromInventory } from "@/lib/query-resolution";
 import { buildWorkspaceProfilePromptBlock, getWorkspaceProfile } from "@/lib/workspace-profile";
+import type { ChatModelChoice } from "@/lib/chat-models";
 import type { Source } from "@/lib/types";
 
 const PRIMARY_CHAT_MODEL = "gpt-5.4";
@@ -92,6 +93,7 @@ export interface RunChatTurnArgs {
   attachments: InboundAttachment[];
   pinnedDocumentIds: string[];
   pinnedEntityIds: string[];
+  modelPreference?: ChatModelChoice;
   history: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   emit: (eventType: string, payload: Record<string, unknown>) => void;
 }
@@ -197,6 +199,7 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     attachments,
     pinnedDocumentIds,
     pinnedEntityIds,
+    modelPreference = "auto",
     history,
     emit,
   } = args;
@@ -1040,11 +1043,15 @@ ${POSTURE_BLOCK}`;
   // Deep mode may still use Claude tool-use when available, but the OpenAI
   // fallback stays on the same GPT-5.4 family for consistency.
   let fullText = "";
-  const useClaudeForDeep = routing.mode === "deep" && hasAnthropic();
+  const forceClaude = modelPreference === "claude-opus-4-6" && hasAnthropic();
+  const forcePrimaryModel = modelPreference === PRIMARY_CHAT_MODEL;
+  const useClaude =
+    forceClaude ||
+    (!forcePrimaryModel && modelPreference === "auto" && routing.mode === "deep" && hasAnthropic());
   const additionalWebSources: Array<{ id: string; type: "web"; title: string; url: string }> = [];
   let modelUsed: string;
 
-  if (useClaudeForDeep) {
+  if (useClaude) {
     try {
       fullText = await runClaudeWithTools({
         systemPrompt,
@@ -1052,7 +1059,7 @@ ${POSTURE_BLOCK}`;
           role: m.role as "user" | "assistant",
           content: m.content,
         })),
-        temperature: 0.3,
+        temperature: routing.mode === "deep" ? 0.3 : 0.2,
         // 8192 was too low for long bilingual Arabic responses — Arabic uses
         // ~2× the tokens per visible character vs English, and deep-mode
         // comparison tables + multi-section analyses hit the cap regularly,
@@ -1144,7 +1151,10 @@ ${POSTURE_BLOCK}`;
 
   await supabaseAdmin
     .from("conversations")
-    .update({ last_message_at: new Date().toISOString() })
+    .update({
+      last_message_at: new Date().toISOString(),
+      model: modelUsed,
+    })
     .eq("id", conversationId);
 
   // Audit log: one row per chat turn (closes the "audit_log underwritten"

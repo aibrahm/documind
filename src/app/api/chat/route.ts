@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { runChatTurn, type InboundAttachment } from "@/lib/chat-turn";
+import { isChatModelChoice, type ChatModelChoice } from "@/lib/chat-models";
 import { logAudit } from "@/lib/audit";
 
 export const maxDuration = 60;
@@ -13,6 +14,7 @@ export async function POST(request: NextRequest) {
     pinnedDocumentIds?: string[];
     pinnedEntityIds?: string[];
     project_id?: string;
+    model?: ChatModelChoice;
   };
   try {
     body = await request.json();
@@ -61,6 +63,7 @@ export async function POST(request: NextRequest) {
     typeof body.project_id === "string" && body.project_id.length > 0
       ? body.project_id
       : null;
+  const modelPreference = isChatModelChoice(body.model) ? body.model : "auto";
 
   // ── Create conversation row ──
   const title = userMessage.length > 60 ? userMessage.slice(0, 60) + "…" : userMessage;
@@ -70,6 +73,7 @@ export async function POST(request: NextRequest) {
       title,
       mode: "chat",
       query: userMessage,
+      model: modelPreference === "auto" ? null : modelPreference,
       ...(projectId ? { project_id: projectId } : {}),
     })
     .select("id")
@@ -118,6 +122,7 @@ export async function POST(request: NextRequest) {
           attachments,
           pinnedDocumentIds,
           pinnedEntityIds,
+          modelPreference,
           history: [], // new conversation — no prior messages
           emit,
         });

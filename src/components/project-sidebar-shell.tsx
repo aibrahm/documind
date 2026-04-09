@@ -13,6 +13,16 @@ interface ProjectSidebarShellProps {
 }
 
 const STORAGE_KEY = "documind:sidebar-open";
+const OPEN_HISTORY_EVENT = "documind:open-history";
+const FOCUS_HISTORY_SEARCH_EVENT = "documind:focus-history-search";
+
+function persistSidebarOpenState(next: boolean) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, String(next));
+  } catch {
+    // ignore
+  }
+}
 
 /**
  * Client wrapper around <ProjectSidebar> that owns the open/closed state.
@@ -23,26 +33,35 @@ export function ProjectSidebarShell({
   projects,
   conversations,
 }: ProjectSidebarShellProps) {
-  const [isOpen, setIsOpen] = useState(true);
-
-  // Hydrate from localStorage on mount
-  useEffect(() => {
+  const [isOpen, setIsOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored !== null) setIsOpen(stored === "true");
+      return stored === null ? true : stored === "true";
     } catch {
-      // localStorage may be unavailable (private browsing, etc) — keep default
+      return true;
     }
+  });
+
+  useEffect(() => {
+    const handleOpenHistory = () => {
+      setIsOpen(true);
+      persistSidebarOpenState(true);
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event(FOCUS_HISTORY_SEARCH_EVENT));
+      });
+    };
+
+    window.addEventListener(OPEN_HISTORY_EVENT, handleOpenHistory);
+    return () => {
+      window.removeEventListener(OPEN_HISTORY_EVENT, handleOpenHistory);
+    };
   }, []);
 
   const toggle = () => {
     setIsOpen((v) => {
       const next = !v;
-      try {
-        window.localStorage.setItem(STORAGE_KEY, String(next));
-      } catch {
-        // ignore
-      }
+      persistSidebarOpenState(next);
       return next;
     });
   };

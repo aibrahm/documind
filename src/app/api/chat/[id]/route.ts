@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { runChatTurn, type InboundAttachment } from "@/lib/chat-turn";
+import { isChatModelChoice, type ChatModelChoice } from "@/lib/chat-models";
 
 export const maxDuration = 60;
 
@@ -16,6 +17,7 @@ export async function POST(
     attachments?: InboundAttachment[];
     pinnedDocumentIds?: string[];
     pinnedEntityIds?: string[];
+    model?: ChatModelChoice;
   };
   try {
     body = await request.json();
@@ -60,6 +62,7 @@ export async function POST(
   }
 
   const userMessage = (message || "").trim();
+  const modelPreference = isChatModelChoice(body.model) ? body.model : "auto";
 
   // ── Load conversation history (last 20) ──
   const { data: history } = await supabaseAdmin
@@ -119,6 +122,7 @@ export async function POST(
           attachments,
           pinnedDocumentIds,
           pinnedEntityIds,
+          modelPreference,
           history: historyMessages,
           emit,
         });
