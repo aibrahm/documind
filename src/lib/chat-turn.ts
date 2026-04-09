@@ -28,6 +28,11 @@ import { getOpenAI, hasAnthropic } from "@/lib/clients";
 import { runClaudeWithTools } from "@/lib/claude-with-tools";
 import { findEntitiesInText } from "@/lib/entities";
 import {
+  formatContextCardForPrompt,
+  type DocumentContextCard,
+} from "@/lib/context-card";
+import { updateProjectSummary } from "@/lib/project-summary";
+import {
   retrieveRelevantMemories,
   formatMemoriesForPrompt,
   extractMemories,
@@ -40,8 +45,39 @@ import {
 } from "@/lib/document-knowledge";
 import { resolveDocumentTargetsFromInventory } from "@/lib/query-resolution";
 import { buildWorkspaceProfilePromptBlock, getWorkspaceProfile } from "@/lib/workspace-profile";
+import type { Source } from "@/lib/types";
 
 const PRIMARY_CHAT_MODEL = "gpt-5.4";
+
+// Strong posture override — used as the FINAL block of the system prompt in
+// both casual and deep modes. The default "be precise, professional" voice
+// produces flat bureaucratic bullet lists that read like a government memo,
+// not strategic advice. This block pushes the model toward sharp opinionated
+// advisor voice and goes at the end of the system prompt so it has the
+// freshest attention weight (and overrides anything doctrines might say
+// about voice in deep mode).
+const POSTURE_BLOCK = `POSTURE — your default voice. Read carefully:
+
+You are advising the Vice Chairman of an economic authority. Treat him like one. He is a decision-maker between meetings, not a student wanting comprehensive coverage. The flat "bullet-list policy memo" voice is the failure mode. Avoid it.
+
+- TAKE A STANCE. Pick the strongest interpretation of the question and defend it. Do NOT enumerate 5-7 neutral options like a research assistant — that produces vanilla government memos. Help him decide.
+- BE OPINIONATED. Use pointed language: "the real question is X," "this is a mistake," "don't do Y, do Z." If you see a flaw in his framing, say so. If he is wasting time on the wrong thing, redirect him.
+- CONCRETE > CATEGORIES. Bad: "explore tax incentives." Good: "Tax credit tied to local-content percentage, not a blanket 5-year exemption — here is why." Specifics beat abstractions every time.
+- FORCE A DECISION when he is vague. End with ONE sharp clarifying question that forces a choice — not a generic "let me know if you need more."
+- DON'T HEDGE. Avoid "could," "may," "perhaps," "it depends." Use "should," "is," "here is why." If you are genuinely uncertain, name the uncertainty: "I do not know X — find out before deciding Y."
+- USE PROSE WHEN PROSE IS SHARPER. Don't default to 5-7 bullet categories. A tight 4-paragraph argument usually beats a vanilla outline. Use bullets only when structure genuinely helps.
+- SKIP FILLER. No "Great question," no "Certainly," no "I would be happy to," no closing pleasantries. Lead with the answer; justify after.
+- BE DIRECT, NOT RUDE. Confidence is not aggression. Push back, but never condescend.
+
+This applies regardless of language. Same posture in Arabic and English.`;
+
+// Defensive sanitizer: strip C0 control characters (U+0000 through U+001F)
+// except whitespace (\\t \\n \\r). LLM-generated context cards and OCR output
+// have occasionally contained stray control bytes that break OpenAI's strict
+// JSON body parser ("could not parse JSON body of your request").
+function sanitizePromptForOpenAI(s: string): string {
+  return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+}
 
 export interface InboundAttachment {
   title: string;
@@ -84,6 +120,74 @@ function openAiTemperature(
     return {};
   }
   return { temperature: value };
+}
+
+type DocumentSourcePayload = Extract<Source, { type: "document" }>;
+
+async function loadDocumentSourceMetadata(documentIds: string[]) {
+  if (documentIds.length === 0) return new Map<string, {
+    title: string;
+    classification: string | null;
+    language: string | null;
+    contextCard: Record<string, unknown> | null;
+  }>();
+
+  const { data } = await supabaseAdmin
+    .from("documents")
+    .select("id, title, classification, language, context_card")
+    .in("id", documentIds);
+
+  const byId = new Map<
+    string,
+    {
+      title: string;
+      classification: string | null;
+      language: string | null;
+      contextCard: Record<string, unknown> | null;
+    }
+  >();
+
+  for (const row of data || []) {
+    byId.set(row.id as string, {
+      title: (row.title as string) || "Untitled document",
+      classification: (row.classification as string | null) ?? null,
+      language: (row.language as string | null) ?? null,
+      contextCard: (row.context_card as Record<string, unknown> | null) ?? null,
+    });
+  }
+
+  return byId;
+}
+
+function attachDocumentSourceMetadata(
+  sources: Array<{
+    id: string;
+    type: "document";
+    title: string;
+    pageNumber: number;
+    sectionTitle?: string | null;
+    documentId: string;
+  }>,
+  metadataById: Map<
+    string,
+    {
+      title: string;
+      classification: string | null;
+      language: string | null;
+      contextCard: Record<string, unknown> | null;
+    }
+  >,
+): DocumentSourcePayload[] {
+  return sources.map((source) => {
+    const meta = metadataById.get(source.documentId);
+    return {
+      ...source,
+      title: meta?.title || source.title,
+      classification: meta?.classification || undefined,
+      language: meta?.language ?? null,
+      contextCard: meta?.contextCard ?? null,
+    };
+  });
 }
 
 export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnResult> {
@@ -179,6 +283,31 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
     }
   }
 
+  // ── Project library cards ──
+  // Load context cards for every project-linked document so the model gets
+  // a doc-level semantic summary of what's in the project's library before
+  // any chunk retrieval happens. This gives it the "big picture" that RAG
+  // alone often loses. Cards are only used when we're in a project.
+  let projectLibraryCards: Array<{
+    id: string;
+    title: string;
+    card: DocumentContextCard;
+  }> = [];
+  if (projectId && projectDocIds.length > 0) {
+    const { data: cardRows } = await supabaseAdmin
+      .from("documents")
+      .select("id, title, context_card")
+      .in("id", projectDocIds);
+    projectLibraryCards = (cardRows || [])
+      .filter((r) => r.context_card)
+      .slice(0, 12) // cap prompt size — 12 cards is ~2-3k tokens
+      .map((r) => ({
+        id: r.id as string,
+        title: r.title as string,
+        card: r.context_card as unknown as DocumentContextCard,
+      }));
+  }
+
   // Route the message and pull cross-conversation memories in parallel.
   // The continue-path passes history to the router so it can rebuild a
   // topical search query from earlier turns when the current message is
@@ -198,10 +327,24 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
   const memoryBlock = formatMemoriesForPrompt(priorMemories);
   const workspaceProfileBlock = buildWorkspaceProfilePromptBlock(workspaceProfile);
 
-  const visibleDocs =
-    excludedDocIds.size > 0
-      ? (allDocs.data || []).filter((d) => !excludedDocIds.has(d.id as string))
-      : allDocs.data || [];
+  // Inventory scope policy:
+  //   - If in a project: the inventory the model sees must match what the
+  //     user thinks is "in this project". That means project-linked docs
+  //     PLUS shared reference material (laws, treaties, doctrines) that is
+  //     always visible. Docs with knowledge_scope="project" that belong to
+  //     OTHER projects (or no project) must be hidden — they leak into
+  //     enumeration answers and confuse the user.
+  //   - If not in a project: default behavior — show all, just drop private
+  //     docs linked only to other projects (existing excludedDocIds set).
+  const projectDocIdSet = new Set(projectDocIds);
+  const visibleDocs = (allDocs.data || []).filter((d) => {
+    const id = d.id as string;
+    if (excludedDocIds.has(id)) return false;
+    if (!projectId) return true;
+    if (projectDocIdSet.has(id)) return true;
+    const scope = d.knowledge_scope as string | null;
+    return scope === "shared_reference" || scope === "institutional_doctrine";
+  });
 
   const docInventory = visibleDocs
     .map(
@@ -448,6 +591,25 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
   }
 
   if (routing.shouldSearch) {
+    // Project-scoped corpus search policy:
+    //   - Project-linked docs are already handled by the projectDocEvidence
+    //     pass above (restricted via documentIds = projectDocIds).
+    //   - This main pass is the "general knowledge pool" — when in a project,
+    //     we restrict it to shared reference material (laws, treaties) and
+    //     institutional doctrines. This prevents unrelated private docs from
+    //     leaking into project conversations while still giving the model
+    //     access to the full reference library.
+    //   - We ONLY apply the scope restriction when there are no explicit
+    //     targets (entity-scoped or resolved). Explicit targets override scope
+    //     filtering so pinned entities can still surface docs from anywhere.
+    const mainSearchHasExplicitTargets =
+      resolvedDocIds.length > 0 ||
+      (entityScopedDocIds !== null && entityScopedDocIds.length > 0);
+    const allowedScopesForMainSearch =
+      projectId && !mainSearchHasExplicitTargets
+        ? (["shared_reference", "institutional_doctrine"] as const)
+        : null;
+
     const results = await hybridSearch({
       query: routing.searchQuery,
       matchCount: 8,
@@ -456,6 +618,9 @@ export async function runChatTurn(args: RunChatTurnArgs): Promise<RunChatTurnRes
       // Otherwise normal corpus-wide search.
       documentIds: resolvedDocIds.length > 0 ? resolvedDocIds : entityScopedDocIds,
       excludedDocumentIds: [...excludedDocIds],
+      knowledgeScopes: allowedScopesForMainSearch
+        ? [...allowedScopesForMainSearch]
+        : null,
     });
     // De-dupe against project-doc evidence by DOCUMENT id (not chunk).
     // If the same doc surfaced in both passes, only the project-scoped pass
@@ -624,6 +789,24 @@ Document mentions follow:
   // Injected into BOTH deep and casual prompts when the conversation has a
   // project_id. Tells the model what project it's in, what the project is
   // about, and that the PROJECT-DOC blocks below are primary context.
+  //
+  // If project-linked documents have context cards (generated by the
+  // contextualizer pass at upload time), we embed a "PROJECT LIBRARY"
+  // block listing each doc with its semantic summary. This gives the
+  // model the doc-level big picture before it sees chunk-level evidence.
+  const projectLibraryBlock =
+    projectLibraryCards.length > 0
+      ? `═══ PROJECT LIBRARY (${projectLibraryCards.length} document${projectLibraryCards.length === 1 ? "" : "s"} linked to this project) ═══
+
+${projectLibraryCards
+  .map((entry, i) => `${i + 1}. ${formatContextCardForPrompt(entry.card, entry.title)}`)
+  .join("\n\n")}
+
+These are the documents currently linked to this project. Use the summaries above to understand what's available BEFORE deciding what to cite. When you cite a specific clause or number, cite the [PROJECT-DOC-N] chunk evidence in the user message, not the library summary.
+
+`
+      : "";
+
   const projectContextBlock = projectContext
     ? `═══ PROJECT CONTEXT ═══
 
@@ -637,7 +820,7 @@ Participants: ${participantNames.join(", ")}` : ""}
 
 The PROJECT-DOC blocks in the user message are this project's linked documents — they are the primary context for any question. Other DOC blocks are general retrieval; WEB blocks are external sources. Cite project documents as [PROJECT-DOC-N] inline. If you reference a linked participant by pronoun ("they", "the developer", "the ministry"), the user means a participant above.
 
-`
+` + projectLibraryBlock
     : "";
 
   // Build system prompt based on mode
@@ -655,7 +838,9 @@ The PROJECT-DOC blocks in the user message are this project's linked documents �
       "\n\n" +
       memoryBlock +
       "\n\n" +
-      deliverableFormattingBlock;
+      deliverableFormattingBlock +
+      "\n\n" +
+      POSTURE_BLOCK;
   } else {
     systemPrompt = projectContextBlock + workspaceProfileBlock + `You are DocuMind, an intelligent document assistant for a government economic authority. You have access to institutional documents including contracts, laws, reports, and decrees.
 
@@ -727,25 +912,39 @@ ATTACHED FILES:
 
 ${deliverableFormattingBlock}
 
-TONE: You work for senior decision-makers. Be precise, concise, professional. Skip filler. Lead with the answer.`;
+${POSTURE_BLOCK}`;
   }
 
-  // Build LLM messages: system + history (last 10) + user-with-evidence
+  // Build LLM messages: system + history (last 10) + user-with-evidence.
+  // Sanitize the system prompt to strip C0 control characters that have
+  // historically broken OpenAI's request body parser when LLM-generated
+  // context cards or OCR output leaked stray bytes into the prompt.
   const llmMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-    { role: "system", content: systemPrompt },
+    { role: "system", content: sanitizePromptForOpenAI(systemPrompt) },
   ];
 
   const recentHistory = history.slice(-10);
   for (const m of recentHistory) {
     if (m.role === "user" || m.role === "assistant") {
-      llmMessages.push({ role: m.role, content: m.content.slice(0, 2000) });
+      llmMessages.push({
+        role: m.role,
+        content: sanitizePromptForOpenAI(m.content.slice(0, 2000)),
+      });
     }
   }
 
   if (evidencePackage) {
-    llmMessages.push({ role: "user", content: evidencePackage + "═══ USER MESSAGE ═══\n" + userMessage });
+    llmMessages.push({
+      role: "user",
+      content: sanitizePromptForOpenAI(
+        evidencePackage + "═══ USER MESSAGE ═══\n" + userMessage,
+      ),
+    });
   } else {
-    llmMessages.push({ role: "user", content: userMessage });
+    llmMessages.push({
+      role: "user",
+      content: sanitizePromptForOpenAI(userMessage),
+    });
   }
 
   // ── Emit routing decision ──
@@ -776,35 +975,61 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
       documentId: s.documentId,
     }));
 
+  const sourceDocumentMeta = await loadDocumentSourceMetadata(
+    [...new Set([
+      ...pinnedSourcePills.map((s) => s.documentId),
+      ...resolvedDocEvidence.map((s) => s.documentId),
+      ...projectDocEvidence.map((s) => s.documentId),
+      ...documentEvidence.map((s) => s.documentId),
+    ])],
+  );
+
+  const enrichedPinnedSourcePills = attachDocumentSourceMetadata(
+    pinnedSourcePills,
+    sourceDocumentMeta,
+  );
+  const enrichedResolvedDocEvidence = attachDocumentSourceMetadata(
+    resolvedDocEvidence.map((s) => ({
+      id: s.id,
+      type: s.type,
+      title: s.title,
+      pageNumber: s.pageNumber,
+      sectionTitle: s.sectionTitle,
+      documentId: s.documentId,
+    })),
+    sourceDocumentMeta,
+  );
+  const enrichedProjectDocEvidence = attachDocumentSourceMetadata(
+    projectDocEvidence.map((s) => ({
+      id: s.id,
+      type: s.type,
+      title: s.title,
+      pageNumber: s.pageNumber,
+      sectionTitle: s.sectionTitle,
+      documentId: s.documentId,
+    })),
+    sourceDocumentMeta,
+  );
+  const enrichedDocumentEvidence = attachDocumentSourceMetadata(
+    documentEvidence.map((s) => ({
+      id: s.id,
+      type: s.type,
+      title: s.title,
+      pageNumber: s.pageNumber,
+      sectionTitle: s.sectionTitle,
+      documentId: s.documentId,
+    })),
+    sourceDocumentMeta,
+  );
+
   // Send sources (pinned + project docs + documents + web, unified)
   if (evidenceSources.length > 0 || pinnedSourcePills.length > 0) {
     emit("sources", {
       sources: [
-        ...pinnedSourcePills,
-        ...resolvedDocEvidence.map((s) => ({
-          id: s.id,
-          type: s.type,
-          title: s.title,
-          pageNumber: s.pageNumber,
-          sectionTitle: s.sectionTitle,
-          documentId: s.documentId,
-        })),
-        ...projectDocEvidence.map((s) => ({
-          id: s.id,
-          type: s.type,
-          title: s.title,
-          pageNumber: s.pageNumber,
-          sectionTitle: s.sectionTitle,
-          documentId: s.documentId,
-        })),
-        ...documentEvidence.map((s) => ({
-          id: s.id,
-          type: s.type,
-          title: s.title,
-          pageNumber: s.pageNumber,
-          sectionTitle: s.sectionTitle,
-          documentId: s.documentId,
-        })),
+        ...enrichedPinnedSourcePills,
+        ...enrichedResolvedDocEvidence,
+        ...enrichedProjectDocEvidence,
+        ...enrichedDocumentEvidence,
         ...webEvidence,
       ],
     });
@@ -828,7 +1053,12 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
           content: m.content,
         })),
         temperature: 0.3,
-        maxTokens: 8192,
+        // 8192 was too low for long bilingual Arabic responses — Arabic uses
+        // ~2× the tokens per visible character vs English, and deep-mode
+        // comparison tables + multi-section analyses hit the cap regularly,
+        // producing mid-sentence truncation. Claude Opus supports up to 32k
+        // output tokens. 24k gives us headroom without being wasteful.
+        maxTokens: 24000,
         onText: (delta) => {
           emit("text", { content: delta });
         },
@@ -859,7 +1089,7 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
       const llmStream = await getOpenAI().chat.completions.create({
         model: PRIMARY_CHAT_MODEL,
         ...openAiTemperature(PRIMARY_CHAT_MODEL, 0.1),
-        ...openAiCompletionLimit(PRIMARY_CHAT_MODEL, 4096),
+        ...openAiCompletionLimit(PRIMARY_CHAT_MODEL, 16000),
         stream: true,
         messages: llmMessages,
       });
@@ -878,7 +1108,7 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
     const llmStream = await getOpenAI().chat.completions.create({
       model,
       ...openAiTemperature(model, 0.2),
-      ...openAiCompletionLimit(model, 4096),
+      ...openAiCompletionLimit(model, 16000),
       stream: true,
       messages: llmMessages,
     });
@@ -899,35 +1129,17 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
     conversation_id: conversationId,
     role: "assistant",
     content: fullText,
-    metadata: {
+    metadata: ({
       mode: routing.mode,
       doctrines: routing.doctrines,
       model: modelUsed,
       sources: [
-        ...resolvedDocEvidence.map((s) => ({
-          id: s.id,
-          type: s.type,
-          title: s.title,
-          pageNumber: s.pageNumber,
-          documentId: s.documentId,
-        })),
-        ...projectDocEvidence.map((s) => ({
-          id: s.id,
-          type: s.type,
-          title: s.title,
-          pageNumber: s.pageNumber,
-          documentId: s.documentId,
-        })),
-        ...documentEvidence.map((s) => ({
-          id: s.id,
-          type: s.type,
-          title: s.title,
-          pageNumber: s.pageNumber,
-          documentId: s.documentId,
-        })),
+        ...enrichedResolvedDocEvidence,
+        ...enrichedProjectDocEvidence,
+        ...enrichedDocumentEvidence,
         ...webEvidence,
       ],
-    },
+    } as unknown) as never,
   });
 
   await supabaseAdmin
@@ -956,11 +1168,28 @@ TONE: You work for senior decision-makers. Be precise, concise, professional. Sk
     pinnedEntities: pinnedEntityIds.length,
   }).catch((err) => console.error("audit logAudit failed:", err));
 
-  // Fire-and-forget memory extraction (don't block response close).
-  // New memories inherit the conversation's project_id (Phase 05).
-  extractMemories(userMessage, fullText, conversationId)
-    .then((memories) => storeMemories(memories, conversationId, projectId))
-    .catch((err) => console.error("Memory extraction error:", err));
+  // Memory extraction is fire-and-forget and silently catches errors, which
+  // violates "Fail Loud, Never Fake". Gate it behind an env flag so demo
+  // environments can disable it entirely until we add visible SSE warnings.
+  // Default: disabled. Set MEMORY_EXTRACTION_ENABLED=true to turn on.
+  if (process.env.MEMORY_EXTRACTION_ENABLED === "true") {
+    extractMemories(userMessage, fullText, conversationId)
+      .then((memories) => storeMemories(memories, conversationId, projectId))
+      .catch((err) => console.error("Memory extraction error:", err));
+  }
+
+  // Project context summary (the "Where we are" narrative) — fire-and-forget.
+  // Updates the project's running status paragraph so the dashboard can show
+  // a live sense of where the user is in this piece of work, and future
+  // turns can be seeded with project-level context without re-reading every
+  // document. Errors are logged, never bubbled, never block the response.
+  if (projectId) {
+    void updateProjectSummary({
+      projectId,
+      userMessage,
+      assistantMessage: fullText,
+    });
+  }
 
   return {
     fullText,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -15,8 +15,11 @@ import {
   Mail,
   Pencil,
   CheckCheck,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Tag } from "@/components/ui-system";
+import { DocumentContextCard } from "@/components/document-context-card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -69,10 +72,14 @@ interface ChatMessageProps {
   }) => Promise<void>;
 }
 
+// Use a fragment identifier (#cite-ID) instead of a custom scheme. react-markdown
+// v10 strips unknown URL schemes like `cite://` during sanitization, which was
+// causing clicks to fall through to a blank `<a target="_blank">` and open a
+// new empty tab. Fragments are always safe and preserved.
 function linkifyCitations(text: string): string {
   return text.replace(
     /\[(DOC-\d+|WEB-\d+|PINNED-\d+|PROJECT-DOC-\d+|TARGET-DOC-\d+)\]/g,
-    (_, id) => `[[${id}]](cite://${id})`,
+    (_, id) => `[[${id}]](#cite-${id})`,
   );
 }
 
@@ -324,7 +331,7 @@ function EmailArtifactCard({ rawContent }: { rawContent: string }) {
   );
 }
 
-export function ChatMessage({
+function ChatMessageInner({
   role,
   content,
   metadata,
@@ -354,6 +361,67 @@ export function ChatMessage({
     () => new Map(metadata?.sources?.map((source) => [source.id, source]) ?? []),
     [metadata?.sources],
   );
+
+  // Dedupe source cards by document (or URL for web) so the same memo
+  // doesn't render as 3 identical cards just because 3 chunks matched.
+  // Each entry keeps a representative source (first one, used for click)
+  // plus the unique list of pages that were cited across all chunks.
+  //
+  // Sorted: documents first (user's own corpus = most trusted), then web.
+  // Within each group, most-cited appear first (higher signal).
+  const dedupedSources = useMemo(() => {
+    const entries: Array<{
+      key: string;
+      primary: Source;
+      pages: number[];
+      citationCount: number;
+    }> = [];
+    const index = new Map<string, number>();
+    for (const source of metadata?.sources ?? []) {
+      const key = source.type === "web" ? source.url : source.documentId;
+      const existing = index.get(key);
+      if (existing !== undefined) {
+        const entry = entries[existing];
+        entry.citationCount += 1;
+        if (source.type !== "web" && !entry.pages.includes(source.pageNumber)) {
+          entry.pages.push(source.pageNumber);
+        }
+      } else {
+        index.set(key, entries.length);
+        entries.push({
+          key,
+          primary: source,
+          pages: source.type === "web" ? [] : [source.pageNumber],
+          citationCount: 1,
+        });
+      }
+    }
+    for (const entry of entries) entry.pages.sort((a, b) => a - b);
+    // Sort: documents first, then web. Within each group: most cited first.
+    entries.sort((a, b) => {
+      const aIsDoc = a.primary.type !== "web" ? 0 : 1;
+      const bIsDoc = b.primary.type !== "web" ? 0 : 1;
+      if (aIsDoc !== bIsDoc) return aIsDoc - bIsDoc;
+      return b.citationCount - a.citationCount;
+    });
+    return entries;
+  }, [metadata?.sources]);
+
+  // Collapse long source lists. 5 is the threshold — below that, the full
+  // list fits comfortably and the toggle is more noise than value. Above
+  // that, we show the top 5 (docs first, then top web hits) and hide the
+  // rest behind a "Show all" button.
+  const SOURCE_PREVIEW_COUNT = 5;
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
+  const hasHiddenSources = dedupedSources.length > SOURCE_PREVIEW_COUNT;
+  const visibleSources = sourcesExpanded
+    ? dedupedSources
+    : dedupedSources.slice(0, SOURCE_PREVIEW_COUNT);
+  const docSourceCount = dedupedSources.filter(
+    (e) => e.primary.type !== "web",
+  ).length;
+  const webSourceCount = dedupedSources.length - docSourceCount;
+
   const linkifiedContent = useMemo(() => linkifyCitations(content), [content]);
 
   const copyContent = () => {
@@ -587,8 +655,8 @@ export function ChatMessage({
                 );
               },
               a: ({ href, children }) => {
-                if (href?.startsWith("cite://")) {
-                  const id = href.slice("cite://".length);
+                if (href?.startsWith("#cite-")) {
+                  const id = href.slice("#cite-".length);
                   const source = sourcesById.get(id);
                   if (!source) {
                     return (
@@ -600,7 +668,10 @@ export function ChatMessage({
                   return (
                     <button
                       type="button"
-                      onClick={() => onSourceClick?.(source)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onSourceClick?.(source);
+                      }}
                       className="mx-0.5 rounded px-1 py-0.5 align-baseline font-['JetBrains_Mono'] text-[10px] font-semibold text-blue-600 no-underline transition-colors hover:bg-blue-50 hover:text-blue-800"
                       title={source.title}
                     >
@@ -629,45 +700,107 @@ export function ChatMessage({
           </div>
         )}
 
-        {metadata?.sources && metadata.sources.length > 0 && (
-          <div className="mt-4">
-            <p className="mb-2 font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-slate-400">
-              Sources · {metadata.sources.length}
+        {dedupedSources.length > 0 && (
+          <div className="mt-3">
+            <p className="mb-1.5 font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-slate-400">
+              Sources · {dedupedSources.length}
+              {docSourceCount > 0 && webSourceCount > 0 && (
+                <span className="ml-1.5 text-slate-300">
+                  ({docSourceCount} doc{docSourceCount === 1 ? "" : "s"} ·{" "}
+                  {webSourceCount} web)
+                </span>
+              )}
             </p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {metadata.sources.map((source) => (
+            <div className="space-y-2">
+              {visibleSources.map((entry) => {
+                const source = entry.primary;
+                const isWeb = source.type === "web";
+                const pagesLabel =
+                  entry.pages.length === 0
+                    ? ""
+                    : entry.pages.length === 1
+                    ? `p.${entry.pages[0]}`
+                    : entry.pages.length <= 3
+                    ? `pp.${entry.pages.join(",")}`
+                    : `${entry.pages.length} pages`;
+                return (
+                  <button
+                    key={entry.key}
+                    type="button"
+                    onClick={() => onSourceClick?.(source)}
+                    className="group/src flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
+                    title={isWeb ? source.url : source.title}
+                  >
+                    {isWeb ? (
+                      <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    ) : (
+                      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="min-w-0 flex-1 truncate text-[12px] font-medium text-slate-700"
+                          dir="auto"
+                        >
+                          {source.title}
+                        </span>
+                        <span className="shrink-0 font-['JetBrains_Mono'] text-[10px] text-slate-400">
+                          {isWeb ? getDomain(source.url) : pagesLabel}
+                        </span>
+                        {entry.citationCount > 1 && (
+                          <span className="shrink-0 rounded bg-slate-100 px-1 font-['JetBrains_Mono'] text-[9px] text-slate-500">
+                            ×{entry.citationCount}
+                          </span>
+                        )}
+                      </div>
+                      {isWeb ? (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Web source
+                        </p>
+                      ) : (
+                        <>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {source.classification && (
+                              <Tag variant="default">{source.classification}</Tag>
+                            )}
+                            {source.sectionTitle && (
+                              <span className="text-[11px] text-slate-500" dir="auto">
+                                {source.sectionTitle}
+                              </span>
+                            )}
+                          </div>
+                          <DocumentContextCard
+                            card={source.contextCard}
+                            preferredLanguage={source.language}
+                            variant="compact"
+                            bordered={false}
+                            className="mt-1"
+                          />
+                        </>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+              {hasHiddenSources && (
                 <button
-                  key={source.id}
                   type="button"
-                  onClick={() => onSourceClick?.(source)}
-                  className="group/src flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition-all hover:border-slate-300 hover:bg-slate-50"
-                  title={source.type === "web" ? source.url : source.title}
+                  onClick={() => setSourcesExpanded((v) => !v)}
+                  className="flex items-center gap-1 rounded-md border border-dashed border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 cursor-pointer"
                 >
-                  {source.type === "web" ? (
-                    <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm bg-slate-100">
-                      <ExternalLink className="h-3 w-3 text-slate-500" />
-                    </div>
+                  {sourcesExpanded ? (
+                    <>
+                      <ChevronUp className="h-3 w-3" />
+                      Show fewer
+                    </>
                   ) : (
-                    <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm bg-slate-100">
-                      <FileText className="h-3 w-3 text-slate-500" />
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12px] font-medium text-slate-700" dir="auto">
-                      {source.title}
-                    </p>
-                    <p className="truncate font-['JetBrains_Mono'] text-[10px] text-slate-400">
-                      {source.type === "web" ? getDomain(source.url) : `Page ${source.pageNumber}`}
-                    </p>
-                  </div>
-                  <span className="shrink-0 font-['JetBrains_Mono'] text-[9px] text-slate-300 group-hover/src:text-slate-500">
-                    {source.id}
-                  </span>
-                  {source.type === "web" && (
-                    <ExternalLink className="h-3 w-3 shrink-0 text-slate-300 group-hover/src:text-slate-500" />
+                    <>
+                      <ChevronDown className="h-3 w-3" />
+                      Show {dedupedSources.length - SOURCE_PREVIEW_COUNT} more
+                    </>
                   )}
                 </button>
-              ))}
+              )}
             </div>
           </div>
         )}
@@ -843,3 +976,20 @@ export function ChatMessage({
     </div>
   );
 }
+
+// Memoized wrapper — prevents every prior message from re-rendering on every
+// token of the streaming message. The custom comparator checks the fields
+// that actually affect rendering. Callbacks are expected to be stable
+// (wrapped in useCallback by the parent) — we treat them as ref-equal.
+export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
+  if (prev.role !== next.role) return false;
+  if (prev.content !== next.content) return false;
+  if (prev.isStreaming !== next.isStreaming) return false;
+  if (prev.metadata !== next.metadata) return false;
+  if (prev.memoryScopes !== next.memoryScopes) return false;
+  if (prev.onSourceClick !== next.onSourceClick) return false;
+  if (prev.onRegenerate !== next.onRegenerate) return false;
+  if (prev.onSaveMemory !== next.onSaveMemory) return false;
+  if (prev.onSaveArtifact !== next.onSaveArtifact) return false;
+  return true;
+});

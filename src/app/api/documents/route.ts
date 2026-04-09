@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("documents")
     .select(
-      "id, title, type, classification, language, page_count, status, metadata, entities, created_at, is_current, version_number, version_of",
+      "id, title, type, classification, language, page_count, status, processing_error, context_card, metadata, entities, created_at, is_current, version_number, version_of",
     )
     .order("created_at", { ascending: false });
 

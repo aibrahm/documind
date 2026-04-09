@@ -246,8 +246,8 @@ export async function POST(request: NextRequest) {
         .eq("id", doc.id);
     }
 
-    // Phase 07: link the document to a project if requested by the user
-    // (the librarian's project suggestion was accepted on the upload page)
+    // Link the document to a project if requested by the user
+    // (for example when the upload flow suggested a project fit).
     if (linkToProject) {
       const { error: linkErr } = await supabaseAdmin
         .from("project_documents")
@@ -255,7 +255,7 @@ export async function POST(request: NextRequest) {
           {
             project_id: linkToProject,
             document_id: doc.id,
-            added_by: "librarian",
+            added_by: "auto",
           },
           { onConflict: "project_id,document_id" },
         );

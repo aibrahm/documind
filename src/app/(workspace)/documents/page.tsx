@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
+import { DocumentContextCard } from "@/components/document-context-card";
 
 interface Doc {
   id: string;
@@ -22,6 +23,8 @@ interface Doc {
   language: string;
   page_count: number | null;
   status: string;
+  processing_error: string | null;
+  context_card: Record<string, unknown> | null;
   entities: string[];
   created_at: string;
 }
@@ -298,6 +301,18 @@ export default function DocumentsPage() {
                         <span className="text-slate-300">·</span>
                         <span className="font-['JetBrains_Mono']">{formatRelativeDate(doc.created_at)}</span>
                       </div>
+                      <DocumentContextCard
+                        card={doc.context_card}
+                        preferredLanguage={doc.language}
+                        variant="compact"
+                        bordered={false}
+                        className="mt-2"
+                      />
+                      {doc.processing_error && (
+                        <p className="mt-2 text-[12px] leading-relaxed text-amber-700">
+                          Extraction warning: {doc.processing_error}
+                        </p>
+                      )}
                     </div>
 
                     {/* Status indicator */}

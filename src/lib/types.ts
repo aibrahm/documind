@@ -11,7 +11,17 @@
 // ── Source ──
 // A retrieved document chunk OR a web result. Discriminated union by `type`.
 export type Source =
-  | { id: string; type: "document"; title: string; pageNumber: number; documentId: string }
+  | {
+      id: string;
+      type: "document";
+      title: string;
+      pageNumber: number;
+      documentId: string;
+      sectionTitle?: string | null;
+      classification?: string;
+      language?: string | null;
+      contextCard?: Record<string, unknown> | null;
+    }
   | { id: string; type: "web"; title: string; url: string };
 
 // ── AttachmentMeta ──

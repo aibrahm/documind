@@ -551,7 +551,7 @@ function DropZone({
         </div>
         <p className="text-[15px] font-medium text-slate-900">Drop a PDF to add it</p>
         <p className="mt-1 text-[12px] text-slate-400">
-          OCR and librarian suggestions run automatically. Up to 50 MB.
+          OCR and document suggestions run automatically. Up to 50 MB.
         </p>
         <input
           id="file-input"
