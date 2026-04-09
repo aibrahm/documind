@@ -1,145 +1,205 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-04-06
+**Analysis Date:** 2026-04-07
 
 ## Tech Debt
 
-**Console.error scatter (no structured logger):**
-- Issue: 17+ files use raw `console.error` — violates "Fail Loud, Never Fake" because errors aren't surfaced to the user
-- Files: `src/lib/chat-turn.ts`, `src/lib/memory.ts`, `src/app/api/chat/route.ts`, `src/app/api/upload/route.ts`, `src/app/api/documents/route.ts`, `src/app/api/librarian/analyze/route.ts`, and more
-- Why: No logger infrastructure ever built
-- Impact: Errors only visible in server console — user sees either a generic failure or nothing at all
-- Fix approach: Create `src/lib/logger.ts`. For user-affecting failures, emit via SSE `error` events or toast. Reserve `console.error` for unreachable paths.
+**`supabaseAdmin` falls back to literal `"placeholder"` string:**
+- File: `src/lib/supabase.ts`
+- Issue: If `SUPABASE_SERVICE_ROLE_KEY` is missing, `supabaseAdmin` is built with `process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder"`. Deployment with missing env var goes unnoticed until the first DB request, producing cryptic Supabase 401s instead of failing at startup.
+- Impact: Deployment mistakes caught late; hard to diagnose; directly contradicts "Fail Loud, Never Fake".
+- Fix: Throw at module load if the env var is missing. One line change, high value.
 
-**`chat-turn.ts` is the new long file:**
-- Issue: `src/lib/chat-turn.ts` is ~576 lines and does routing + retrieval + entity resolution + pinning + evidence packaging + LLM calls + streaming + persistence + memory extraction
-- Why: Phase 02 consolidated two duplicate chat routes here
-- Impact: Hard to modify safely; high blast radius for changes
-- Fix approach: Extract `buildEvidencePack()`, `handleLlmStream()`, `persistTurn()` into separate helpers; keep `runChatTurn` as a coordinator
+**Oversized files need decomposition:**
+- `src/lib/chat-turn.ts` (~1000+ lines) — handles routing, retrieval, memory, doctrine prompt building, evidence packaging, streaming, audit. Worth splitting into `chat-turn-routing.ts`, `chat-turn-evidence.ts`, `chat-turn-memory.ts`, `chat-turn-system-prompt.ts`, with the main file as a <300 LOC orchestrator.
+- `src/lib/ocr-normalization.ts` (~1000 lines) — can be split by source (Azure vs native text) and by section type.
+- `src/lib/librarian.ts` (~700 lines) — can be split into quick-extract / classify / canonicalize / propose.
+- `src/lib/extraction-schema.ts` (~770 lines) — types + enums; could split by concern.
+- `src/lib/database.types.ts` (auto-generated, acceptable).
+- Impact: Hard to navigate and review, especially given zero test coverage. Refactoring risk is high.
+- Fix: Extract sub-modules incrementally as changes touch these files.
 
-**`audit_log` table underutilized:**
-- Issue: Only `src/app/api/upload/route.ts` calls `logAudit()` (`src/lib/audit.ts`)
-- Impact: No observability on chat turns, routing decisions, cost tracking per conversation, memory operations, or error events
-- Fix approach: Add audit events on chat turns (mode, doctrines, cost), memory operations, classification changes. Build a simple admin page to browse `audit_log`.
+**Hardcoded model names scattered across files:**
+- Files: `src/lib/chat-turn.ts` (`PRIMARY_CHAT_MODEL = "gpt-5.4"`), `src/lib/intelligence-router.ts` (`ROUTER_MODEL = "gpt-5.4"`), `src/lib/claude-with-tools.ts` (`claude-opus-4-6`), `src/lib/memory.ts` (`gpt-4o-mini`)
+- Issue: Model IDs duplicated across modules; model retirement/migration requires touching multiple files.
+- Impact: Brittle on model retirement. Easy to miss a reference.
+- Fix: Create `src/lib/models.ts` exporting a single `MODELS` constant object as the source of truth.
 
-**`document_references` table underutilized:**
-- Issue: Detection + storage work (`src/lib/references.ts`, called from `src/app/api/upload/route.ts`), but no UI to browse, search, or manually link unresolved references
-- Impact: Known cross-document links exist but are invisible to the user; unresolved references silently accumulate
-- Fix approach: Build a references viewer page per document and a global unresolved-references queue
+**No pagination on documents list and recent conversations:**
+- Files: `src/app/api/documents/route.ts`, `src/app/(workspace)/layout.tsx` (`.limit(200)`)
+- Issue: Documents endpoint returns all docs with no limit. Conversations limited to 200 hard-coded; anything older silently disappears from the sidebar.
+- Impact: Won't scale past a few hundred documents / 200 conversations. Data "vanishes" from UI without warning.
+- Fix: Cursor-based pagination with `hasMore` flag; "load more" UI.
 
-**Relative vs absolute import inconsistency:**
-- Issue: Most files use `@/lib/*`, but e.g. `src/lib/librarian.ts` still imports `from "./supabase"` (and similar)
-- Fix approach: Normalize to `@/lib/*` everywhere; add ESLint rule `import/no-relative-parent-imports` or similar
+## Known Bugs / Fragile Areas
 
-## Resolved (verified)
+**Silent error suppression in `chat-turn.ts` fire-and-forget paths:**
+- File: `src/lib/chat-turn.ts` (memory extraction + audit logging catch blocks use `.catch(console.error)`)
+- Issue: Memory extraction and audit failures are logged to stderr but never surface to the user. The turn completes "successfully" while workspace memory is silently lost.
+- Impact: Directly violates `CLAUDE.md` "Fail Loud, Never Fake" philosophy. Users believe memory is being captured when it may not be.
+- Fix: Emit SSE `warning` events for non-fatal failures; add a `warnings[]` field to `RunChatTurnResult`; show a UI banner ("Memory indexing degraded").
 
-- ✅ Long route handlers — `/api/chat/route.ts` now 136 lines (was ~400), delegates to `runChatTurn`
-- ✅ Duplicate chat routes — both route handlers delegate to `runChatTurn` in `src/lib/chat-turn.ts`
-- ✅ Type imports normalized — spot-check of `src/lib/types.ts` and consumers is clean
-- ✅ `scripts/` directory — no longer present
-- ✅ `pipeline/` dead code (adversarial-review.ts, deep-analysis.ts, etc.) — no longer present
+**Extraction pipeline is the recurring fragility hotspot:**
+- Files: `src/lib/librarian.ts`, `src/lib/extraction-v2.ts`, `src/lib/pdf-text-extraction.ts`, `src/lib/ocr-normalization.ts`, `src/lib/azure-document-intelligence.ts`
+- Evidence: Recent commits repeatedly fix extraction (verbatim discipline, tighter law extraction prompt, extraction failure visibility, scanned PDF vision fallback).
+- Issue: Multiple fallback paths (native text → Azure Layout), inconsistent error handling, zero tests protecting this code.
+- Fix: Store the fallback chain per document (which provider was used and why); emit explicit degraded-mode warnings to UI; add regression tests with real PDF fixtures (Arabic native-text + Arabic scanned).
 
-## Known Bugs
+**Librarian silent fallback when extraction is weak:**
+- File: `src/lib/librarian.ts`
+- Issue: If text extraction fails on both native PDF and Azure, the librarian returns `classification: "PRIVATE"` with reason `"Text extraction was too weak for deterministic routing..."`. The user sees this as a confident proposal.
+- Impact: User may accept wrong classification. Disclosure is in a field the UI may not surface prominently.
+- Fix: Add `confidence: "low"` to the proposal; UI shows a prominent warning: "Couldn't reliably extract text — please verify classification before confirming."
 
-**Librarian 31% similarity false-negative for duplicates:**
-- Symptoms: Bit-identical PDF re-upload gets classified `new` or `related` instead of `duplicate`, so both documents enter the KB and compete in retrieval
-- Location: `src/lib/librarian.ts` — `findRelatedDocuments` (~line 226–249)
-- Root cause: Content similarity only embeds the **first chunk** of each candidate (`chunk_index ASC LIMIT 1`). For a 100-page contract, the cover page varies with OCR/rendering and tanks the cosine similarity. Composite weighting then pulls the total to ~0.3.
-- Impact: User ends up with duplicate documents silently indexed; retrieval accuracy degrades
-- Fix: Sample multiple chunks per candidate (first + middle + last) and use the **max** cosine similarity. Or require ≥0.85 on ≥2 sampled chunks for `duplicate`. Also bump title-match weight.
+**`Promise.all` vs `Promise.allSettled` inconsistency:**
+- Files: `src/lib/chat-turn.ts`, `src/lib/librarian.ts`
+- Issue: Critical and optional parallel calls use the same primitive inconsistently. Optional enrichment failures can crash the whole turn, or silently disappear.
+- Fix: Convention: `Promise.all` for critical reads, `Promise.allSettled` for optional enrichment; document per call site.
 
-**Empty `viewer/` route:**
-- Location: `src/app/viewer/` (empty directory)
-- Symptoms: Dead directory from an abandoned design
-- Fix: Delete the directory
+**In-memory doctrine cache not invalidated across instances:**
+- File: `src/lib/doctrine.ts`
+- Issue: 5-min in-process TTL cache. If a doctrine is updated in the DB, other server instances continue serving stale content until their cache expires.
+- Impact: In a multi-instance deployment (Vercel serverless or horizontally scaled node), users on different instances see inconsistent doctrine content.
+- Fix: Publish a Supabase Realtime / Redis pub-sub event on doctrine update; listen for invalidation across instances.
+
+**Extraction validation marks "valid: true" even with error-severity issues:**
+- File: `src/lib/extraction-validation.ts`
+- Issue: Validation returns a list of issues with severities but still sets `valid: true` for error-level issues. Processing continues, document marked `status: ready`, `processing_error` field set but easy to overlook.
+- Fix: Separate `errors` from `warnings`; introduce `status: "ready_with_errors"` or `"degraded"`; surface a "⚠️ Extraction Issues" badge in the UI.
 
 ## Security Considerations
 
-**No startup env validation:**
-- Risk: `process.env.X!` non-null assertions on all API keys + `ENCRYPTION_KEY`; missing keys crash at first use, not at boot
-- Files: `src/lib/encryption.ts`, `src/lib/clients.ts`, `src/lib/supabase.ts`
-- Impact: Operator may not notice a missing PRIVATE `ENCRYPTION_KEY` until the first private doc arrives and silently fails
-- Recommendation: Add `validateEnv()` at module load or in a startup hook; fail loudly at boot if any required key is missing. Include a 256-bit format check on `ENCRYPTION_KEY`.
+**Single-tenant RLS policies (`USING (true)` for all authenticated users):**
+- File: `supabase/migrations/003_rls_policies.sql`
+- Risk: Every authenticated user sees every document/project/conversation/memory. No ownership, no workspace boundaries, no project isolation. PRIVATE documents are only "private" in the UI — all users can query them.
+- Mitigation: Assumes single-user/trusted deployment. Brittle the moment a second user is added.
+- Fix: Add `workspace_id` (nullable, backward-compat) to `documents`, `projects`, `conversations`, `memory_items`; rewrite policies as `USING (workspace_id = auth.uid() OR workspace_id IS NULL)`; add `workspace_members` table for team support.
 
-**No input validation schema at API boundary:**
-- Risk: All API routes do manual `Array.isArray` / `typeof` checks — no Zod, no schema validation
-- Files: most routes under `src/app/api/*/route.ts`
-- Impact: Malformed requests may reach deep into `chat-turn.ts` before failing, producing confusing error messages
-- Recommendation: Add Zod schemas per endpoint; validate at the top of each route handler
+**`crypto-js` used for PRIVATE document encryption — no AEAD, deprecated library:**
+- Files: `src/lib/encryption.ts`, `package.json` (`crypto-js ^4.2.0`)
+- Risk: `crypto-js` is not actively maintained and has been flagged by security audits. AES-256 via `crypto-js` lacks authenticated encryption (no HMAC/AEAD) — ciphertexts can be tampered without detection.
+- Fix: Replace with Node.js built-in `crypto` module using `aes-256-gcm` (AEAD); proper random IV per encryption; add auth tag verification.
 
-**Heavy `as` type assertions on DB reads:**
-- Risk: `docMetaMap.get(c.document_id as string)`-style casts across lib code bypass type safety
-- Impact: Runtime shape mismatches if schema drifts from `database.types.ts`
-- Recommendation: Regenerate types after every migration; consider a thin validation layer at the Supabase boundary
+**No encryption key rotation or versioning:**
+- File: `src/lib/encryption.ts`
+- Risk: Single static `ENCRYPTION_KEY` env var. Key compromise means all PRIVATE documents are permanently exposed; no migration path.
+- Fix: Add `key_version` to encrypted payloads (`{ v: 1, iv, ciphertext, tag }`); support multiple active keys during rotation; background job to re-encrypt with new key.
 
-**RLS policies unexercised:**
-- Risk: `003_rls_policies.sql` expects an `authenticated` role, but routes all use service-role key (bypasses RLS). There's no login flow at all.
-- Impact: Policies are aspirational, not enforced. Fine for single-user, but any future multi-user work must confront this.
+**Missing ownership validation on document update:**
+- File: `src/app/api/documents/[id]/route.ts`
+- Risk: PATCH handler updates documents filtered only by `id`, no workspace/owner check. If RLS is ever disabled or bypassed, any authenticated user can modify any document.
+- Fix: Add `.eq("workspace_id", userWorkspaceId)` filter; require workspace context in the API.
 
-## Fail-Loud Violations
+**No file magic-byte validation on upload:**
+- File: `src/app/api/upload/route.ts`
+- Risk: Only extension (`.pdf`) and size (≤50MB) are checked. Malicious or malformed files disguised as PDFs could crash pdf-parse or downstream OCR.
+- Fix: Validate the leading `%PDF-` magic bytes before extraction; reject with a clear error otherwise.
 
-These all conflict with the explicit policy just added to `CLAUDE.md`:
+**Pinned document/entity access not validated:**
+- Files: `src/app/api/chat/route.ts`, `src/lib/chat-turn.ts`
+- Risk: Pinned document/entity IDs from the client are used without verifying the user has access. Pinned refs bypass search filters.
+- Fix: Verify pinned IDs exist and are accessible (workspace match, classification honored); silently drop invalid pins; log in audit trail.
 
-1. **Tavily returns `[]` on missing key** — `src/lib/web-search.ts`. Should warn at startup or emit a UI banner.
-2. **Intelligence router defaults to `casual` on JSON parse failure** — `src/lib/intelligence-router.ts` around line 150. Should log + optionally emit a degraded-mode indicator.
-3. **Memory extraction swallows errors** — `src/lib/memory.ts` ~line 100 returns `[]` on catch. User is unaware future conversations will lack context.
-4. **Cohere rerank silently falls back to original order** — `src/lib/search.ts` ~line 131. Should emit a warning and annotate search results as "unreranked".
-5. **Librarian embedding silently optional** — `src/lib/librarian.ts` ~line 194. Justified by inline comment but still invisible to the user.
-6. **Claude → GPT-4o fallback** — `src/lib/chat-turn.ts` ~line 503. User only sees `console.error`; should surface "Degraded to GPT-4o" in UI.
+## Performance Bottlenecks
 
-## Performance Concerns
+**Batch chunk inserts have no retry logic:**
+- File: `src/lib/document-processing.ts`
+- Issue: Chunks inserted in batches of 50 with a single `await supabaseAdmin.from("chunks").insert(batch)` — no retry on transient errors. A 100-page document (>5000 chunks) can silently lose batches on network blips.
+- Impact: Document marked `ready` with partial chunks → search misses content → quality degradation invisible to user.
+- Fix: Wrap each batch in exponential backoff (3 retries, 200ms + jitter). Throw on final failure. Set `status: "error"` if any batch fails.
 
-**N+1 pinned-entity search:**
-- Location: `src/lib/chat-turn.ts` ~line 147–156
-- Problem: Loops over pinned entities and runs one `hybridSearch` per entity
-- Impact: 5 pinned entities = 5 sequential search queries (each with Cohere rerank)
-- Fix: Pre-resolve all entity → document links in one query, then one batched search
+**Embeddings generated as a single large batch per document:**
+- File: `src/lib/document-processing.ts` → `src/lib/embeddings.ts`
+- Issue: `generateEmbeddings()` is called once with all chunk texts; no per-chunk retry. Large documents (50+ chunks) risk timeouts mid-batch leaving the document half-embedded.
+- Fix: Sub-batch into groups of 10–20 with exponential backoff; persist embedding status per chunk so retries are idempotent.
 
-**Unbounded first-message chat page:**
-- Location: `src/app/page.tsx` — ~1600 lines of client code for the chat surface
-- Impact: Long bundle, harder to reason about, risk of render perf issues once history grows
-- Fix: Split into smaller components (history list, composer, stream viewer, pinned-item tray)
+**Hybrid search filters applied after RPC returns, requiring over-fetch:**
+- File: `src/lib/search.ts`
+- Issue: `hybrid_search` RPC returns candidates before `is_current` / document-set / classification filters are applied in application code. Uses an "over-fetch multiplier" to compensate — unpredictable and wasteful.
+- Fix: Push filters into a new version of the `hybrid_search` SQL RPC in `supabase/migrations/`.
 
-**No cost tracking on chat turns:**
-- Location: `src/lib/chat-turn.ts` / `src/lib/clients.ts`
-- Impact: `calculateCost` exists but isn't wired into audit log for chat
-- Fix: Accumulate cost in `runChatTurn` and `logAudit` it at turn end
+**Doctrine cache is per-process, not distributed:**
+- File: `src/lib/doctrine.ts`
+- Issue: Every serverless cold start / new instance = fresh DB hit. On Vercel, cold starts are frequent.
+- Fix: Pre-load at server init, or move to Upstash Redis for shared cache across instances.
+
+**No LLM cost observability:**
+- Files: `src/lib/chat-turn.ts`, `src/lib/memory.ts`, `src/lib/claude-with-tools.ts`, `src/lib/librarian.ts`
+- Issue: `calculateCost()` exists in `src/lib/clients.ts` but is not called consistently. No aggregation, no budget alerts, no per-user quotas. High-volume usage could inflate spend silently.
+- Fix: Log every LLM call with model + tokens + cost to an `llm_usage` table; expose `/api/admin/costs`; emit per-turn cost in SSE stream so UI can show it; add monthly budget alerts.
+
+**Memory extraction runs on every turn without opt-out:**
+- File: `src/lib/memory.ts`
+- Issue: GPT-4o-mini called per turn for memory extraction, no cost tracking, no skip flag.
+- Fix: Add `skip_memory_extraction` option for cost-sensitive scenarios; log cost per call.
 
 ## Fragile Areas
 
-**Language detection defaults to Arabic:**
-- Location: `src/lib/librarian.ts` ~line 157, `src/lib/memory.ts` ~line 56
-- Why fragile: `parsed.language || "ar"` — if the LLM omits the field, English docs get mis-tagged as Arabic, degrading retrieval
-- Fix: Fall back to a heuristic (character set detection) before defaulting
+**Chunking strategy undocumented:**
+- File: `src/lib/chunking.ts`
+- Why fragile: Complex rules (max chunk size, overlap, min chunk, table preservation, section boundaries, Arabic sentence splitting) with no header comment explaining trade-offs. Prior "table duplication bug" shows tuning one parameter can break another.
+- Fix: Add a design comment at the top of the file explaining the strategy + add fixture-based tests.
 
-**Silent Cohere rerank fallback:**
-- Location: `src/lib/search.ts` ~line 131
-- Why fragile: Hides Cohere outages; downstream LLM gets worse context without anyone noticing
-- Fix: Log + mark results as unreranked
+**`ocr-normalization.ts` is a black box:**
+- File: `src/lib/ocr-normalization.ts` (~1000 lines)
+- Why fragile: Core "Rosetta Stone" between Azure/PDF output and canonical schema; no README, no tests, no comments on the normalization rules.
+- Fix: Split by extraction source; add a design doc explaining the invariants; add golden-file tests comparing input PDFs to expected canonical output.
 
-**References resolution:**
-- Location: `src/lib/references.ts` ~line 63–90
-- Why fragile: Unresolved references pile up silently; no retry or surfacing
-- Fix: Count unresolved on the document detail page, add a re-resolution action
+**Extraction decision tree undocumented:**
+- Files: `src/lib/extraction-v2.ts`, `src/lib/ocr-normalization.ts`, `src/lib/azure-document-intelligence.ts`
+- Issue: Undocumented assumptions: when to use native PDF vs Azure, confidence thresholds and their rationale, Arabic normalization edge cases, failure/recovery modes.
+- Fix: Create `src/lib/extraction/README.md` documenting the decision tree, thresholds, expected outputs, and failure modes.
 
-## Dead Code
+## Scaling Limits
 
-- `src/app/viewer/` — empty directory
-- Unused `CanonicalEntity` import in `src/lib/librarian.ts:5` (only re-exported, not consumed locally). Low priority.
+**No async job queue — all extraction is synchronous in the HTTP request:**
+- Files: `src/app/api/upload/route.ts` (`maxDuration = 300`), `src/lib/document-processing.ts`
+- Current: Upload handler awaits the full extraction → chunking → embedding pipeline inline.
+- Limit: ~5-minute Vercel function timeout; no retries; no progress visibility; single-request concurrency.
+- Symptoms: Vercel 504s on large documents; users think upload succeeded but extraction silently failed.
+- Fix: Move extraction to a queue (Supabase queues / Upstash QStash / BullMQ); track `documents.status` as `queued → processing → ready|failed`; emit progress events via Supabase Realtime.
 
-## Missing Features (blocking / soon-blocking)
+## Dependencies at Risk
 
-- **Project schema (Phase 03)** — migration `008_projects.sql` doesn't exist yet; blocks phases 04 → 07
-- **References viewer page** — table populated, no UI
-- **Audit log dashboard** — table exists, no UI, sparsely written
-- **React error boundaries** — no `error.tsx` files anywhere; a single component throw crashes the page
-- **Structured logger** — prerequisite for fully honoring "Fail Loud, Never Fake"
+**`crypto-js` ^4.2.0** — deprecated, no AEAD support, security risk. Replace with `node:crypto` AEAD (covered in Security section).
 
-## Test Coverage
+**`pdf-parse` ^2.4.5** — older library; check if `pdfjs-dist` alone can replace it.
 
-**0% — no tests, no framework, no CI.** See `TESTING.md` for full discussion and recommended starting points. The 31% librarian bug is exactly the kind of regression a minimal unit test suite would have caught.
+**No `npm audit` / Dependabot / Renovate configured:**
+- Risk: No process for catching new CVEs in `@anthropic-ai/sdk`, `openai`, `@supabase/supabase-js`, etc.
+- Fix: Enable Dependabot or Renovate on the repo.
+
+## Missing Critical Features
+
+**No test suite at all (see TESTING.md):**
+- Priority: **Critical** given the fragility of the extraction pipeline and the "Fail Loud" error handling that needs invariant protection.
+- Suggested start: Vitest + unit tests for `chunking.ts`, `entities.ts`, `normalize.ts`, `extraction-validation.ts`, `intelligence-router.ts`.
+
+**No observability beyond stderr logs:**
+- No Sentry (error tracking), no Datadog/OpenTelemetry, no uptime monitoring, no LLM cost dashboard.
+- Fix: Add Sentry for error tracking as a first step; add structured LLM usage logging (see performance section).
+
+**No extraction pipeline or chunking documentation:**
+- Files: `src/lib/extraction-v2.ts`, `src/lib/chunking.ts`, `src/lib/ocr-normalization.ts`
+- Fix: `src/lib/extraction/README.md` + design comments at the top of each file.
+
+**No rate limiting:**
+- Files: All `src/app/api/**/route.ts`
+- Risk: Abuse vector for LLM cost / DB load.
+- Fix: Add middleware-level rate limiting (Upstash Ratelimit or Vercel KV).
+
+## Test Coverage Gaps
+
+**Everything** (see TESTING.md for the full tiered list). Highest-priority gaps:
+
+- **Extraction pipeline** — highest regression risk per commit history
+- **Chat turn orchestration** — most complex single module, 1000+ lines
+- **Entity canonicalization** — bilingual + normalization logic, easy to break silently
+- **Chunking** — complex rules, prior bug history
+- **Hybrid search ranking** — rerank weight changes affect recall/precision unpredictably
+- **Memory extraction** — already fire-and-forget; tests would verify logic works when invoked
 
 ---
 
-*Concerns audit: 2026-04-06*
+*Concerns audit: 2026-04-07*
 *Update as issues are fixed or new ones discovered*

@@ -1,18 +1,40 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "./database.types";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `${name} is not set. Add it to .env.local or your deployment environment.`,
+    );
+  }
+  return value;
+}
+
+const supabaseUrl = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+const supabaseAnonKey = requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
 // Client-side Supabase client (browser)
 export function createBrowserClient() {
   return createClient<Database>(supabaseUrl, supabaseAnonKey);
 }
 
-// Admin client — lazy singleton
+// Admin client — lazy singleton. Fail loud per CLAUDE.md: if the service
+// role key is missing we throw at first use rather than silently falling
+// back to a placeholder that produces cryptic downstream errors.
 let _admin: ReturnType<typeof createClient<Database>> | null = null;
 export const supabaseAdmin = (() => {
-  if (!_admin) _admin = createClient<Database>(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder");
+  if (!_admin) {
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      throw new Error(
+        "SUPABASE_SERVICE_ROLE_KEY is not set. Server-side Supabase access " +
+          "requires the service role key. Add it to .env.local or your " +
+          "deployment environment.",
+      );
+    }
+    _admin = createClient<Database>(supabaseUrl, serviceRoleKey);
+  }
   return _admin;
 })();
 
@@ -40,6 +62,7 @@ export interface Document {
   metadata: Record<string, unknown>;
   entities: string[];
   encrypted_content: string | null;
+  context_card: Record<string, unknown> | null;
   version_of: string | null;
   supersedes: string | null;
   version_number: number;

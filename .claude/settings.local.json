@@ -50,7 +50,24 @@
       "mcp__playwright__browser_console_messages",
       "Bash(xargs -r kill -9)",
       "Bash(git add:*)",
-      "Bash(git commit -m ':*)"
+      "Bash(git commit -m ':*)",
+      "Skill(gsd:progress)",
+      "Skill(gsd:map-codebase)",
+      "Read(//private/tmp/**)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(git commit:*)",
+      "Bash(sed 's/=.*$/=<redacted>/')",
+      "Bash(ls .env*)",
+      "Bash(gh api:*)",
+      "Bash(pnpm exec:*)",
+      "Bash(vercel --version)",
+      "Bash(vercel whoami:*)",
+      "Bash(timeout 15 vercel logs https://gtez-intelligence.vercel.app)",
+      "Bash(vercel --prod --yes)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(git -C /Users/aibrahim/gtez-intelligence log --oneline --all --since=\"2026-04-07\")"
     ]
-  }
+  },
+  "spinnerTipsEnabled": false,
+  "prefersReducedMotion": true
 }

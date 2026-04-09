@@ -1,93 +1,94 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-04-06
+**Analysis Date:** 2026-04-07
 
 ## Test Framework
 
 **None configured.**
 
-- `package.json` devDependencies contain no test framework (no vitest, jest, playwright, mocha, cypress)
-- No `test`, `test:watch`, `test:coverage`, or `e2e` scripts in `package.json`
-- No test runner configuration files (no `vitest.config.ts`, `jest.config.js`, `playwright.config.ts`)
+This codebase has **no automated test suite**. There is no test runner, no test config, and no test files.
 
-## Test Files
-
-**Zero test files in `src/`.**
-
-- Searched: `**/*.test.ts`, `**/*.test.tsx`, `**/*.spec.ts`, `**/*.spec.tsx`, `__tests__/`
-- No matches in `src/` or any app directory
-- Only matches are inside `node_modules/` (transitive dependency tests)
+**Evidence:**
+- `package.json` has no `test` script. `devDependencies` contains only `eslint`, `eslint-config-next`, `tailwindcss`, `typescript`, and `@types/*` packages — no Vitest / Jest / Playwright / Testing Library.
+- No `vitest.config.*`, `jest.config.*`, `playwright.config.*`, or `cypress.config.*` anywhere in the repo.
+- No `*.test.ts` / `*.test.tsx` / `*.spec.ts` / `*.spec.tsx` files under `src/`.
+- No `__tests__/` directories.
+- ESLint config (`eslint.config.mjs`) contains no test-specific plugins.
+- No CI workflows under `.github/workflows/` that would gate tests.
 
 ## Run Commands
 
 ```bash
-pnpm dev          # Dev server
-pnpm build        # Production build
-pnpm start        # Serve production build
-pnpm lint         # ESLint
+pnpm dev       # Next.js dev server
+pnpm build     # Next.js production build
+pnpm start     # Start production server
+pnpm lint      # ESLint (the only automated quality gate)
 ```
 
-**No test commands.**
+`pnpm test` — **would fail** (no script defined).
 
-## CI / Automation
+No `type-check` script either; type checking only happens implicitly via `next build`.
 
-**None.**
+## Quality Control (Current State)
 
-- No `.github/workflows/` directory
-- No GitLab CI, CircleCI, or other CI config
-- No pre-commit hooks
-- No Husky / lefthook configured
+The codebase relies on three non-test safeguards:
 
-## What Stands In for Tests
+1. **TypeScript `strict: true`** — catches type errors at compile time (`tsconfig.json`)
+2. **ESLint 9** with `eslint-config-next` core-web-vitals + TypeScript — catches Next.js anti-patterns and unused code
+3. **Manual review + manual UAT** — per GSD workflow
 
-Because there is no automated test suite, the project relies on:
+## Test Coverage Gaps
 
-1. **TypeScript strict mode** (`tsconfig.json` has `strict: true`, `noEmit: true`)
-   - Catches type errors at build time
-   - Heavy use of discriminated unions (e.g., `type Source = { type: "document" } | { type: "web" }`) enforces correctness at the type level
+Zero automated coverage across the stack. High-priority gaps, in order of fragility:
 
-2. **ESLint** (`eslint.config.mjs` extends `next/core-web-vitals` + TS presets)
-   - Catches Next.js antipatterns and common bugs
-   - Not run in CI (there is no CI)
+**Tier 1 — Urgent (pure-logic modules, easy to test, high regression risk):**
+- `src/lib/chunking.ts` — section splitting, overlap, tail merging, Arabic sentence detection
+- `src/lib/entities.ts` — Arabic/English name normalization, Levenshtein similarity, canonicalization
+- `src/lib/normalize.ts` — diacritic/number/Unicode folding
+- `src/lib/extraction-validation.ts` — schema checks, repetition detection, language consistency
+- `src/lib/intelligence-router.ts` — command parsing, mode selection heuristics
 
-3. **Manual UAT** via ngrok tunnel (per `STATE.md`)
-   - Dev server runs locally, exposed via ngrok for the Vice Chairman
-   - Interactive testing through the chat UI
-   - `/gsd:verify-work` workflow in the GSD planning system
+**Tier 2 — High (integration-level, requires mocking):**
+- `src/lib/librarian.ts` — quick extract → classify → entity match → action recommendation
+- `src/lib/extraction-v2.ts` → `src/lib/pdf-text-extraction.ts` → `src/lib/azure-document-intelligence.ts` — extraction pipeline with real PDF fixtures
+- `src/lib/search.ts` — hybrid retrieval + rerank
+- `src/lib/chat-turn.ts` — end-to-end chat turn orchestration (mocked LLM responses)
+- `src/lib/memory.ts` — extraction + retrieval + scope filtering
+- `src/lib/claude-with-tools.ts` — tool-use loop with max-round limits
+- `src/lib/doctrine.ts` — prompt building + cache invalidation
 
-4. **Embedded "spec comments" inside code**
-   - System prompts in `src/lib/doctrine.ts` and `src/lib/librarian.ts` contain example outputs that serve as informal test cases
-   - Inline JSON schemas in librarian comments document expected shapes (e.g., `QuickAnalysis` at ~line 95)
+**Tier 3 — Medium (route-level + UI):**
+- All `src/app/api/**/route.ts` — input validation, permission checks, error responses
+- `src/lib/actions/projects.ts` — slug uniqueness, result tuple contract
+- `src/components/chat-input.tsx`, `src/components/project-sidebar.tsx` — form submission, file upload, state management
+- `src/lib/hooks/use-chat.ts` — SSE parsing + message accumulation
 
-5. **Database as source of truth**
-   - Schema types regenerated to `src/lib/database.types.ts` after migrations
-   - Schema mismatches surface at compile time
+**Tier 4 — End-to-end (Playwright, once unit/integration are stable):**
+- Upload → librarian proposal → confirm → extraction → search
+- New conversation → routing → streaming response → memory persistence
+- Project creation → link documents → tab navigation
 
-## Coverage Gaps (High-Risk Untested Areas)
+## Recommended Framework
 
-The complete absence of tests means these load-bearing pieces have no regression safety net:
+**Vitest** — ESM-native, fast, zero-config for TypeScript, integrates cleanly with Next.js. Adding it is a single `pnpm add -D vitest @vitest/coverage-v8 jsdom @testing-library/react @testing-library/jest-dom` and creating `vitest.config.ts`.
 
-- **Librarian similarity scoring** (`src/lib/librarian.ts`) — the known 31% duplicate bug would have been caught by a test
-- **Entity canonicalization** (`src/lib/entities.ts`) — bilingual fuzzy matching has many edge cases
-- **Intelligence routing** (`src/lib/intelligence-router.ts`) — mode selection + query rebuilding logic
-- **Chunking boundary conditions** (`src/lib/chunking.ts`) — tiny-tail merging, in-section overlap
-- **Claude tool loop** (`src/lib/claude-with-tools.ts`) — max-rounds cap, forced-final-answer fallback
-- **Memory extract/retrieve** (`src/lib/memory.ts`) — decision/fact/recommendation classification
-- **Arabic-Indic digit normalization** (`src/lib/normalize.ts`) — the "2026 → 2023" OCR fix
-- **Doctrine prompt composition** (`src/lib/doctrine.ts`) — OUTPUT GUIDE override behavior
+Suggested `package.json` additions:
+```json
+"scripts": {
+  "test": "vitest",
+  "test:ui": "vitest --ui",
+  "test:coverage": "vitest run --coverage",
+  "type-check": "tsc --noEmit"
+}
+```
 
-## Recommendation
+**Playwright** — add later for E2E once unit + integration coverage is established.
 
-Given the single-developer + active iteration pace, a minimal Vitest setup focused on the highest-leverage pure functions would pay back quickly:
+## Why This Matters
 
-1. Start with `entities.ts`, `normalize.ts`, `chunking.ts` (pure, deterministic, high reuse)
-2. Add `librarian.ts::decideAction` + similarity scoring (would have caught the 31% bug)
-3. Add `intelligence-router.ts` mock tests against recorded GPT-4o-mini responses
-4. Defer component + integration tests until the product shape stabilizes
-
-This is not urgent debt but it will become blocking once a second person is ever involved.
+Recent git history shows repeated fixes to the extraction pipeline and prompt engineering. A single unit test on `chunkDocument()` or `canonicalizeEntities()` would have caught several of those regressions before users saw them. The cost-benefit ratio for adding Vitest here is extremely high given how much core logic is purely functional and easy to test in isolation.
 
 ---
 
-*Testing analysis: 2026-04-06*
-*Update when test patterns change*
+*Testing analysis: 2026-04-07*
+*Update when test infrastructure is introduced*

@@ -9,6 +9,7 @@ import { writeExtractionArtifact } from "@/lib/extraction-artifacts";
 import { detectReferences, storeAndResolveReferences } from "@/lib/references";
 import { canonicalizeEntities } from "@/lib/entities";
 import { logAudit } from "@/lib/audit";
+import { generateContextCard, loadProjectHints } from "@/lib/context-card";
 
 interface ProcessDocumentInput {
   docId: string;
@@ -201,6 +202,25 @@ export async function processDocumentContent({
     console.error("Failed to persist extraction artifact:", extractionArtifactError);
   }
 
+  // ── Context card (semantic contextualizer pass) ──
+  // One gpt-4o-mini call that reads a sample of the document + the user's
+  // project landscape and produces a structured "where does this fit" card.
+  // Stored on documents.context_card and later injected into chat system
+  // prompts when the document is in scope. Fails loud — if generation
+  // fails we log and continue; the document is still usable without a card.
+  const projectHints = await loadProjectHints();
+  const entityNames = (extraction.metadata.entities || []).map((e) => e.name);
+  const contextCard = await generateContextCard({
+    title: finalTitle,
+    documentType: extraction.classification.documentType,
+    classification: classificationOverride || classification,
+    language: extraction.classification.language,
+    fullText,
+    entities: entityNames,
+    knownProjects: projectHints,
+  });
+  const contextCardMissing = contextCard === null;
+
   const hasWarnings =
     w.failedPages.length > 0 ||
     w.classificationFailed ||
@@ -244,7 +264,6 @@ export async function processDocumentContent({
             documentTypeHint: extractionPreferences.documentTypeHint || null,
             languageHint: extractionPreferences.languageHint || null,
             titleHint: extractionPreferences.titleHint || null,
-            mode: extractionPreferences.mode || "auto",
             skipClassification: extractionPreferences.skipClassification === true,
           },
         }
@@ -270,10 +289,20 @@ export async function processDocumentContent({
       metadata: mergedMetadata,
       entities: (extraction.metadata.entities || []).map((e: { name: string }) => e.name),
       encrypted_content: encryptedContent,
+      // Cast through `unknown` — supabase-js treats JSONB as its generated
+      // Json recursive type which doesn't match our structured card type.
+      // The DB accepts any JSON-serializable object here.
+      context_card: (contextCard as unknown) as never,
       status: "ready",
       processing_error: warningText,
     })
     .eq("id", docId);
+
+  if (contextCardMissing) {
+    console.warn(
+      `processDocument(${docId}): context card generation failed. Document is usable but lacks semantic summary for retrieval.`,
+    );
+  }
 
   if (hasWarnings) {
     console.error(`processDocument(${docId}): partial extraction. ${warningText}`);

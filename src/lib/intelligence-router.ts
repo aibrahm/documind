@@ -87,10 +87,19 @@ Return JSON:
   "mode": "casual|search|deep",
   "shouldSearch": true/false,
   "shouldWebSearch": true/false,
-  "doctrines": [],
+  "doctrines": [],  // array of strings from the ENUM below — never free-form text
   "searchQuery": "optimized query",
   "reasoning": "brief explanation"
 }
+
+DOCTRINES ENUM — you may ONLY use these exact strings, nothing else:
+- "legal"       → legal / regulatory / contract analysis
+- "investment"  → financial / NPV / commercial viability
+- "governance"  → institutional / stakeholder / oversight
+- "negotiation" → deal structuring / term-sheet work
+
+If the message is deep mode, pick 1–3 doctrines from the enum that match the user's intent. Never invent new names like "analysis" or "contract-risk" or "document-grounded" — those are not valid and will be silently dropped.
+If the message is casual or search mode, set doctrines to [].
 
 MODE RULES:
 - "casual": Simple questions, follow-ups, clarifications, translations, greetings, general conversation, LISTING DOCUMENTS, SUMMARIZING. DEFAULT mode. Use this whenever in doubt.
@@ -143,11 +152,27 @@ If the query has NOTHING to do with documents or web search (like "tell me a jok
   const rawContent = res.choices[0].message.content || "{}";
   try {
     const parsed = JSON.parse(rawContent);
+    // Defensive enum filter: the router model has historically hallucinated
+    // doctrine names like "analysis" or "document-grounded" that don't exist
+    // in the DB. We hard-filter to the valid set here so downstream code
+    // never sees invalid names and the routing label never shows them.
+    const VALID_DOCTRINES: DoctrineName[] = [
+      "legal",
+      "investment",
+      "governance",
+      "negotiation",
+    ];
+    const doctrines = Array.isArray(parsed.doctrines)
+      ? (parsed.doctrines as unknown[])
+          .filter((d): d is DoctrineName =>
+            VALID_DOCTRINES.includes(d as DoctrineName),
+          )
+      : [];
     return {
       mode: parsed.mode || "casual",
       shouldSearch: parsed.shouldSearch ?? false,
       shouldWebSearch: parsed.shouldWebSearch ?? false,
-      doctrines: (parsed.doctrines || []) as DoctrineName[],
+      doctrines,
       searchQuery: parsed.searchQuery || message,
       reasoning: parsed.reasoning || "",
     };

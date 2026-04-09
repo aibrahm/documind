@@ -1,157 +1,200 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-04-06
+**Analysis Date:** 2026-04-07
 
 ## Naming Patterns
 
 **Files:**
-- `kebab-case.ts` / `kebab-case.tsx` for lib and component files
-- Examples: `src/lib/chat-turn.ts`, `src/lib/claude-with-tools.ts`, `src/components/chat-input.tsx`
-- shadcn primitives follow their library's kebab-case: `src/components/ui/tabs.tsx`, `src/components/ui/dialog.tsx`
-- Next.js conventions: `route.ts`, `page.tsx`, `layout.tsx`
+- `kebab-case` for all source files: `chat-input.tsx`, `intelligence-router.ts`, `azure-document-intelligence.ts`
+- Next.js conventions: `page.tsx`, `layout.tsx`, `route.ts`, `error.tsx`, `not-found.tsx`
+- Leading underscore for private folders within a route (e.g., `_tabs/`)
+- SQL migrations: zero-padded sequential (`001_initial_schema.sql` → `012_workspace_profile.sql`)
 
-**Functions:**
-- camelCase throughout: `runChatTurn()`, `analyzeUpload()`, `hybridSearch()`, `findRelatedDocuments()`, `buildDoctrinePrompt()`
-- Private helpers co-located and not exported: `quickExtract()`, `quickAnalyze()`, `decideAction()` inside `src/lib/librarian.ts`
+**Components:**
+- Client components: `"use client"` at top; PascalCase function name
+  - `export default function ChatInput(...)` — `src/components/chat-input.tsx`
+- Server components: async function, no directive
+  - `export default async function ProjectWorkspacePage(...)` — `src/app/(workspace)/projects/[slug]/page.tsx`
+- Server actions: `"use server"` at top — `src/lib/actions/projects.ts`
+- Default exports only for Next.js special files (`page.tsx`, `layout.tsx`, `error.tsx`) and top-level components
+- Named exports for utility/helper modules (`src/lib/*.ts`)
 
-**Variables:**
-- camelCase for locals and parameters
-- `SCREAMING_SNAKE_CASE` for module-level constants (`MAX_CHUNK_CHARS`, `BATCH_SIZE`, `SIMILARITY_THRESHOLD`)
-- `_privatePrefix` for module-level singleton caches (`_openai`, `_cohere`, `_admin`)
+**Functions & Variables:**
+- `camelCase` throughout: `createLogger()`, `runChatTurn()`, `hybridSearch()`, `buildDoctrinePrompt()`
+- Verb prefixes indicate intent: `build*`, `run*`, `extract*`, `create*`, `get*`, `resolve*`
+- Boolean predicates: `is*` / `has*` (e.g., `isAzureDocumentIntelligenceConfigured`, `hasAnthropic`)
+- Event callbacks: `on*` (e.g., `onConversationCreated`, `onSend`, `onText`)
+- Constants: `ALL_CAPS_SNAKE_CASE` (`PRIMARY_CHAT_MODEL = "gpt-5.4"`, `SIMILARITY_THRESHOLD = 0.82`)
 
-**Types:**
-- **`interface`** for object shapes: `RunChatTurnArgs`, `LibrarianProposal`, `QuickExtraction`, `AttachmentMeta`
-- **`type`** for discriminated unions and string literals: `type LibrarianAction = "new" | "version" | "duplicate" | "related"`, `type DoctrineName = "master" | "legal" | "investment" | "negotiation" | "governance"`, `type Source = { type: "document"; ... } | { type: "web"; ... }`
-- PascalCase for both, no `I` prefix on interfaces
+**Types & Interfaces:**
+- `PascalCase`, no `I` prefix: `Logger`, `LibrarianProposal`, `ChatInputProps`, `RunChatTurnArgs`
+- Discriminated unions for polymorphic types: `type Source = { type: "document"; ... } | { type: "web"; ... }` — `src/lib/types.ts`
+- String literal unions for enums: `type ResponseMode = "casual" | "search" | "deep"`
+- Database types imported from generated `src/lib/database.types.ts` (do not edit)
 
 ## Code Style
 
 **Formatting:**
-- Spaces, not tabs
-- Double quotes for strings (`"═══ RETRIEVED DOCUMENTS ═══\n\n"`)
-- Semicolons present
-- No `.prettierrc` committed — defaults inferred from actual files
-- Line length is variable; no strict max
+- **No Prettier config** — relies on ESLint + Next.js defaults
+- Observed style: double quotes, semicolons required, 2-space indent, trailing commas in multi-line
+- No strict line-length limit; long template strings tolerated
 
 **Linting:**
-- ESLint 9 via `eslint.config.mjs`
-- Extends `next/core-web-vitals` + TypeScript presets
-- No custom rule overrides observed
-- Run: `pnpm lint`
+- ESLint 9 (flat config) — `eslint.config.mjs`
+- Presets: `eslint-config-next/core-web-vitals` + `eslint-config-next/typescript`
+- Global ignores: `.next/**`, `out/**`, `build/**`, `next-env.d.ts`
+- No custom rule overrides
+- Run: `npm run lint` / `pnpm lint`
 
-**Type checking:**
-- `tsconfig.json`: strict mode, `noEmit: true`
-- No `pnpm typecheck` script — not enforced in CI (there is no CI)
+**TypeScript:**
+- `strict: true` in `tsconfig.json`
+- `noEmit: true` — Next.js compiles; TSC only type-checks
+- Target: ES2017; `module: esnext`; `moduleResolution: bundler`
+- `jsx: "react-jsx"` (automatic JSX runtime)
+- `allowJs: true`, `incremental: true`
+- Path alias: `@/*` → `./src/*` (only alias)
+- Plugins: `[{ name: "next" }]`
 
 ## Import Organization
 
-**Path aliases:**
-- `@/*` → `src/*` (from `tsconfig.json`)
-- Absolute imports via `@/lib/...` and `@/components/...` are the norm
-- ⚠ Some files still use relative imports (e.g., `src/lib/librarian.ts` has `from "./supabase"`) — inconsistency worth flagging
+**Observed order:**
+1. Node built-ins: `import { createHash } from "node:crypto"`
+2. External packages: `import { NextRequest } from "next/server"`, `import type Anthropic from "@anthropic-ai/sdk"`
+3. Internal via path alias: `import { supabaseAdmin } from "@/lib/supabase"`
+4. Type imports separated with `type` keyword: `import type { InboundAttachment } from "@/lib/chat-turn"`
+5. Relative imports (rare — path alias preferred): `import type { DoctrineName } from "./doctrine"`
 
-**Order observed:**
-1. External packages (Next.js, SDKs)
-2. Internal `@/lib/*` imports
-3. Relative imports (rare)
-4. Type-only imports inline with `import type` or grouped
-
-**Type imports:**
-- Explicit `type` keyword when importing types alongside runtime symbols:
-  ```ts
-  import { runChatTurn, type InboundAttachment } from "@/lib/chat-turn";
-  import { canonicalizeEntities, type CanonicalEntity } from "@/lib/entities";
-  ```
+**Grouping:** Logical grouping by category; path alias imports preferred over relative. No barrel files — direct imports throughout.
 
 ## Error Handling
 
-**Stated philosophy** (`CLAUDE.md`): **Fail Loud, Never Fake.**
+**Philosophy:** "Fail Loud, Never Fake" (from `CLAUDE.md`).
+
+> Prefer a visible failure over a silent fallback. Never silently swallow errors to keep things "working." Surface the error. Show a banner, log a warning, annotate the output.
+
+**Priority order:**
 1. Works correctly with real data
-2. Falls back visibly (banner/log/annotation)
-3. Fails with a clear error message
-4. Never silently degrades
+2. Falls back visibly — signals degraded mode
+3. Fails with clear error message
+4. **Never** silently degrades to look "fine"
 
-**Observed patterns:**
-- Try/catch at route entry points with structured HTTP error responses
-- Fire-and-forget tasks logged via `.catch((err) => console.error(...))`
-- Status fields (`status: "processing" | "ready" | "error"`) on documents
-- Fallback chains (Claude → GPT-4o on Anthropic failure)
-- Intentional silent catches **with inline justification comments**:
-  - `src/lib/chat-turn.ts` around line 165: `/* swallow — name search is best-effort */`
-  - `src/lib/librarian.ts` around line 194: `/* embedding is optional */`
+**Compliance patterns in use:**
 
-**⚠ Unjustified silent fallbacks** (violating fail-loud — see `CONCERNS.md`):
-- `src/lib/web-search.ts` returns `[]` when `TAVILY_API_KEY` missing
-- `src/lib/intelligence-router.ts` silently defaults to `casual` on JSON parse failure
-- `src/lib/memory.ts` returns `[]` from `extractMemories` on error
-- `src/lib/search.ts` Cohere rerank silently falls back to original ordering
+- **Explicit error returns in API routes:**
+  - `src/app/api/librarian/analyze/route.ts` — validates file, returns `{ error: "..." }` with 400/500
+  - `src/app/api/projects/route.ts` — rejects invalid status with 400
+  - `src/app/api/chat/route.ts` — validates message + attachments, returns SSE error event on failure
+
+- **Result tuples in server actions:**
+  - `src/lib/actions/projects.ts` — `CreateProjectResult { ok: boolean; error?: string; slug?: string }`
+
+- **Type guards at input boundaries:**
+  - `typeof value === "string" && DOCUMENT_TYPES.includes(value as DocumentType)`
+  - Array filtering with type predicates
+
+- **Loud failures at service boundaries:**
+  - `src/lib/doctrine.ts` throws if DB load fails (critical to deep mode)
+  - `src/lib/extraction-v2.ts` throws "scanned PDF and no Azure configured" rather than faking text
+  - `src/lib/web-search.ts` throws if `TAVILY_API_KEY` missing
+
+- **Structured error logging:**
+  - `src/lib/logger.ts` `error()` method extracts `err.message` + first 5 stack lines + metadata
+
+**Known violations** (see CONCERNS.md):
+- Memory extraction + audit logging in `src/lib/chat-turn.ts` use fire-and-forget `.catch(console.error)`
+- Some client-side fetches silently swallow errors with `.catch(() => {})`
+- `src/lib/workspace-profile.ts` returns `null` on error without disclosing degraded mode
+- `src/lib/supabase.ts` `supabaseAdmin` falls back to string `"placeholder"` if service role key missing (should throw at startup)
+- `Promise.all` vs `Promise.allSettled` inconsistency across `src/lib/chat-turn.ts` and `src/lib/librarian.ts`
 
 ## Logging
 
-- **No structured logger** — raw `console.error()` only
-- `console.error` used across 17+ files
-- `logAudit()` exists in `src/lib/audit.ts` but is only invoked from `src/app/api/upload/route.ts`
-- No levels (debug/info/warn) — only errors are logged
+**Framework:** Custom structured logger — `src/lib/logger.ts`
 
-**Known debt:** replace `console.error` with a proper logger and emit to SSE/UI where user-visible (see `CONCERNS.md`).
+**Pattern:**
+```ts
+const log = createLogger("librarian");
+log.info("analyzing upload", { fileName });
+log.warn("entity overlap empty", { docId });
+log.error("classification failed", err, { docId });
+```
+
+- Levels: `debug`, `info`, `warn`, `error`
+- Output: stderr via `console.error()` (all levels)
+- Format: ISO timestamp + `[LEVEL]` + `[namespace]` + message + JSON metadata
+- `error()` auto-extracts `err.message` + first 5 stack lines
+- Debug gated by `DOCUMIND_LOG_DEBUG=true`
+- Legacy `console.error()` still present in some API routes (flagged for cleanup)
+
+**Audit trail:** `logAudit(action, details, scores)` in `src/lib/audit.ts` writes to the `audit_log` table for user actions.
 
 ## Comments
 
-**File headers:**
-- Multi-line block comments at the top of major lib files explaining design
-- `src/lib/chat-turn.ts` lines 1–20: explains transport-agnostic callback architecture
-- `src/lib/librarian.ts` lines 7–26: numbered analysis pipeline
-- `src/lib/doctrine.ts` lines 55–62: prompt composition strategy
+**File headers:** Multi-line block comments at top of complex modules explaining purpose and philosophy:
+```ts
+// src/lib/logger.ts
+//
+// Minimal structured logger. Per CLAUDE.md "Fail Loud, Never Fake": every
+// log call goes to stderr with a level + namespace prefix...
+```
 
-**Inline:**
-- Explain *why*, not *what*
-- Visual section dividers: `// ── section name ──` (used throughout `chat-turn.ts`, `librarian.ts`)
-- Silent-catch justifications: `/* embedding is optional */`, `/* swallow — best-effort */`
+**Section dividers:** Decorator-style for logical sections:
+```ts
+// ── Project context ──
+// ────────────────────────────────────────
+// NORMALIZATION
+// ────────────────────────────────────────
+```
 
-**JSDoc:**
-- Minimal usage — one-liners for top-level exports when signature isn't obvious
-- Rarely uses full `@param`/`@returns` tags
+**JSDoc-style** for public exports in widely-reused modules (partial coverage):
+```ts
+/**
+ * THE LIBRARIAN AGENT
+ * The librarian is the intelligent layer...
+ */
+```
 
-## Module Exports
+**Inline comments:** Sparse; explains *why*, not *what*.
 
-- **Named exports only** — no default exports in `src/lib/*`
-- Private helpers live at module scope without export
-- Re-exports used for public types: `export type { CanonicalEntity }` from librarian (re-exports from entities)
-- React components likewise named exports (shadcn primitives follow their own convention)
+## Function Design
 
-## React Conventions
+**Size:** Most functions 10–100 LOC. Core orchestrators (`chat-turn.ts` ~1000 lines, `librarian.ts` ~700 lines, `ocr-normalization.ts` ~1000 lines) are large and flagged for decomposition.
 
-**Server vs client:**
-- Root `layout.tsx` is RSC
-- Pages (`page.tsx`, `upload/page.tsx`, `documents/page.tsx`, etc.) declare `"use client"` at the top
-- Components in `src/components/*.tsx` are client components
-- API routes in `src/app/api/*/route.ts` are server-only (never have `"use client"`)
+**Parameters:**
+- Objects preferred for 3+ params: `runChatTurn(args: RunChatTurnArgs)`
+- Callback props: `emit: (eventType: string, payload: Record<string, unknown>) => void`
+- Optional with defaults: `options: UseChatOptions = {}`
+- Destructure in signature when passing objects
 
-**Hooks:**
-- Standard React hooks: `useState`, `useRef`, `useCallback`, `useImperativeHandle`
-- Chat input exposes imperative handle via `forwardRef` + `useImperativeHandle`
+**Return values:**
+- Explicit typed returns; never `Promise<any>`
+- Result objects for operations with expected failures: `{ ok: boolean; error?: string; data?: T }`
+- Discriminated unions over nullable results
+- Nullable returns (`Promise<T | null>`) only when absence is genuinely expected
+- Throw at library boundaries for critical failures
 
-**Component props:**
-- Props interface suffixed with `Props` (e.g., `ChatInputProps`, `ChatMessageProps`)
-- Imperative handles suffixed with `Handle` (`ChatInputHandle`)
-- Event props prefixed with `on` (`onSend`, `onSourceClick`, `onRegenerate`)
+## Module Design
 
-## Async Patterns
+**Exports:**
+- Named exports preferred throughout
+- Default exports restricted to Next.js special files and top-level components
+- No barrel files (`index.ts` re-exports)
+- Type exports via `export type` / `export interface`; separated from runtime exports where clearer
 
-- `async`/`await` throughout — no `.then()` chains
-- Parallelism via `Promise.all()` (e.g., `src/lib/chat-turn.ts` runs routing + memory retrieval in parallel)
-- Streaming via `for await (const chunk of llmStream)`
-- Fire-and-forget with `.catch(console.error)` for non-blocking side effects (memory extraction, audit logging)
+**Server vs client components:**
+- Server components are the default (no directive)
+- `"use client"` at top of file for components using hooks, event handlers, browser APIs
+- `"use server"` at top of files/functions for server actions (only in `src/lib/actions/`)
+- No mixed `"use client"` / `"use server"` in the same file
+- Server components parallelize data fetches with `Promise.all`
 
-## Known Inconsistencies
+**Database access:**
+- No ORM, no repository layer — direct `supabaseAdmin.from(...).select(...)` calls inline
+- Type safety via generated `src/lib/database.types.ts`
 
-1. **Mixed import styles** — most files use `@/lib/*`, a few use relative `./supabase`
-2. **Inconsistent error handling** — some try/catches justified with comments, others silent without justification
-3. **Heavy `as` type assertions** on database reads (e.g., `docMetaMap.get(c.document_id as string)`) instead of schema validation
-4. **No central error handler or error boundaries** — each route handles errors locally
-5. **`audit.ts` exists but barely called** — logging is aspirational rather than systematic
+**Tree-shaking:** Named exports + direct imports keep bundles lean; no barrel files means no accidental deep-imports.
 
 ---
 
-*Convention analysis: 2026-04-06*
+*Convention analysis: 2026-04-07*
 *Update when patterns change*

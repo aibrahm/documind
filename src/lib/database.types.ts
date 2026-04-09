@@ -12,32 +12,33 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.4"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
-      audit_log: {
-        Row: {
-          action: string
-          created_at: string | null
-          details: Json | null
-          id: string
-          scores: Json | null
-        }
-        Insert: {
-          action: string
-          created_at?: string | null
-          details?: Json | null
-          id?: string
-          scores?: Json | null
-        }
-        Update: {
-          action?: string
-          created_at?: string | null
-          details?: Json | null
-          id?: string
-          scores?: Json | null
-        }
-        Relationships: []
-      }
       artifacts: {
         Row: {
           citations: Json | null
@@ -105,6 +106,30 @@ export type Database = {
           },
         ]
       }
+      audit_log: {
+        Row: {
+          action: string
+          created_at: string | null
+          details: Json | null
+          id: string
+          scores: Json | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          scores?: Json | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          scores?: Json | null
+        }
+        Relationships: []
+      }
       chunks: {
         Row: {
           chunk_index: number
@@ -148,54 +173,6 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "documents"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      conversation_memory: {
-        Row: {
-          conversation_id: string | null
-          created_at: string | null
-          entities: string[] | null
-          id: string
-          importance: number | null
-          kind: string
-          project_id: string | null
-          text: string
-        }
-        Insert: {
-          conversation_id?: string | null
-          created_at?: string | null
-          entities?: string[] | null
-          id?: string
-          importance?: number | null
-          kind: string
-          project_id?: string | null
-          text: string
-        }
-        Update: {
-          conversation_id?: string | null
-          created_at?: string | null
-          entities?: string[] | null
-          id?: string
-          importance?: number | null
-          kind?: string
-          project_id?: string | null
-          text?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "conversation_memory_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "conversation_memory_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -268,6 +245,54 @@ export type Database = {
             columns: ["entity_id"]
             isOneToOne: false
             referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_memory: {
+        Row: {
+          conversation_id: string | null
+          created_at: string | null
+          entities: string[] | null
+          id: string
+          importance: number | null
+          kind: string
+          project_id: string | null
+          text: string
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string | null
+          entities?: string[] | null
+          id?: string
+          importance?: number | null
+          kind: string
+          project_id?: string | null
+          text: string
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string | null
+          entities?: string[] | null
+          id?: string
+          importance?: number | null
+          kind?: string
+          project_id?: string | null
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_memory_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_memory_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -379,81 +404,6 @@ export type Database = {
         }
         Relationships: []
       }
-      workspace_profile: {
-        Row: {
-          created_at: string
-          email: string | null
-          full_name: string
-          id: string
-          organization: string
-          organization_short: string | null
-          phone: string | null
-          preferred_language: string
-          signature: string
-          title: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          email?: string | null
-          full_name: string
-          id?: string
-          organization: string
-          organization_short?: string | null
-          phone?: string | null
-          preferred_language?: string
-          signature: string
-          title: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          email?: string | null
-          full_name?: string
-          id?: string
-          organization?: string
-          organization_short?: string | null
-          phone?: string | null
-          preferred_language?: string
-          signature?: string
-          title?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      document_entities: {
-        Row: {
-          document_id: string
-          entity_id: string
-          role: string | null
-        }
-        Insert: {
-          document_id: string
-          entity_id: string
-          role?: string | null
-        }
-        Update: {
-          document_id?: string
-          entity_id?: string
-          role?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "document_entities_document_id_fkey"
-            columns: ["document_id"]
-            isOneToOne: false
-            referencedRelation: "documents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "document_entities_entity_id_fkey"
-            columns: ["entity_id"]
-            isOneToOne: false
-            referencedRelation: "entities"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       document_artifacts: {
         Row: {
           created_at: string | null
@@ -488,6 +438,39 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      document_entities: {
+        Row: {
+          document_id: string
+          entity_id: string
+          role: string | null
+        }
+        Insert: {
+          document_id: string
+          entity_id: string
+          role?: string | null
+        }
+        Update: {
+          document_id?: string
+          entity_id?: string
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_entities_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_entities_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
             referencedColumns: ["id"]
           },
         ]
@@ -541,6 +524,7 @@ export type Database = {
         Row: {
           access_level: string | null
           classification: string
+          context_card: Json | null
           created_at: string | null
           encrypted_content: string | null
           entities: string[] | null
@@ -565,6 +549,7 @@ export type Database = {
         Insert: {
           access_level?: string | null
           classification?: string
+          context_card?: Json | null
           created_at?: string | null
           encrypted_content?: string | null
           entities?: string[] | null
@@ -589,6 +574,7 @@ export type Database = {
         Update: {
           access_level?: string | null
           classification?: string
+          context_card?: Json | null
           created_at?: string | null
           encrypted_content?: string | null
           entities?: string[] | null
@@ -1111,8 +1097,8 @@ export type Database = {
           next_actions: Json | null
           objective: string | null
           slug: string
-          start_date: string | null
           stage: string
+          start_date: string | null
           status: string
           target_close: string | null
           updated_at: string
@@ -1131,8 +1117,8 @@ export type Database = {
           next_actions?: Json | null
           objective?: string | null
           slug: string
-          start_date?: string | null
           stage?: string
+          start_date?: string | null
           status?: string
           target_close?: string | null
           updated_at?: string
@@ -1151,10 +1137,52 @@ export type Database = {
           next_actions?: Json | null
           objective?: string | null
           slug?: string
-          start_date?: string | null
           stage?: string
+          start_date?: string | null
           status?: string
           target_close?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      workspace_profile: {
+        Row: {
+          created_at: string
+          email: string | null
+          full_name: string
+          id: string
+          organization: string
+          organization_short: string | null
+          phone: string | null
+          preferred_language: string
+          signature: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          full_name: string
+          id?: string
+          organization: string
+          organization_short?: string | null
+          phone?: string | null
+          preferred_language?: string
+          signature: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          organization?: string
+          organization_short?: string | null
+          phone?: string | null
+          preferred_language?: string
+          signature?: string
+          title?: string
           updated_at?: string
         }
         Relationships: []
@@ -1312,6 +1340,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
