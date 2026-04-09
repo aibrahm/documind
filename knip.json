@@ -10,6 +10,9 @@
     "supabase/**/*.sql"
   ],
   "ignoreDependencies": [
-    "shadcn"
+    "postcss",
+    "shadcn",
+    "tailwindcss",
+    "tw-animate-css"
   ]
 }

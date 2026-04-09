@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { analyzeUpload } from "@/lib/librarian";
+import { analyzeUpload } from "@/lib/intake";
 import {
   DOCUMENT_TYPES,
   LANGUAGE_CODES,
@@ -28,7 +28,7 @@ function parseLanguageCode(value: FormDataEntryValue | null): LanguageCode | nul
 }
 
 /**
- * Librarian analysis endpoint. Accepts two body shapes:
+ * Intake analysis endpoint. Accepts two body shapes:
  *
  *   1. JSON  { storagePath, fileName, ...preferences }
  *      Used for files already uploaded to Supabase Storage via the
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
     const proposal = await analyzeUpload(buffer, fileName, extractionPreferences);
     return NextResponse.json({ proposal });
   } catch (err) {
-    console.error("Librarian analyze failed:", err);
+    console.error("Intake analyze failed:", err);
     return NextResponse.json(
       { error: "Failed to analyze document" },
       { status: 500 },

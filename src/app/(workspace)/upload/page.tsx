@@ -246,7 +246,7 @@ export default function UploadPage() {
       }
       setStoragePath(path);
 
-      const res = await fetch("/api/librarian/analyze", {
+      const res = await fetch("/api/intake/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storagePath: path, fileName: uploadedFile.name }),

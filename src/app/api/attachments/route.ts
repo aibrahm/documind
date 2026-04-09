@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
+import { extractPdfTextWithAzure } from "@/lib/intake/read";
 
 export const maxDuration = 60;
 
@@ -8,12 +8,12 @@ const MAX_CONTENT_CHARS = 80_000; // truncate to keep prompts manageable
 
 /**
  * Ephemeral chat attachment endpoint.
- * Extracts text from a PDF and returns it directly to the client (no DB storage).
- * The client then includes the extracted content in the chat request body.
+ * Reads a PDF through Azure Layout and returns text directly to the client
+ * (no DB storage). The client then includes the extracted content in the
+ * chat request body.
  *
  * Differs from /api/upload:
  * - No classification, embeddings, or KB indexing
- * - Faster: pdf-parse only (no vision fallback)
  * - Scoped to one conversation, not persisted as a document
  */
 export async function POST(request: NextRequest) {
@@ -32,31 +32,21 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const { title, content, pageCount, truncated } = await extractPdfTextWithAzure(
+      buffer,
+      file.name,
+      MAX_CONTENT_CHARS,
+    );
 
-    // Fast text extraction via pdf-parse
-    const parser = new PDFParse({ data: new Uint8Array(buffer) });
-    let text = "";
-    let pageCount = 0;
-    try {
-      const result = await parser.getText();
-      text = result.text || "";
-      pageCount = result.total || result.pages.length || 0;
-    } finally {
-      await parser.destroy().catch(() => {});
-    }
-
-    if (!text.trim()) {
+    if (!content.trim()) {
       return NextResponse.json(
         { error: "Could not extract text. PDF may be scanned or image-only." },
         { status: 422 },
       );
     }
 
-    const truncated = text.length > MAX_CONTENT_CHARS;
-    const content = truncated ? text.slice(0, MAX_CONTENT_CHARS) + "\n\n[...truncated]" : text;
-
     return NextResponse.json({
-      title: file.name.replace(/\.pdf$/i, ""),
+      title,
       content,
       pageCount,
       size: file.size,

@@ -2,22 +2,15 @@ import { createHash } from "node:crypto";
 import { supabaseAdmin } from "./supabase";
 import { canonicalizeEntities, normalizeName, similarity, type CanonicalEntity } from "./entities";
 import { embedQuery } from "./embeddings";
-import {
-  analyzeDocumentWithAzureLayout,
-  isAzureDocumentIntelligenceConfigured,
-} from "@/lib/azure-document-intelligence";
-import {
-  buildStructuredDocumentFromNormalized,
-  normalizeAzureLayoutDocument,
-} from "@/lib/ocr-normalization";
 import { normalizeNumbers } from "@/lib/normalize";
 import type { ExtractionPreferences } from "@/lib/extraction-schema";
+import { readPdfWithAzure } from "@/lib/intake/read";
 
 /**
- * THE LIBRARIAN AGENT
+ * DOCUMENT INTAKE ANALYSIS
  *
- * The librarian is the intelligent layer that sits between an upload and the
- * knowledge base. When a new document arrives, it:
+ * The intake analyzer is the layer that sits between an upload and the
+ * workspace. When a new document arrives, it:
  *
  * 1. Quickly extracts document text through the same Azure-backed intake
  *    pipeline used by the full processor
@@ -29,17 +22,17 @@ import type { ExtractionPreferences } from "@/lib/extraction-schema";
  *    - VERSION (newer)        → link as new version, supersede the old one
  *    - DUPLICATE (same)       → reject upload, point to existing
  *    - RELATED (linked)       → add as new but cross-link via reference
- * 6. Returns a structured proposal that the UI shows the user before commit
+ * 6. Returns a structured intake proposal that the UI shows the user before commit
  *
- * The librarian intentionally avoids image-prompt OCR. It uses Azure Document
+ * The intake analyzer intentionally avoids image-prompt OCR. It uses Azure Document
  * Intelligence Layout to read every uploaded PDF, then runs deterministic
  * normalization and overlap detection before the full extraction pipeline runs
  * after the user confirms.
  */
 
-export type LibrarianAction = "new" | "version" | "duplicate" | "related";
+export type IntakeAction = "new" | "version" | "duplicate" | "related";
 
-export interface LibrarianRelated {
+export interface IntakeRelated {
   documentId: string;
   title: string;
   type: string;
@@ -60,7 +53,7 @@ export interface SuggestedProject {
   reason: string;
 }
 
-export interface LibrarianProposal {
+export interface IntakeProposal {
   // What we detected about the new document
   detected: {
     title: string;
@@ -76,11 +69,11 @@ export interface LibrarianProposal {
   };
 
   // Related documents found in the KB
-  related: LibrarianRelated[];
+  related: IntakeRelated[];
 
-  // The librarian's recommended action
+  // The intake layer's recommended action
   recommendation: {
-    action: LibrarianAction;
+    action: IntakeAction;
     reason: string;
     targetDocumentId?: string; // for version/duplicate
     confidence: "high" | "medium" | "low";
@@ -176,20 +169,12 @@ async function quickAnalyzeDocument(
   previewText: string;
   similarityText: string;
 }> {
-  if (!isAzureDocumentIntelligenceConfigured()) {
-    throw new Error(
-      "Azure Document Intelligence is required for document intake but is not configured.",
-    );
-  }
-
-  const azureResponse = await analyzeDocumentWithAzureLayout(fileBuffer);
-  const normalized = normalizeAzureLayoutDocument(azureResponse, fileName, preferences);
-  const pageCount = azureResponse.analyzeResult?.pages?.length || 0;
-
-  const structured = buildStructuredDocumentFromNormalized({
-    normalized,
+  const { normalized, structured } = await readPdfWithAzure(
+    fileBuffer,
     fileName,
-  });
+    preferences,
+  );
+  const pageCount = normalized.pages.length;
   const title = structured.classification.title || fileName.replace(/\.pdf$/i, "");
   const classification = suggestClassification(
     structured.classification.documentType,
@@ -220,7 +205,7 @@ async function quickAnalyzeDocument(
 async function findRelatedDocuments(
   analysis: QuickAnalysis,
   documentTextSample: string,
-): Promise<LibrarianRelated[]> {
+): Promise<IntakeRelated[]> {
   // Strategy: combine three signals
   // (1) title fuzzy match
   // (2) entity overlap (canonicalize the new entities, count link-table overlap)
@@ -264,7 +249,7 @@ async function findRelatedDocuments(
       .filter((s): s is PromiseFulfilledResult<number[]> => s.status === "fulfilled")
       .map((s) => s.value);
   } catch (err) {
-    console.error("librarian: new-doc embedding batch failed:", err);
+    console.error("intake: new-doc embedding batch failed:", err);
   }
 
   // Score each existing doc
@@ -400,8 +385,8 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 function decideAction(
   analysis: QuickAnalysis,
-  related: LibrarianRelated[],
-): LibrarianProposal["recommendation"] {
+  related: IntakeRelated[],
+): IntakeProposal["recommendation"] {
   if (related.length === 0) {
     return {
       action: "new",
@@ -551,7 +536,7 @@ export async function analyzeUpload(
   fileBuffer: Buffer,
   fileName: string,
   preferences?: ExtractionPreferences,
-): Promise<LibrarianProposal> {
+): Promise<IntakeProposal> {
   // Step 0: SHA256 short-circuit. If a document with the exact same hash
   // exists, this is a bit-for-bit duplicate — return "duplicate" immediately
   // without running the (slow + flaky) embedding/title/entity heuristics.

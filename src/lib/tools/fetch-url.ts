@@ -2,10 +2,11 @@
 //
 // Fetch a URL and return its readable text content. Used by Claude when it
 // needs full page contents instead of Tavily's short snippet. Pure built-in
-// fetch + regex HTML stripping. PDFs are extracted via pdf-parse (already a
-// dep). Zero new dependencies.
+// fetch + regex HTML stripping. PDFs are read through the same Azure-backed
+// reader used elsewhere in the product so fetched remote PDFs follow the
+// same extraction path as uploads and chat attachments.
 
-import { PDFParse } from "pdf-parse";
+import { extractPdfTextWithAzure } from "@/lib/intake/read";
 
 const MAX_CONTENT_CHARS = 8000;
 const FETCH_TIMEOUT_MS = 15000;
@@ -76,35 +77,29 @@ export async function fetchUrlContent(url: string): Promise<FetchUrlResult> {
 
   // ── PDF branch ──
   if (isPdf) {
-    let pdfText = "";
-    let pageCount = 0;
     try {
       const buf = Buffer.from(await response.arrayBuffer());
-      const parser = new PDFParse({ data: new Uint8Array(buf) });
-      try {
-        const result = await parser.getText();
-        pdfText = result.text || "";
-        pageCount = result.total || result.pages.length || 0;
-      } finally {
-        await parser.destroy().catch(() => {});
-      }
+      const fileName =
+        parsed.pathname.split("/").pop()?.trim() || "remote-document.pdf";
+      const { title, content, pageCount, truncated } = await extractPdfTextWithAzure(
+        buf,
+        fileName,
+        MAX_CONTENT_CHARS,
+      );
+      return {
+        ok: true,
+        url,
+        title: title || `PDF (${pageCount} pages)`,
+        content,
+        truncated,
+      };
     } catch (err) {
       return {
         ok: false,
         url,
-        error: `PDF parse failed: ${(err as Error).message}`,
+        error: `PDF extraction failed: ${(err as Error).message}`,
       };
     }
-    let text = pdfText.replace(/\s+/g, " ").trim();
-    const truncated = text.length > MAX_CONTENT_CHARS;
-    if (truncated) text = text.slice(0, MAX_CONTENT_CHARS) + "\n\n[truncated]";
-    return {
-      ok: true,
-      url,
-      title: `PDF (${pageCount} pages)`,
-      content: text,
-      truncated,
-    };
   }
 
   // ── HTML/text branch ──
