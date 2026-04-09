@@ -1,7 +1,6 @@
 import { getOpenAI } from "@/lib/clients";
+import { ROUTER_MODEL } from "@/lib/models";
 import type { DoctrineName } from "./doctrine";
-
-const ROUTER_MODEL = "gpt-5.4";
 
 export type ResponseMode = "casual" | "search" | "deep";
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { analyzeUpload } from "@/lib/intake";
+import { validateUploadBuffer } from "@/lib/upload-validation";
 import {
   DOCUMENT_TYPES,
   LANGUAGE_CODES,
@@ -10,8 +11,6 @@ import {
 } from "@/lib/extraction-schema";
 
 export const maxDuration = 180;
-
-const MAX_SIZE = 50 * 1024 * 1024; // 50MB safety cap (direct upload is 100MB, legacy path is 4.5MB)
 
 function isDocumentType(value: unknown): value is DocumentType {
   return typeof value === "string" && DOCUMENT_TYPES.includes(value as DocumentType);
@@ -88,16 +87,16 @@ export async function POST(request: NextRequest) {
       }
 
       buffer = Buffer.from(await blob.arrayBuffer());
-      if (buffer.length > MAX_SIZE) {
-        return NextResponse.json(
-          { error: "File exceeds 50MB limit" },
-          { status: 400 },
-        );
-      }
-
       fileName = typeof bodyFileName === "string" && bodyFileName.length > 0
         ? bodyFileName
         : (storagePath.split("/").pop() || "file.pdf");
+      const validation = validateUploadBuffer(buffer, fileName);
+      if (!validation.ok) {
+        return NextResponse.json(
+          { error: validation.error },
+          { status: validation.status ?? 400 },
+        );
+      }
 
       const dt = isDocumentType(documentType) ? documentType : null;
       const lh = isLanguageCode(languageHint) ? languageHint : null;
@@ -120,18 +119,6 @@ export async function POST(request: NextRequest) {
       if (!file) {
         return NextResponse.json({ error: "No file provided" }, { status: 400 });
       }
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        return NextResponse.json(
-          { error: "Only PDF files are supported" },
-          { status: 400 },
-        );
-      }
-      if (file.size > MAX_SIZE) {
-        return NextResponse.json(
-          { error: "File exceeds 50MB limit" },
-          { status: 400 },
-        );
-      }
 
       const documentTypeHint = parseDocumentType(formData.get("documentType"));
       const languageHint = parseLanguageCode(formData.get("languageHint"));
@@ -152,6 +139,14 @@ export async function POST(request: NextRequest) {
 
       buffer = Buffer.from(await file.arrayBuffer());
       fileName = file.name;
+
+      const validation = validateUploadBuffer(buffer, file.name);
+      if (!validation.ok) {
+        return NextResponse.json(
+          { error: validation.error },
+          { status: validation.status ?? 400 },
+        );
+      }
     }
 
     const proposal = await analyzeUpload(buffer, fileName, extractionPreferences);

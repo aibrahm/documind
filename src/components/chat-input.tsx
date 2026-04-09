@@ -33,6 +33,21 @@ import {
 
 export interface ChatInputHandle {
   addFiles: (files: File[]) => void;
+  /**
+   * Replace the textarea contents and move focus + cursor to the end.
+   * Used by the landing-page guided query cards so a click populates the
+   * input (letting the VC edit before sending) instead of auto-submitting
+   * a query he might want to tweak.
+   */
+  setText: (text: string) => void;
+  focus: () => void;
+  /**
+   * Pin an existing document/entity into the next turn. Used when the
+   * user navigates from /documents/[id] via the "Ask about this document"
+   * button — we want the target doc pre-pinned before they type the
+   * question.
+   */
+  addPinned: (item: PinnedItem) => void;
 }
 
 export interface Attachment {
@@ -314,7 +329,36 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     [uploadAttachment],
   );
 
-  useImperativeHandle(ref, () => ({ addFiles }), [addFiles]);
+  const setText = useCallback((text: string) => {
+    setValue(text);
+    // Focus + move caret to end after React has committed the new value.
+    queueMicrotask(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      const end = text.length;
+      ta.setSelectionRange(end, end);
+    });
+  }, []);
+
+  const focus = useCallback(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  const addPinned = useCallback((item: PinnedItem) => {
+    setPinned((prev) => {
+      // Dedupe on (kind, id) so callers can re-navigate with the same
+      // ?pinned_document=<id> without accumulating duplicates in the chip row.
+      if (prev.some((p) => p.kind === item.kind && p.id === item.id)) return prev;
+      return [...prev, item];
+    });
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({ addFiles, setText, focus, addPinned }),
+    [addFiles, setText, focus, addPinned],
+  );
 
   const removePending = useCallback((id: string) => {
     setPendingAttachments((prev) => prev.filter((p) => p.id !== id));

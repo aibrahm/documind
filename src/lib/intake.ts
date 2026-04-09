@@ -5,6 +5,7 @@ import { embedQuery } from "./embeddings";
 import { normalizeNumbers } from "@/lib/normalize";
 import type { ExtractionPreferences } from "@/lib/extraction-schema";
 import { readPdfWithAzure } from "@/lib/intake/read";
+import { generateCanonicalTitle } from "@/lib/title-convention";
 
 /**
  * DOCUMENT INTAKE ANALYSIS
@@ -62,7 +63,7 @@ export interface IntakeProposal {
     language: "ar" | "en" | "mixed";
     pageCount: number;
     fileSize: number;
-    suggestedClassification: "PRIVATE" | "PUBLIC" | "DOCTRINE";
+    suggestedClassification: "PRIVATE" | "PUBLIC";
     classificationReason: string;
     entities: Array<{ name: string; type: string; nameEn?: string }>;
     firstPagePreview: string; // first ~500 chars for the user to preview
@@ -91,7 +92,7 @@ interface QuickAnalysis {
   suggestedTitle: string;
   documentType: string;
   language: "ar" | "en" | "mixed";
-  classification: "PRIVATE" | "PUBLIC" | "DOCTRINE";
+  classification: "PRIVATE" | "PUBLIC";
   classificationReason: string;
   entities: Array<{ name: string; type: string; nameEn?: string }>;
 }
@@ -110,23 +111,16 @@ function suggestClassification(
   const normalizedTitle = normalizeNumbers(title);
   const normalized = normalizeNumbers(`${title}\n${fullText}`).slice(0, 12000);
 
+  // Classification is now binary: PRIVATE (confidential) or PUBLIC (safe to
+  // quote / cite in outbound drafts). Previously this function tried to pick
+  // a third "DOCTRINE" category, which conflated sensitivity (who can I
+  // discuss this with) with role (working material vs background reference).
+  // Role is now derived from project membership — no column needed.
   if (["memo", "letter", "contract", "financial", "presentation"].includes(documentType)) {
     return {
       classification: "PRIVATE",
       classificationReason:
-        "Working-document structure detected, so this should stay in the private workspace corpus.",
-    };
-  }
-
-  if (
-    /المخطط العام الشامل|master plan|الإطار الاستراتيجي|الرؤية الاستراتيجية|الخطة الاستراتيجية/i.test(
-      normalized,
-    )
-  ) {
-    return {
-      classification: "DOCTRINE",
-      classificationReason:
-        "Foundational strategic framework detected, so this should remain always-available reference context.",
+        "Working-document structure detected, so this should stay confidential by default.",
     };
   }
 
@@ -140,22 +134,38 @@ function suggestClassification(
     return {
       classification: "PUBLIC",
       classificationReason:
-        "Published legal or regulatory text detected, so this belongs in the public reference corpus.",
+        "Published legal or regulatory text detected — safe to cite in outbound drafts.",
+    };
+  }
+
+  // Strategic frameworks and institutional policy documents used to be
+  // classified as DOCTRINE. Most are published (strategic plans, vision
+  // documents), so they're PUBLIC. Internal draft policies that should
+  // stay confidential are caught by the "working-document" branch above.
+  if (
+    /المخطط العام الشامل|master plan|الإطار الاستراتيجي|الرؤية الاستراتيجية|الخطة الاستراتيجية/i.test(
+      normalized,
+    )
+  ) {
+    return {
+      classification: "PUBLIC",
+      classificationReason:
+        "Strategic framework or master plan — reference material safe to quote.",
     };
   }
 
   if (documentType === "policy" && /هيئة|المنطقة الاقتصادية|استراتيجية|إطار/.test(normalized)) {
     return {
-      classification: "DOCTRINE",
+      classification: "PUBLIC",
       classificationReason:
-        "Institutional policy or strategy document detected, so it should be treated as doctrine-level reference.",
+        "Institutional policy or strategy — reference material safe to quote.",
     };
   }
 
   return {
     classification: "PRIVATE",
     classificationReason:
-      "Operational, commercial, or working-document characteristics detected, so this should stay in the private workspace corpus.",
+      "Working or commercial document — stays confidential by default. Change if the content is actually publishable.",
   };
 }
 
@@ -175,17 +185,37 @@ async function quickAnalyzeDocument(
     preferences,
   );
   const pageCount = normalized.pages.length;
-  const title = structured.classification.title || fileName.replace(/\.pdf$/i, "");
+
+  // Title generation. Two paths:
+  //   1. If the caller supplied a titleHint (e.g. the user typed one
+  //      into the upload form), honor it verbatim — the human knows
+  //      best.
+  //   2. Otherwise, call the LLM title-convention generator which
+  //      reads the first ~3000 chars and produces "{Type}: {subject}"
+  //      following the archive convention. This replaces the old
+  //      first-heading heuristic, which on Egyptian government PDFs
+  //      reliably returned the letterhead / department name instead
+  //      of the subject (see title-convention.ts for the rationale).
+  const hintTitle = preferences?.titleHint?.trim();
+  const generatedTitle = hintTitle
+    ? hintTitle
+    : await generateCanonicalTitle({
+        fullText: normalized.fullText,
+        documentType: structured.classification.documentType,
+        language: structured.classification.language,
+        fileName,
+      });
+
   const classification = suggestClassification(
     structured.classification.documentType,
-    title,
+    generatedTitle,
     normalized.fullText,
   );
 
   return {
     analysis: {
-      title,
-      suggestedTitle: cleanSuggestedTitle(title, fileName),
+      title: generatedTitle,
+      suggestedTitle: cleanSuggestedTitle(generatedTitle, fileName),
       documentType: structured.classification.documentType,
       language: structured.classification.language,
       classification: classification.classification,
@@ -562,7 +592,7 @@ export async function analyzeUpload(
         pageCount: 0,
         fileSize: fileBuffer.length,
         suggestedClassification:
-          (existing.classification as "PRIVATE" | "PUBLIC" | "DOCTRINE") ||
+          (existing.classification as "PRIVATE" | "PUBLIC") ||
           "PRIVATE",
         classificationReason: "Existing classification preserved (exact-hash match).",
         entities: [],

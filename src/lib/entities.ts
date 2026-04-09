@@ -33,6 +33,38 @@ export interface CanonicalEntity {
 
 const SIMILARITY_THRESHOLD = 0.82;
 
+// Government and authority names almost always have stable keywords
+// ("هيئة", "وزارة", "authority", "ministry") plus a specific qualifier
+// that gets OCR-mangled in slightly different ways on different scans
+// of the same document. The Abu Dhabi Ports memo we debugged showed
+// the same authority appearing FOUR times under near-duplicate spellings
+// that the 0.82 threshold was letting through as distinct.
+//
+// For these high-risk types we apply an additional content-prefix
+// check: if two normalized names share their first NORMALIZED_PREFIX
+// characters AND are both of the same authority-like type, they're
+// considered the same entity regardless of the numeric similarity score.
+const AUTHORITY_TYPES = new Set([
+  "authority",
+  "ministry",
+  "institution",
+  "government",
+  "agency",
+]);
+const NORMALIZED_PREFIX = 14;
+
+function authorityPrefixMatch(
+  a: { name: string; type: string },
+  b: { name: string; type: string },
+): boolean {
+  if (!AUTHORITY_TYPES.has(a.type.toLowerCase())) return false;
+  if (!AUTHORITY_TYPES.has(b.type.toLowerCase())) return false;
+  const na = normalizeName(a.name);
+  const nb = normalizeName(b.name);
+  if (na.length < NORMALIZED_PREFIX || nb.length < NORMALIZED_PREFIX) return false;
+  return na.slice(0, NORMALIZED_PREFIX) === nb.slice(0, NORMALIZED_PREFIX);
+}
+
 // ────────────────────────────────────────
 // NORMALIZATION
 // ────────────────────────────────────────
@@ -177,6 +209,12 @@ export async function canonicalizeEntities(
     const sameType = existingByType.get(candidate.type) || [];
 
     let bestMatch: { id: string; score: number } | null = null;
+    // Authority-prefix match is a HARD override: if two authority-type
+    // names share their first 14 normalized characters, we consider them
+    // the same entity regardless of the numeric similarity score. This
+    // catches OCR spelling drift on government entities where the
+    // standard similarity score sometimes dips under the 0.82 threshold.
+    let authorityOverride: string | null = null;
 
     // Compare against existing
     for (const e of sameType) {
@@ -192,6 +230,15 @@ export async function canonicalizeEntities(
       if (score > (bestMatch?.score ?? 0)) {
         bestMatch = { id: e.id, score };
       }
+      if (
+        !authorityOverride &&
+        authorityPrefixMatch(
+          { name: candidate.name, type: candidate.type },
+          { name: e.name, type: e.type },
+        )
+      ) {
+        authorityOverride = e.id;
+      }
     }
 
     // Also compare against entities inserted earlier in this batch
@@ -204,9 +251,20 @@ export async function canonicalizeEntities(
       if (score > (bestMatch?.score ?? 0)) {
         bestMatch = { id: e.id, score };
       }
+      if (
+        !authorityOverride &&
+        authorityPrefixMatch(
+          { name: candidate.name, type: candidate.type },
+          { name: e.name, type: e.type },
+        )
+      ) {
+        authorityOverride = e.id;
+      }
     }
 
-    if (bestMatch && bestMatch.score >= SIMILARITY_THRESHOLD) {
+    if (authorityOverride) {
+      resolvedIds.push(authorityOverride);
+    } else if (bestMatch && bestMatch.score >= SIMILARITY_THRESHOLD) {
       resolvedIds.push(bestMatch.id);
     } else {
       // Insert new canonical row

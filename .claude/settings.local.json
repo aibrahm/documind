@@ -65,7 +65,19 @@
       "Bash(timeout 15 vercel logs https://gtez-intelligence.vercel.app)",
       "Bash(vercel --prod --yes)",
       "Bash(grep -E \"\\\\.ts$\")",
-      "Bash(git -C /Users/aibrahim/gtez-intelligence log --oneline --all --since=\"2026-04-07\")"
+      "Bash(git -C /Users/aibrahim/gtez-intelligence log --oneline --all --since=\"2026-04-07\")",
+      "Bash(grep:*)",
+      "Bash(rm 'src/app/api/doctrines/route.ts' 'src/app/api/doctrines/[id]/route.ts')",
+      "Bash(rmdir 'src/app/api/doctrines/[id]' 'src/app/api/doctrines')",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(supabase status:*)",
+      "Bash(supabase projects:*)",
+      "Bash(supabase migration:*)",
+      "Bash(awk:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(tee /tmp/next-dev.log)",
+      "WebFetch(domain:claude.com)"
     ]
   },
   "spinnerTipsEnabled": false,

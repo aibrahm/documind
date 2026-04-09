@@ -3,7 +3,22 @@ import type { Database } from "@/lib/database.types";
 
 export type WorkspaceProfileRow = Database["public"]["Tables"]["workspace_profile"]["Row"];
 
-export async function getWorkspaceProfile(): Promise<WorkspaceProfileRow | null> {
+/**
+ * Tri-state result so callers can distinguish:
+ *   - "missing"  — no profile row exists yet (legitimate empty state)
+ *   - "ok"       — profile loaded successfully
+ *   - "degraded" — fetch failed; caller should warn the user
+ *
+ * Previously this function returned `null` on both "missing" and
+ * "degraded", so downstream code had no way to tell the difference
+ * and silently ran without operator context. See CONCERNS.md B5.
+ */
+export type WorkspaceProfileResult =
+  | { status: "ok"; profile: WorkspaceProfileRow }
+  | { status: "missing"; profile: null }
+  | { status: "degraded"; profile: null; error: string };
+
+export async function getWorkspaceProfile(): Promise<WorkspaceProfileResult> {
   const { data, error } = await supabaseAdmin
     .from("workspace_profile")
     .select("*")
@@ -12,10 +27,36 @@ export async function getWorkspaceProfile(): Promise<WorkspaceProfileRow | null>
 
   if (error) {
     console.error("workspace_profile fetch failed:", error);
-    return null;
+    return {
+      status: "degraded",
+      profile: null,
+      error: error.message || "Unknown workspace_profile fetch error",
+    };
   }
 
-  return data ?? null;
+  if (!data) {
+    return { status: "missing", profile: null };
+  }
+
+  return { status: "ok", profile: data };
+}
+
+/**
+ * Single source of truth for "what language should the UI chrome
+ * render in". Reads the stored preferred_language if present,
+ * otherwise falls back to "ar" because this product is built for
+ * an Arabic-first workspace and that's the sane default. Any value
+ * other than "en" or "ar" is normalized to "ar" so the UI never
+ * sees an unknown language code.
+ */
+export async function getWorkspaceLanguage(): Promise<"ar" | "en"> {
+  const result = await getWorkspaceProfile();
+  if (result.status === "ok") {
+    const lang = result.profile.preferred_language;
+    if (lang === "en") return "en";
+    return "ar";
+  }
+  return "ar";
 }
 
 export function buildWorkspaceProfilePromptBlock(

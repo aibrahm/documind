@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { getAnthropic } from "@/lib/clients";
+import { DEEP_ANALYSIS_MODEL } from "@/lib/models";
 import { webSearch } from "@/lib/web-search";
 import { runFinancialModel } from "@/lib/tools/financial-model";
 import { runFetchUrl } from "@/lib/tools/fetch-url";
@@ -197,7 +198,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
 
     // Stream a single round
     const stream = anthropic.messages.stream({
-      model: "claude-opus-4-6",
+      model: DEEP_ANALYSIS_MODEL,
       max_tokens: maxTokens,
       temperature,
       system: systemPrompt,
@@ -426,7 +427,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
     });
 
     const finalStream = anthropic.messages.stream({
-      model: "claude-opus-4-6",
+      model: DEEP_ANALYSIS_MODEL,
       max_tokens: maxTokens,
       temperature,
       system: systemPrompt,

@@ -1,83 +1,63 @@
-export type AccessLevel = "private" | "public";
-export type KnowledgeScope =
-  | "project"
-  | "shared_reference"
-  | "institutional_doctrine"
-  | "thread_local";
+// src/lib/document-knowledge.ts
+//
+// Document classification helpers. Post migration 015 this collapses to a
+// single binary concept: is this document confidential (PRIVATE) or safe
+// to quote/cite (PUBLIC).
+//
+// Historical context: this module used to surface three fields —
+// `access_level`, `knowledge_scope`, and `classification` — which between
+// them encoded a confusing three-way categorization (private / public /
+// doctrine) plus orthogonal scope labels (project / shared_reference /
+// institutional_doctrine / thread_local). All of that collapsed into two
+// simple ideas:
+//
+//   1. Classification: PRIVATE or PUBLIC. One binary column.
+//   2. Role: derived from whether the document is linked to any project
+//      via project_documents — not stored as a column at all.
+//
+// Anything that used to look like "institutional doctrine" is now PUBLIC
+// reference material sitting in the library without a project link.
+// The old columns (access_level, knowledge_scope) are still in the
+// schema for backward-compat reads, but nothing writes to them any
+// more and the helpers below no longer branch on them.
 
-type LegacyClassification = "PRIVATE" | "PUBLIC" | "DOCTRINE";
+export type Classification = "PRIVATE" | "PUBLIC";
 
-interface LegacyDocumentSemantics {
+interface DocumentLike {
   classification?: string | null;
-  access_level?: string | null;
-  knowledge_scope?: string | null;
 }
 
-export function normalizeAccessLevel(
+/**
+ * Normalize any legacy classification value into the binary set.
+ * DOCTRINE (now extinct) maps to PUBLIC because every historical
+ * DOCTRINE row was published reference material.
+ */
+export function normalizeClassification(
   value: string | null | undefined,
-  fallbackClassification?: string | null,
-): AccessLevel {
-  if (value === "private" || value === "public") return value;
-  const classification = normalizeLegacyClassification(fallbackClassification);
-  return classification === "PRIVATE" ? "private" : "public";
-}
-
-export function normalizeKnowledgeScope(
-  value: string | null | undefined,
-  fallbackClassification?: string | null,
-): KnowledgeScope {
-  if (
-    value === "project" ||
-    value === "shared_reference" ||
-    value === "institutional_doctrine" ||
-    value === "thread_local"
-  ) {
-    return value;
-  }
-  const classification = normalizeLegacyClassification(fallbackClassification);
-  if (classification === "DOCTRINE") return "institutional_doctrine";
-  if (classification === "PUBLIC") return "shared_reference";
-  return "project";
-}
-
-export function isPrivateDocument(doc: LegacyDocumentSemantics): boolean {
-  return normalizeAccessLevel(doc.access_level, doc.classification) === "private";
-}
-
-export function isInstitutionalDocument(doc: LegacyDocumentSemantics): boolean {
-  return (
-    normalizeKnowledgeScope(doc.knowledge_scope, doc.classification) ===
-    "institutional_doctrine"
-  );
-}
-
-export function formatKnowledgeLabel(doc: LegacyDocumentSemantics): string {
-  const accessLevel = normalizeAccessLevel(doc.access_level, doc.classification);
-  const knowledgeScope = normalizeKnowledgeScope(
-    doc.knowledge_scope,
-    doc.classification,
-  );
-  const accessLabel = accessLevel === "private" ? "PRIVATE" : "PUBLIC";
-  const scopeLabel =
-    knowledgeScope === "institutional_doctrine"
-      ? "DOCTRINE"
-      : knowledgeScope === "shared_reference"
-        ? "SHARED"
-        : knowledgeScope === "thread_local"
-          ? "THREAD"
-          : "PROJECT";
-  return `${accessLabel} · ${scopeLabel}`;
-}
-
-function normalizeLegacyClassification(
-  classification: string | null | undefined,
-): LegacyClassification {
-  if (
-    classification === "PRIVATE" ||
-    classification === "PUBLIC" ||
-    classification === "DOCTRINE"
-  ) {
-    return classification;
-  }
+): Classification {
+  if (value === "PUBLIC") return "PUBLIC";
+  if (value === "DOCTRINE") return "PUBLIC"; // legacy rows
   return "PRIVATE";
+}
+
+export function isPrivateDocument(doc: DocumentLike): boolean {
+  return normalizeClassification(doc.classification) === "PRIVATE";
+}
+
+/**
+ * Human-readable one-word label used in UI chips and the document
+ * inventory line the model sees in its system prompt. Kept short so it
+ * doesn't dominate the line visually.
+ */
+export function formatClassificationLabel(doc: DocumentLike): string {
+  return normalizeClassification(doc.classification) === "PRIVATE"
+    ? "CONFIDENTIAL"
+    : "OPEN";
+}
+
+/** @deprecated Use formatClassificationLabel directly. Kept because
+ *  chat-turn.ts still imports this name from the document-inventory
+ *  formatter helper. Can be removed in the next rename pass. */
+export function formatKnowledgeLabel(doc: DocumentLike): string {
+  return formatClassificationLabel(doc);
 }

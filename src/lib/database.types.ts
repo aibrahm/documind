@@ -522,7 +522,6 @@ export type Database = {
       }
       documents: {
         Row: {
-          access_level: string | null
           classification: string
           context_card: Json | null
           created_at: string | null
@@ -532,7 +531,6 @@ export type Database = {
           file_url: string
           id: string
           is_current: boolean | null
-          knowledge_scope: string | null
           language: string
           metadata: Json | null
           page_count: number | null
@@ -547,7 +545,6 @@ export type Database = {
           version_of: string | null
         }
         Insert: {
-          access_level?: string | null
           classification?: string
           context_card?: Json | null
           created_at?: string | null
@@ -557,7 +554,6 @@ export type Database = {
           file_url: string
           id?: string
           is_current?: boolean | null
-          knowledge_scope?: string | null
           language?: string
           metadata?: Json | null
           page_count?: number | null
@@ -572,7 +568,6 @@ export type Database = {
           version_of?: string | null
         }
         Update: {
-          access_level?: string | null
           classification?: string
           context_card?: Json | null
           created_at?: string | null
@@ -582,7 +577,6 @@ export type Database = {
           file_url?: string
           id?: string
           is_current?: boolean | null
-          knowledge_scope?: string | null
           language?: string
           metadata?: Json | null
           page_count?: number | null
@@ -821,6 +815,38 @@ export type Database = {
             columns: ["source_document_id"]
             isOneToOne: false
             referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_feedback: {
+        Row: {
+          created_at: string
+          id: string
+          message_id: string
+          note: string | null
+          verdict: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message_id: string
+          note?: string | null
+          verdict: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message_id?: string
+          note?: string | null
+          verdict?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_feedback_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
         ]
@@ -1147,6 +1173,8 @@ export type Database = {
       }
       workspace_profile: {
         Row: {
+          briefing_cache: Json | null
+          briefing_generated_at: string | null
           created_at: string
           email: string | null
           full_name: string
@@ -1160,6 +1188,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          briefing_cache?: Json | null
+          briefing_generated_at?: string | null
           created_at?: string
           email?: string | null
           full_name: string
@@ -1173,6 +1203,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          briefing_cache?: Json | null
+          briefing_generated_at?: string | null
           created_at?: string
           email?: string | null
           full_name?: string

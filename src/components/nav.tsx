@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Search, FileText, Upload, Circle, BookOpen, UserRound } from "lucide-react";
+import { Search, FileText, Upload, Circle, UserRound } from "lucide-react";
 
 interface NavProps {
   meta?: {
@@ -15,7 +15,6 @@ const links = [
   { label: "Intelligence", href: "/", icon: Search },
   { label: "Documents", href: "/documents", icon: FileText },
   { label: "Upload", href: "/upload", icon: Upload },
-  { label: "Doctrines", href: "/doctrines", icon: BookOpen },
   { label: "Profile", href: "/settings", icon: UserRound },
 ];
 

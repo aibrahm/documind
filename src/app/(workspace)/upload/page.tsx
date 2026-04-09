@@ -25,7 +25,7 @@ import {
 } from "@/lib/extraction-schema";
 
 type Action = "new" | "version" | "duplicate" | "related";
-type Classification = "PRIVATE" | "PUBLIC" | "DOCTRINE";
+type Classification = "PRIVATE" | "PUBLIC";
 type Stage = "idle" | "analyzing" | "review" | "uploading" | "done" | "error";
 type DocumentTypeChoice = DocumentType | "auto";
 type PlacementMode = "library" | "project";
@@ -110,10 +110,22 @@ const ACTION_COPY: Record<
 };
 
 const CLASSIFICATION_LABELS: Record<Classification, string> = {
-  PRIVATE: "Private",
-  PUBLIC: "Public",
-  DOCTRINE: "Doctrine",
+  PRIVATE: "Confidential",
+  PUBLIC: "Open",
 };
+
+/**
+ * Display helper for any raw classification string (PRIVATE, PUBLIC, or
+ * the legacy DOCTRINE which should never reach new UI but might still
+ * exist on old rows). Single source of truth so no corner of the upload
+ * screen can leak the internal "PRIVATE" wording by accident.
+ */
+function displayClassification(value: string | null | undefined): string {
+  if (value === "PRIVATE") return "Confidential";
+  if (value === "PUBLIC") return "Open";
+  if (value === "DOCTRINE") return "Open"; // legacy rows
+  return value ?? "";
+}
 
 const DOCUMENT_TYPE_COPY: Record<DocumentType, string> = {
   law: "Law / statute",
@@ -264,12 +276,79 @@ export default function UploadPage() {
       );
       setChosenTargetId(nextProposal.recommendation.targetDocumentId || null);
       setLinkToProjectId((current) => current || nextProposal.suggestedProject?.id || null);
+
+      // Skip the review screen when the intake was confident.
+      //
+      // Rules:
+      //   - confidence === "high"   → auto-commit, go straight to a "done" toast.
+      //   - action === "duplicate"  → never auto-commit, the user must choose
+      //                               to skip to the existing doc instead of
+      //                               re-ingesting it.
+      //   - anything else           → show review (and low confidence gets a
+      //                               warning banner there).
+      //
+      // Placement defaults to library for the fast path. If the VC wants a
+      // project link on a clean upload, he can still drop into the project
+      // workspace itself where the drop creates the link explicitly.
+      const canAutoCommit =
+        nextProposal.recommendation.confidence === "high" &&
+        nextProposal.recommendation.action !== "duplicate";
+      if (canAutoCommit) {
+        setStage("uploading");
+        try {
+          const resolvedDocumentType =
+            normalizeDetectedDocumentType(nextProposal.detected.documentType);
+          const body: Record<string, unknown> = {
+            storagePath: path,
+            fileName: uploadedFile.name,
+            classification: nextProposal.detected.suggestedClassification,
+            title: nextProposal.detected.suggestedTitle,
+            languageHint: nextProposal.detected.language,
+          };
+          if (resolvedDocumentType) {
+            body.documentType = resolvedDocumentType;
+            body.skipClassification = true;
+          }
+          if (
+            nextProposal.recommendation.action === "version" &&
+            nextProposal.recommendation.targetDocumentId
+          ) {
+            body.versionOf = nextProposal.recommendation.targetDocumentId;
+          }
+          if (
+            nextProposal.recommendation.action === "related" &&
+            nextProposal.recommendation.targetDocumentId
+          ) {
+            body.relatedTo = nextProposal.recommendation.targetDocumentId;
+          }
+          const uploadRes2 = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const uploadData = await uploadRes2.json();
+          if (!uploadRes2.ok || uploadData.error) {
+            throw new Error(uploadData.error || "Upload failed");
+          }
+          setStage("done");
+          loadRecent();
+        } catch (autoErr) {
+          // Fall back to the review screen so the user can inspect what
+          // happened and retry with the visible controls. We don't want to
+          // silently hide auto-commit failures.
+          console.error("Auto-commit failed, falling back to review:", autoErr);
+          setError((autoErr as Error).message);
+          setStage("review");
+        }
+        return;
+      }
+
       setStage("review");
     } catch (e) {
       setError((e as Error).message);
       setStage("error");
     }
-  }, []);
+  }, [loadRecent]);
 
   const handleFiles = useCallback(
     (files: File[]) => {
@@ -775,6 +854,30 @@ function ReviewCard({
 
   return (
     <div className="space-y-5">
+      {/*
+        Low-confidence warning. When the intake isn't sure about the
+        classification or the related-doc match, we surface that loudly
+        here instead of letting the user hit confirm on a quiet guess.
+        High-confidence proposals never reach this screen — they auto-
+        commit from analyzeFile.
+      */}
+      {recommendation.confidence === "low" && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-amber-900">
+                Couldn&apos;t reliably classify this document
+              </p>
+              <p className="mt-1 text-[12px] leading-snug text-amber-800">
+                Text extraction was weak — please verify the title, type, and
+                classification below before confirming.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-5 flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-800 to-slate-600">
@@ -909,7 +1012,7 @@ function ReviewCard({
                             {item.title}
                           </p>
                           <p className="mt-0.5 text-[11px] text-slate-400">
-                            {item.type} · {item.classification} · v{item.versionNumber} ·{" "}
+                            {item.type} · {displayClassification(item.classification)} · v{item.versionNumber} ·{" "}
                             {formatRelative(item.createdAt)}
                           </p>
                           <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
@@ -1197,7 +1300,7 @@ function RecentSidebar({
                   {doc.title}
                 </p>
                 <p className="text-[10px] text-slate-400">
-                  {doc.classification} · {formatRelative(doc.created_at)}
+                  {displayClassification(doc.classification)} · {formatRelative(doc.created_at)}
                 </p>
               </div>
             </button>

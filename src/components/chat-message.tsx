@@ -10,32 +10,27 @@ import {
   Copy,
   Check,
   RotateCw,
-  BrainCircuit,
-  Save,
   Mail,
   Pencil,
   CheckCheck,
   ChevronDown,
   ChevronUp,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { Tag } from "@/components/ui-system";
 import { DocumentContextCard } from "@/components/document-context-card";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Source, AttachmentMeta, PinnedItem } from "@/lib/types";
 
-type MemoryScope = "project" | "shared";
-type MemoryKind = "decision" | "fact" | "instruction" | "preference" | "risk" | "question";
+// ArtifactKind is still used for inline "artifact card" rendering — the
+// assistant emits fenced code blocks tagged `email`/`memo`/etc. and we
+// render them as inline cards in the chat (see ArtifactPreviewCard below).
+// The user-facing "Save as artifact" dialog was removed; artifacts live
+// inline in the thread and are copied/downloaded from there, not saved
+// into a separate "Outputs" section.
 type ArtifactKind =
   | "email"
   | "memo"
@@ -48,6 +43,14 @@ type ArtifactKind =
 interface ChatMessageProps {
   role: "user" | "assistant" | "system";
   content: string;
+  /**
+   * Server-assigned id of the persisted assistant message. Present as
+   * soon as the turn finishes streaming (the backend emits it in the
+   * final "done" SSE event) and on all messages loaded from history.
+   * Required for the per-message feedback buttons — without an id there's
+   * nothing to attach the verdict to, so the buttons hide themselves.
+   */
+  messageId?: string;
   metadata?: {
     mode?: string;
     doctrines?: string[];
@@ -55,21 +58,59 @@ interface ChatMessageProps {
     model?: string;
     attachments?: AttachmentMeta[];
     pinned?: PinnedItem[];
+    coverage?: {
+      docCount: number;
+      webUsed: boolean;
+      confidence: "high" | "medium" | "low";
+    };
+    warnings?: Array<{ kind: string; message: string }>;
   };
   isStreaming?: boolean;
   onSourceClick?: (source: Source) => void;
   onRegenerate?: () => void;
-  memoryScopes?: Array<{ id: MemoryScope; label: string }>;
-  onSaveMemory?: (payload: {
-    text: string;
-    kind: MemoryKind;
-    scopeType: MemoryScope;
-  }) => Promise<void>;
-  onSaveArtifact?: (payload: {
-    title: string;
-    kind: ArtifactKind;
-    content: string;
-  }) => Promise<void>;
+}
+
+// Honest, plain-english copy for the trust bar. We deliberately avoid
+// hedging words like "may have" or "could be" — the VC is an executive
+// and a vague signal is worse than no signal. Each tier says what is
+// true about where the answer came from and what the user should do
+// with it. "Fail Loud, Never Fake" as a product value.
+function describeCoverage(coverage: {
+  docCount: number;
+  webUsed: boolean;
+  confidence: "high" | "medium" | "low";
+}): { dot: string; text: string; action: string | null } {
+  const { docCount, webUsed, confidence } = coverage;
+  if (confidence === "high") {
+    return {
+      dot: "bg-emerald-500",
+      text: `Answered from ${docCount} of your documents`,
+      action: null,
+    };
+  }
+  if (confidence === "medium") {
+    return {
+      dot: "bg-amber-500",
+      text:
+        docCount === 1
+          ? "Answered from 1 document"
+          : `Answered from ${docCount} documents`,
+      action: "Thin coverage — verify before acting",
+    };
+  }
+  // low
+  if (webUsed && docCount === 0) {
+    return {
+      dot: "bg-red-500",
+      text: "Answered from web search only",
+      action: "Nothing matched in your documents — do not cite as internal",
+    };
+  }
+  return {
+    dot: "bg-red-500",
+    text: "No matching documents",
+    action: "Answered from general knowledge — do not cite",
+  };
 }
 
 // Use a fragment identifier (#cite-ID) instead of a custom scheme. react-markdown
@@ -89,25 +130,6 @@ function getDomain(url: string): string {
   } catch {
     return url;
   }
-}
-
-function deriveTitleFromContent(content: string): string {
-  const flattened = content
-    .replace(/\[[A-Z-]+\d+\]/g, "")
-    .replace(/[#>*_`]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!flattened) return "Saved output";
-  const firstSentence = flattened.split(/[.!?؟\n]/)[0]?.trim() || flattened;
-  return firstSentence.slice(0, 80);
-}
-
-function deriveMemoryText(content: string): string {
-  const flattened = content
-    .replace(/\[[A-Z-]+\d+\]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return flattened.slice(0, 280);
 }
 
 function getArtifactBlockKind(className?: string): ArtifactKind | null {
@@ -334,24 +356,54 @@ function EmailArtifactCard({ rawContent }: { rawContent: string }) {
 function ChatMessageInner({
   role,
   content,
+  messageId,
   metadata,
   isStreaming,
   onSourceClick,
   onRegenerate,
-  memoryScopes = [],
-  onSaveMemory,
-  onSaveArtifact,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
-  const [memoryOpen, setMemoryOpen] = useState(false);
-  const [artifactOpen, setArtifactOpen] = useState(false);
-  const [memoryText, setMemoryText] = useState(() => deriveMemoryText(content));
-  const [memoryKind, setMemoryKind] = useState<MemoryKind>("fact");
-  const [savingMemoryScope, setSavingMemoryScope] = useState<MemoryScope | null>(null);
-  const [artifactTitle, setArtifactTitle] = useState(() => deriveTitleFromContent(content));
-  const [artifactKind, setArtifactKind] = useState<ArtifactKind>("brief");
-  const [savingArtifact, setSavingArtifact] = useState(false);
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  // Local feedback state — optimistic so the button feels instant. We
+  // only support one active verdict at a time in the UI (clicking the
+  // other one retracts the first). null means "nothing marked yet".
+  const [feedback, setFeedback] = useState<"helpful" | "wrong" | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  const submitFeedback = async (verdict: "helpful" | "wrong") => {
+    if (!messageId) return;
+    const previous = feedback;
+    // Optimistic update.
+    if (previous === verdict) {
+      // Clicking the active verdict retracts it.
+      setFeedback(null);
+      try {
+        await fetch(
+          `/api/messages/${messageId}/feedback?verdict=${verdict}`,
+          { method: "DELETE" },
+        );
+      } catch {
+        setFeedback(previous);
+        setFeedbackError("Couldn't update feedback");
+      }
+      return;
+    }
+    setFeedback(verdict);
+    try {
+      const res = await fetch(`/api/messages/${messageId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verdict }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      setFeedbackError(null);
+    } catch {
+      setFeedback(previous);
+      setFeedbackError("Couldn't save feedback");
+    }
+  };
+
   const plainEmail = useMemo(
     () => (role === "assistant" && looksLikePlainEmail(content) ? parseEmailBlock(content) : null),
     [content, role],
@@ -431,50 +483,6 @@ function ChatMessageInner({
     });
   };
 
-  const handleSaveMemory = async (scopeType: MemoryScope) => {
-    if (!onSaveMemory || !memoryText.trim()) return;
-    setSavingMemoryScope(scopeType);
-    try {
-      await onSaveMemory({
-        text: memoryText.trim(),
-        kind: memoryKind,
-        scopeType,
-      });
-      setActionNotice(
-        scopeType === "project" ? "Saved to project memory" : "Saved to shared memory",
-      );
-      setMemoryOpen(false);
-      setTimeout(() => setActionNotice(null), 2500);
-    } catch (error) {
-      setActionNotice(
-        error instanceof Error ? error.message : "Failed to save memory",
-      );
-    } finally {
-      setSavingMemoryScope(null);
-    }
-  };
-
-  const handleSaveArtifact = async () => {
-    if (!onSaveArtifact || !artifactTitle.trim()) return;
-    setSavingArtifact(true);
-    try {
-      await onSaveArtifact({
-        title: artifactTitle.trim(),
-        kind: artifactKind,
-        content,
-      });
-      setActionNotice("Saved to outputs");
-      setArtifactOpen(false);
-      setTimeout(() => setActionNotice(null), 2500);
-    } catch (error) {
-      setActionNotice(
-        error instanceof Error ? error.message : "Failed to save output",
-      );
-    } finally {
-      setSavingArtifact(false);
-    }
-  };
-
   if (role === "system") {
     return (
       <div className="py-2 text-center text-xs text-slate-400" dir="auto">
@@ -546,15 +554,6 @@ function ChatMessageInner({
       <div className="min-w-0 flex-1">
         <div className="mb-1.5 flex items-center gap-2">
           <span className="text-[13px] font-semibold text-slate-900">DocuMind</span>
-          {metadata?.doctrines && metadata.doctrines.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {metadata.doctrines.map((doctrine) => (
-                <Tag key={doctrine} variant="blue">
-                  {doctrine}
-                </Tag>
-              ))}
-            </div>
-          )}
           {metadata?.model && (
             <span className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-slate-400">
               {metadata.model}
@@ -805,8 +804,53 @@ function ChatMessageInner({
           </div>
         )}
 
+        {/*
+          Backend-reported warnings for this turn. These are always visible,
+          even when the answer is otherwise fine — the whole point is to
+          surface silent degradations (memory extraction broken, audit log
+          down, etc.) instead of logging them to stderr and moving on.
+          "Fail Loud, Never Fake" as a product value.
+        */}
+        {!isStreaming && metadata?.warnings && metadata.warnings.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {metadata.warnings.map((w, i) => (
+              <div
+                key={`warn-${i}`}
+                className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
+                dir="auto"
+              >
+                <span className="mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-semibold uppercase tracking-wider text-amber-900">
+                    {w.kind} degraded
+                  </p>
+                  <p className="mt-0.5 text-[12px] leading-snug text-amber-800">
+                    {w.message}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!isStreaming && content && metadata?.coverage && (() => {
+          const describe = describeCoverage(metadata.coverage);
+          return (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${describe.dot}`} />
+              <span className="font-medium text-slate-600">{describe.text}</span>
+              {describe.action && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-slate-500">{describe.action}</span>
+                </>
+              )}
+            </div>
+          );
+        })()}
+
         {!isStreaming && content && (
-          <div className="mt-3 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
             <Button
               type="button"
               variant="ghost"
@@ -818,138 +862,6 @@ function ChatMessageInner({
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               <span>{copied ? "Copied" : "Copy"}</span>
             </Button>
-
-            {onSaveMemory && memoryScopes.length > 0 && (
-              <Dialog open={memoryOpen} onOpenChange={setMemoryOpen}>
-                <DialogTrigger
-                  render={
-                    <Button variant="ghost" size="xs" className="text-slate-400 hover:text-slate-700" />
-                  }
-                >
-                  <BrainCircuit className="h-3 w-3" />
-                  Remember
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Save memory</DialogTitle>
-                    <DialogDescription>
-                      Save a durable takeaway from this reply for future work.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="font-['JetBrains_Mono'] text-[11px] uppercase tracking-wider text-slate-400">
-                        Memory kind
-                      </label>
-                      <select
-                        value={memoryKind}
-                        onChange={(event) => setMemoryKind(event.target.value as MemoryKind)}
-                        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-400"
-                      >
-                        <option value="fact">Fact</option>
-                        <option value="decision">Decision</option>
-                        <option value="instruction">Instruction</option>
-                        <option value="preference">Preference</option>
-                        <option value="risk">Risk</option>
-                        <option value="question">Question</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-['JetBrains_Mono'] text-[11px] uppercase tracking-wider text-slate-400">
-                        Saved note
-                      </label>
-                      <Textarea
-                        value={memoryText}
-                        onChange={(event) => setMemoryText(event.target.value)}
-                        placeholder="Write the exact point you want the workspace to remember."
-                        rows={5}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    {memoryScopes.map((scope) => (
-                      <Button
-                        key={scope.id}
-                        type="button"
-                        variant={scope.id === "project" ? "default" : "outline"}
-                        disabled={savingMemoryScope !== null || memoryText.trim().length < 8}
-                        onClick={() => void handleSaveMemory(scope.id)}
-                      >
-                        {savingMemoryScope === scope.id ? "Saving..." : scope.label}
-                      </Button>
-                    ))}
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            )}
-
-            {onSaveArtifact && (
-              <Dialog open={artifactOpen} onOpenChange={setArtifactOpen}>
-                <DialogTrigger
-                  render={
-                    <Button variant="ghost" size="xs" className="text-slate-400 hover:text-slate-700" />
-                  }
-                >
-                  <Save className="h-3 w-3" />
-                  Save output
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle>Save output</DialogTitle>
-                    <DialogDescription>
-                      Turn this reply into a reusable deliverable for the project.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="font-['JetBrains_Mono'] text-[11px] uppercase tracking-wider text-slate-400">
-                        Title
-                      </label>
-                      <Input
-                        value={artifactTitle}
-                        onChange={(event) => setArtifactTitle(event.target.value)}
-                        placeholder="Chairman brief"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="font-['JetBrains_Mono'] text-[11px] uppercase tracking-wider text-slate-400">
-                        Output type
-                      </label>
-                      <select
-                        value={artifactKind}
-                        onChange={(event) => setArtifactKind(event.target.value as ArtifactKind)}
-                        className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-400"
-                      >
-                        <option value="brief">Brief</option>
-                        <option value="memo">Memo</option>
-                        <option value="email">Email</option>
-                        <option value="talking_points">Talking points</option>
-                        <option value="meeting_prep">Meeting prep</option>
-                        <option value="deck">Deck</option>
-                        <option value="note">Note</option>
-                      </select>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                      <p className="font-['JetBrains_Mono'] text-[11px] uppercase tracking-wider text-slate-400">
-                        Preview
-                      </p>
-                      <p className="mt-2 line-clamp-6 text-[13px] leading-6 text-slate-600" dir="auto">
-                        {content}
-                      </p>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      type="button"
-                      onClick={() => void handleSaveArtifact()}
-                      disabled={savingArtifact || artifactTitle.trim().length < 3}
-                    >
-                      {savingArtifact ? "Saving..." : "Save to outputs"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            )}
 
             {onRegenerate && (
               <Button
@@ -965,10 +877,51 @@ function ChatMessageInner({
               </Button>
             )}
 
-            {actionNotice && (
-              <span className="ml-1 text-[11px] text-slate-500" dir="auto">
-                {actionNotice}
-              </span>
+            {/*
+              Per-message feedback — two buttons, no stars, no forms.
+              This is the one product metric that matters: did the VC
+              actually find this answer worth acting on. Kept deliberately
+              lightweight (no modal, no "why was this wrong?" prompt)
+              because friction on feedback kills the signal.
+            */}
+            {messageId && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => void submitFeedback("helpful")}
+                  className={
+                    feedback === "helpful"
+                      ? "text-emerald-600 hover:text-emerald-700"
+                      : "text-slate-400 hover:text-slate-700"
+                  }
+                  title="This helped"
+                >
+                  <ThumbsUp className="h-3 w-3" />
+                  <span>Helpful</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => void submitFeedback("wrong")}
+                  className={
+                    feedback === "wrong"
+                      ? "text-red-600 hover:text-red-700"
+                      : "text-slate-400 hover:text-slate-700"
+                  }
+                  title="This was wrong"
+                >
+                  <ThumbsDown className="h-3 w-3" />
+                  <span>Wrong</span>
+                </Button>
+                {feedbackError && (
+                  <span className="text-[11px] text-red-500" title={feedbackError}>
+                    ({feedbackError})
+                  </span>
+                )}
+              </>
             )}
           </div>
         )}
@@ -984,12 +937,10 @@ function ChatMessageInner({
 export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
   if (prev.role !== next.role) return false;
   if (prev.content !== next.content) return false;
+  if (prev.messageId !== next.messageId) return false;
   if (prev.isStreaming !== next.isStreaming) return false;
   if (prev.metadata !== next.metadata) return false;
-  if (prev.memoryScopes !== next.memoryScopes) return false;
   if (prev.onSourceClick !== next.onSourceClick) return false;
   if (prev.onRegenerate !== next.onRegenerate) return false;
-  if (prev.onSaveMemory !== next.onSaveMemory) return false;
-  if (prev.onSaveArtifact !== next.onSaveArtifact) return false;
   return true;
 });

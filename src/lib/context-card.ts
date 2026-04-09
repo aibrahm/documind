@@ -20,7 +20,9 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 const log = createLogger("context-card");
 
-const CONTEXTUALIZER_MODEL = "gpt-4o-mini";
+import { UTILITY_MODEL } from "./models";
+import { sanitizeDateString } from "./date-sanitize";
+const CONTEXTUALIZER_MODEL = UTILITY_MODEL;
 const MAX_SAMPLE_CHARS = 8000;
 
 export interface DocumentContextCard {
@@ -103,28 +105,22 @@ function buildUserPrompt(input: GenerateInput): string {
   const sample = input.fullText.slice(0, MAX_SAMPLE_CHARS);
   const truncated = input.fullText.length > MAX_SAMPLE_CHARS;
 
-  const projectsBlock = input.knownProjects.length
-    ? input.knownProjects
-        .map((p) => {
-          const desc = p.context_summary || p.description || "";
-          return `- ${p.id}: "${p.name}"${desc ? ` — ${desc}` : ""}`;
-        })
-        .join("\n")
-    : "(no projects yet)";
-
   const entitiesBlock = input.entities.length
     ? input.entities.slice(0, 20).join(", ")
     : "(none extracted)";
 
+  // We no longer ask the model for fits_with_projects / fit_rationale
+  // at extraction time. That field was being baked into the DB as a
+  // frozen snapshot — it didn't reflect the CURRENT project list, it
+  // reflected whatever the project list looked like the day the doc
+  // was uploaded. Any "which project does this belong to?" suggestion
+  // is now computed live, not archived.
   return [
     `Document title: ${input.title}`,
     `Document type: ${input.documentType}`,
     `Classification: ${input.classification}`,
     `Language: ${input.language}`,
     `Entities already extracted: ${entitiesBlock}`,
-    "",
-    "Known projects (for fits_with_projects suggestion):",
-    projectsBlock,
     "",
     `Document text${truncated ? " (truncated to first 8000 chars)" : ""}:`,
     sample,
@@ -137,9 +133,7 @@ function buildUserPrompt(input: GenerateInput): string {
     '  "key_parties": string[],',
     '  "key_obligations": string[],',
     '  "key_dates": string[],',
-    '  "document_role": string,',
-    '  "fits_with_projects": string[],',
-    '  "fit_rationale": string',
+    '  "document_role": string',
     "}",
   ].join("\n");
 }
@@ -193,17 +187,25 @@ export async function generateContextCard(
       topics: toStringArray(parsed.topics),
       key_parties: toStringArray(parsed.key_parties),
       key_obligations: toStringArray(parsed.key_obligations),
-      key_dates: toStringArray(parsed.key_dates),
+      // Filter OCR garbage dates (year 7025, Hijri years without Hijri
+      // context, etc.) before writing to the DB so retrieval and UI
+      // never see them. See src/lib/date-sanitize.ts for the rules.
+      key_dates: toStringArray(parsed.key_dates)
+        .map(sanitizeDateString)
+        .filter((d): d is string => d !== null),
       document_role: toStringSafe(parsed.document_role),
-      fits_with_projects: toStringArray(parsed.fits_with_projects).filter((id) =>
-        input.knownProjects.some((p) => p.id === id),
-      ),
-      fit_rationale: toStringSafe(parsed.fit_rationale),
+      // Project fit is now computed live, not frozen at extraction time.
+      // Kept as empty arrays so the DocumentContextCard type still
+      // matches existing rows that have stale values; consumers should
+      // ignore these fields and ask the live suggestion computer
+      // instead.
+      fits_with_projects: [],
+      fit_rationale: "",
       generated_at: new Date().toISOString(),
       model: CONTEXTUALIZER_MODEL,
     };
 
-    const cost = calculateCost(res.usage, "gpt-4o-mini");
+    const cost = calculateCost(res.usage, UTILITY_MODEL);
     log.info("context card generated", {
       title: input.title,
       topics: card.topics.length,

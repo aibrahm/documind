@@ -10,12 +10,42 @@ import {
 
 // ── Types ──
 
+/**
+ * Honest-uncertainty signal the backend emits at the end of every chat turn.
+ *
+ * `docCount` = number of distinct documents from our own corpus that made
+ * it into the evidence pack (pinned, resolved, project, and free-search).
+ * `webUsed` = true if Tavily returned anything that the model could have
+ * used. `confidence` is a simple tier the UI renders as an honest line
+ * under each answer. See chat-turn.ts for the exact formula.
+ */
+export interface CoverageMeta {
+  docCount: number;
+  webUsed: boolean;
+  confidence: "high" | "medium" | "low";
+}
+
+/**
+ * Per-turn warnings that the backend wants to surface to the user without
+ * failing the whole turn. For example: memory extraction quietly broke,
+ * audit logging hit a 500. Rendering these as a banner next to the
+ * assistant message is the "Fail Loud, Never Fake" path — the user sees
+ * the degradation instead of finding out weeks later that nothing was
+ * indexed.
+ */
+export interface TurnWarning {
+  kind: string;
+  message: string;
+}
+
 export interface MessageMeta {
   mode?: string;
   doctrines?: string[];
   sources?: Source[];
   attachments?: AttachmentMeta[];
   pinned?: PinnedItem[];
+  coverage?: CoverageMeta;
+  warnings?: TurnWarning[];
 }
 
 export interface ChatMsg {
@@ -71,19 +101,14 @@ const MODEL_STORAGE_KEY = "documind:chat-model";
 
 // ── Helper ──
 
-function routingLabel(mode: string, doctrines?: string[]): string {
+// Neutral routing labels: the backend still picks mode + doctrines for
+// retrieval, but the user never sees those internals. An executive user does
+// not care whether we're running "Governance Doctrine v2" — they care that
+// something is happening. Keep the copy generic and honest.
+function routingLabel(mode: string): string {
   if (mode === "search") return "Searching your documents…";
+  if (mode === "deep") return "Analyzing…";
   if (mode === "casual") return "Thinking…";
-  if (mode === "deep") {
-    if (doctrines && doctrines.length > 0) {
-      // Sentence-case the doctrine names for a human-readable label.
-      const pretty = doctrines
-        .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
-        .join(" · ");
-      return `Deep analysis (${pretty})…`;
-    }
-    return "Deep analysis…";
-  }
   return "Working…";
 }
 
@@ -146,6 +171,8 @@ export function useChat(
       let pendingSources: Source[] = [];
       let pendingMode = "";
       let pendingDoctrines: string[] = [];
+      let pendingCoverage: CoverageMeta | null = null;
+      const pendingWarnings: TurnWarning[] = [];
       let accumulated = "";
       let createdId: string | null = null;
 
@@ -181,7 +208,7 @@ export function useChat(
                 pendingDoctrines = (event.doctrines as string[]) || [];
                 inflightMetaRef.current.mode = pendingMode;
                 inflightMetaRef.current.doctrines = pendingDoctrines;
-                setRoutingStatus(routingLabel(pendingMode, pendingDoctrines));
+                setRoutingStatus(routingLabel(pendingMode));
                 break;
               }
               case "sources": {
@@ -229,10 +256,43 @@ export function useChat(
                 }
                 break;
               }
+              case "warning": {
+                // Non-fatal degradation reported by the backend
+                // (memory extraction failed, audit logging 500'd, etc.).
+                // Attach to the assistant message so the UI can render a
+                // banner — never silently drop.
+                const kind = typeof event.kind === "string" ? event.kind : "unknown";
+                const message =
+                  typeof event.message === "string"
+                    ? event.message
+                    : "Something degraded during this turn.";
+                pendingWarnings.push({ kind, message });
+                break;
+              }
+              case "coverage": {
+                // Backend's honest-uncertainty signal, emitted once right
+                // before "done". We defer attaching it to the assistant
+                // message until the done handler below so the message's
+                // metadata is written atomically.
+                pendingCoverage = {
+                  docCount: Number(event.docCount) || 0,
+                  webUsed: Boolean(event.webUsed),
+                  confidence: (event.confidence as CoverageMeta["confidence"]) || "low",
+                };
+                break;
+              }
               case "done": {
+                // Backend emits messageId in the final event so we can
+                // attach it to the in-memory ChatMsg immediately. Without
+                // an id, the per-message feedback buttons can't fire until
+                // the conversation is reloaded — which is the opposite of
+                // what we want for live feedback on just-streamed answers.
+                const assistantMessageId =
+                  typeof event.messageId === "string" ? event.messageId : undefined;
                 setMessages((prev) => [
                   ...prev,
                   {
+                    id: assistantMessageId,
                     role: "assistant",
                     content: accumulated,
                     metadata: {
@@ -240,6 +300,8 @@ export function useChat(
                       doctrines:
                         pendingDoctrines.length > 0 ? pendingDoctrines : undefined,
                       sources: pendingSources.length > 0 ? pendingSources : undefined,
+                      coverage: pendingCoverage ?? undefined,
+                      warnings: pendingWarnings.length > 0 ? [...pendingWarnings] : undefined,
                     },
                   },
                 ]);

@@ -5,6 +5,7 @@ import type { Database } from "@/lib/database.types";
 import { useChat } from "@/lib/hooks/use-chat";
 import type { ProjectParticipant } from "@/components/project-workspace-header";
 import { ProjectDashboard } from "@/components/project-dashboard";
+import type { UiLanguage } from "@/lib/ui-strings";
 
 type Project = Database["public"]["Tables"]["projects"]["Row"];
 
@@ -17,6 +18,7 @@ interface WorkspaceClientProps {
     threads: number;
   };
   participants: ProjectParticipant[];
+  language: UiLanguage;
 }
 
 /**
@@ -38,6 +40,7 @@ export function WorkspaceClient({
   project,
   counts,
   participants,
+  language,
 }: WorkspaceClientProps) {
   // Chat state is lifted to the workspace level so it survives any
   // in-page navigation the dashboard might do (e.g. loading a thread
@@ -53,6 +56,7 @@ export function WorkspaceClient({
             counts={counts}
             participants={participants}
             chat={chat}
+            language={language}
           />
         </Suspense>
       </div>

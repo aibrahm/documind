@@ -4,6 +4,9 @@ import { extractDocumentV2 } from "@/lib/extraction-v2";
 import type { ExtractionArtifact, ExtractionPreferences } from "@/lib/extraction-schema";
 import { chunkDocument } from "@/lib/chunking";
 import { generateEmbeddings } from "@/lib/embeddings";
+import { withRetry } from "@/lib/retry";
+import { generateCanonicalTitle } from "@/lib/title-convention";
+import { invalidateBriefingCache } from "@/lib/daily-briefing";
 import { encrypt } from "@/lib/encryption";
 import { writeExtractionArtifact } from "@/lib/extraction-artifacts";
 import { detectReferences, storeAndResolveReferences } from "@/lib/references";
@@ -110,13 +113,41 @@ export async function processDocumentContent({
   const chunkTexts = chunks.map((c) => c.content);
   const embeddings = await generateEmbeddings(chunkTexts, "search_document");
 
-  const classification =
-    classificationOverride ??
-    (extraction.classification.documentType === "policy" ? "DOCTRINE" : "PRIVATE");
+  // Default to PRIVATE for any new upload unless the caller overrode it.
+  // The old code had a "policy → DOCTRINE" branch that is removed: policy
+  // documents now get PRIVATE by default and are bumped to PUBLIC by the
+  // librarian heuristics in src/lib/intake.ts when appropriate.
+  const classification = classificationOverride ?? "PRIVATE";
   const fullText = extraction.pages.flatMap((p) => p.sections.map((s) => s.content)).join("\n\n");
   const encryptedContent = classification === "PRIVATE" ? encrypt(fullText) : null;
 
-  const finalTitle = titleOverride?.trim() || extraction.classification.title;
+  // Title precedence:
+  //   1. Explicit override from the caller (user typed one / librarian passed
+  //      one from the intake flow) — trust it verbatim.
+  //   2. Canonical LLM-generated title following the archive convention
+  //      "{Type}: {subject}". Reads the first ~3000 chars and produces
+  //      a clean bilingual title. See src/lib/title-convention.ts.
+  //   3. Whatever the OCR pipeline put in classification.title as a last
+  //      resort (almost always a letterhead, so this is a fallback only).
+  let finalTitle = titleOverride?.trim() || "";
+  if (!finalTitle) {
+    try {
+      finalTitle = await generateCanonicalTitle({
+        fullText:
+          extraction.pages
+            .flatMap((p) => p.sections.map((s) => s.content))
+            .join("\n\n")
+            .slice(0, 6000) ||
+          extraction.classification.title,
+        documentType: extraction.classification.documentType,
+        language: extraction.classification.language,
+        fileName,
+      });
+    } catch (err) {
+      console.error("title-convention generation failed:", err);
+      finalTitle = extraction.classification.title || fileName;
+    }
+  }
   const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
   const w = extraction.warnings;
   const validationErrorCount = extraction.validation.issues.filter(
@@ -157,9 +188,25 @@ export async function processDocumentContent({
     metadata: chunk.metadata,
   }));
 
+  // Wrap each batch in exponential backoff so a transient Supabase error
+  // doesn't silently lose part of the corpus. On final failure we throw
+  // — the outer handler in /api/upload/route.ts catches the throw and
+  // marks the document status as "error" so the user sees a loud failure
+  // instead of a document that looks ready but returns partial search
+  // hits forever. See CONCERNS.md B1.
   for (let i = 0; i < chunkRecords.length; i += 50) {
     const batch = chunkRecords.slice(i, i + 50);
-    await supabaseAdmin.from("chunks").insert(batch);
+    await withRetry(
+      async () => {
+        const { error } = await supabaseAdmin.from("chunks").insert(batch);
+        if (error) throw new Error(error.message);
+      },
+      {
+        maxAttempts: 4,
+        initialDelayMs: 250,
+        label: `chunk batch insert[${i}..${i + batch.length}]`,
+      },
+    );
   }
 
   const entities = extraction.metadata.entities || [];
@@ -329,6 +376,13 @@ export async function processDocumentContent({
       })
       .eq("id", docId);
   }
+
+  // Bust the landing-page briefing cache so the next app load doesn't
+  // serve a briefing that was generated before this document existed.
+  // Fire-and-forget — a failure to bust the cache just means the VC
+  // sees the old briefing for up to the normal 1-hour TTL, which is
+  // the pre-invalidation behavior and strictly better than nothing.
+  void invalidateBriefingCache().catch(() => {});
 
   return {
     title: finalTitle,

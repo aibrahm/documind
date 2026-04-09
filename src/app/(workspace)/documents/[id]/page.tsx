@@ -11,6 +11,8 @@ import type {
 import { DocumentContextCard } from "@/components/document-context-card";
 import { Tag } from "@/components/ui-system";
 import { EntityEditor } from "@/components/entity-editor";
+import { sanitizeDateString } from "@/lib/date-sanitize";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 interface DocDetail {
   id: string;
@@ -244,8 +246,21 @@ const TYPE_VARIANT: Record<string, "blue" | "green" | "amber" | "default"> = {
 
 const CLASS_VARIANT: Record<string, "red" | "green" | "blue" | "default"> = {
   PRIVATE: "red",
-  DOCTRINE: "green",
   PUBLIC: "blue",
+  // Legacy DOCTRINE rows render as PUBLIC style so migrated-but-not-yet-
+  // renamed rows don't look weird. The display label in CLASS_DISPLAY
+  // below also remaps them.
+  DOCTRINE: "blue",
+};
+
+// Display labels shown on the chip. We switched from PRIVATE/PUBLIC to
+// Confidential/Open in the UI without renaming the stored column — the
+// VC's mental model is "is this private or can I quote it," and
+// "Confidential/Open" reads more naturally than "PRIVATE/PUBLIC".
+const CLASS_DISPLAY: Record<string, string> = {
+  PRIVATE: "CONFIDENTIAL",
+  PUBLIC: "OPEN",
+  DOCTRINE: "OPEN",
 };
 
 export default function DocPage({
@@ -278,6 +293,11 @@ export default function DocPage({
   }, [chunksLoading]);
   const [extractionView, setExtractionView] = useState<ExtractionView>("formatted");
   const [copied, setCopied] = useState(false);
+  // Entities collapsed by default on the details panel. The old page
+  // rendered the full EntityEditor inline which was a wall of 15-20 items
+  // with duplicated OCR spellings — overwhelming on open. Collapsed means
+  // the user sees a small "N entities" chip and can expand if they care.
+  const [entitiesExpanded, setEntitiesExpanded] = useState(false);
 
   const fetchDoc = useCallback(() => {
     return fetch(`/api/documents/${id}`)
@@ -427,11 +447,13 @@ export default function DocPage({
   }
 
   const meta = (doc.metadata || {}) as Record<string, unknown>;
-  const extractionWarnings = meta.extractionWarnings as Record<string, unknown> | undefined;
+  // Nonsense dates filtered out so the details panel doesn't leak OCR
+  // garbage like "لسنة 7025" into the UI.
   const dates = Array.isArray(meta.dates)
     ? (meta.dates as Array<string | { iso?: string }>)
         .map((d) => (typeof d === "string" ? d : d.iso || ""))
-        .filter(Boolean)
+        .map(sanitizeDateString)
+        .filter((d): d is string => d !== null)
         .join(", ")
     : null;
 
@@ -508,7 +530,7 @@ export default function DocPage({
                     {doc.type.toUpperCase()}
                   </Tag>
                   <Tag variant={CLASS_VARIANT[doc.classification] || "default"}>
-                    {doc.classification}
+                    {CLASS_DISPLAY[doc.classification] || doc.classification}
                   </Tag>
                   <span
                     className={`font-['JetBrains_Mono'] text-[10px] font-semibold ${
@@ -537,28 +559,33 @@ export default function DocPage({
                   className="mb-6"
                 />
 
-                <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                  <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    Processing
-                  </p>
-                  <p className="mt-2 text-[13px] leading-relaxed text-slate-700">
-                    This document was read through Azure Layout and stored as structured extraction. Open the
-                    extraction tab to inspect the normalized text and raw payload.
-                  </p>
-                  <div className="mt-3 space-y-1.5 text-[12px] text-slate-500">
-                    <p>Pages processed: {doc.page_count}</p>
-                    {doc.processing_error ? (
-                      <p className="text-amber-700">Warnings: {doc.processing_error}</p>
-                    ) : (
-                      <p className="text-green-700">No extraction warnings were recorded.</p>
-                    )}
-                    {extractionWarnings && (
-                      <p className="text-slate-500">
-                        Intake warnings are stored in document metadata and can be reviewed without rerunning OCR.
-                      </p>
-                    )}
+                {/*
+                  Primary action: go talk to the assistant about this
+                  document. The old detail page was a forensic dump with
+                  no way to act on it; this one button is the whole point.
+                  Sends the user to chat with the document pre-pinned.
+                */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(`/?pinned_document=${doc.id}`)
+                  }
+                  className="mb-6 w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[13px] rounded-xl py-3 border-none cursor-pointer transition-colors"
+                >
+                  Ask about this document →
+                </button>
+
+                {/* Extraction warnings surface quietly only if present. */}
+                {doc.processing_error && (
+                  <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                    <p className="text-[12px] font-semibold uppercase tracking-wider text-amber-900">
+                      Extraction warning
+                    </p>
+                    <p className="mt-1 text-[12px] leading-snug text-amber-800">
+                      {doc.processing_error}
+                    </p>
                   </div>
-                </div>
+                )}
 
                 {/* Details section */}
                 <div className="mb-6">
@@ -578,12 +605,23 @@ export default function DocPage({
                   ))}
                 </div>
 
-                {/* Entities section — editable */}
+                {/* Entities section — collapsed by default */}
                 <div className="mb-6">
-                  <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    ENTITIES
-                  </p>
-                  <EntityEditor documentId={doc.id} />
+                  <button
+                    type="button"
+                    onClick={() => setEntitiesExpanded((v) => !v)}
+                    className="flex w-full items-center justify-between gap-2 bg-transparent border-none cursor-pointer p-0 mb-2"
+                  >
+                    <span className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      Entities{doc.entities?.length ? ` · ${doc.entities.length}` : ""}
+                    </span>
+                    {entitiesExpanded ? (
+                      <ChevronUp className="h-3 w-3 text-slate-400" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3 text-slate-400" />
+                    )}
+                  </button>
+                  {entitiesExpanded && <EntityEditor documentId={doc.id} />}
                 </div>
 
                 {/* References section */}

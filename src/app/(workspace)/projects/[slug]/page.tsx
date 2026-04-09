@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getWorkspaceLanguage } from "@/lib/workspace-profile";
 import { WorkspaceClient } from "./workspace-client";
 
 export default async function ProjectWorkspacePage({
@@ -22,8 +23,9 @@ export default async function ProjectWorkspacePage({
     notFound();
   }
 
-  // Membership counts + linked participants fetched in parallel
-  const [docsCount, entityLinks, convosCount] = await Promise.all([
+  // Membership counts + linked participants + UI chrome language
+  // fetched in parallel.
+  const [docsCount, entityLinks, convosCount, language] = await Promise.all([
     supabaseAdmin
       .from("project_documents")
       .select("project_id", { count: "exact", head: true })
@@ -41,6 +43,7 @@ export default async function ProjectWorkspacePage({
       .from("conversations")
       .select("id", { count: "exact", head: true })
       .eq("project_id", project.id),
+    getWorkspaceLanguage(),
   ]);
 
   const participants = (entityLinks.data || [])
@@ -67,6 +70,7 @@ export default async function ProjectWorkspacePage({
       initialTab={tab}
       counts={counts}
       participants={participants}
+      language={language}
     />
   );
 }

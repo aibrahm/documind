@@ -5,6 +5,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { getOpenAI } from "@/lib/clients";
+import { UTILITY_MODEL } from "@/lib/models";
 import { resolveProjectId } from "@/lib/projects";
 
 const MAX_CONTEXT_CHARS = 30000;
@@ -163,7 +164,7 @@ export async function runExtractKeyTerms(rawInput: unknown): Promise<string> {
   let extracted: Record<string, unknown>;
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: UTILITY_MODEL,
       response_format: { type: "json_object" },
       temperature: 0.1,
       messages: [

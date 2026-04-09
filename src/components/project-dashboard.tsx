@@ -13,7 +13,6 @@ import {
   MessageSquare,
   Plus,
   RotateCw,
-  StickyNote,
   Upload as UploadIcon,
   X,
 } from "lucide-react";
@@ -29,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Source } from "@/lib/types";
 import type { LanguageCode } from "@/lib/extraction-schema";
+import { strings, formatUpdatedRelative, type UiLanguage } from "@/lib/ui-strings";
 
 type Project = Database["public"]["Tables"]["projects"]["Row"];
 
@@ -48,6 +48,7 @@ interface ProjectDashboardProps {
   };
   participants: ProjectParticipant[];
   chat: UseChatResult;
+  language: UiLanguage;
 }
 
 interface ProjectDocument {
@@ -84,17 +85,8 @@ interface ProjectConversation {
   created_at: string;
 }
 
-interface ProjectArtifact {
-  id: string;
-  title: string;
-  kind: string;
-  content: string;
-  created_at: string;
-  conversation_id: string | null;
-}
-
 type Action = "new" | "version" | "duplicate" | "related";
-type Classification = "PRIVATE" | "PUBLIC" | "DOCTRINE";
+type Classification = "PRIVATE" | "PUBLIC";
 
 interface SuggestedProject {
   id: string;
@@ -139,18 +131,12 @@ interface UploadProposal {
   suggestedProjects?: SuggestedProject[];
 }
 
-const ASSISTANT_MEMORY_SCOPES = [
-  { id: "project" as const, label: "Save to project memory" },
-  { id: "shared" as const, label: "Save to shared memory" },
-];
-
-const EMPTY_MEMORY_SCOPES: typeof ASSISTANT_MEMORY_SCOPES = [];
-
 export function ProjectDashboard({
   project,
   counts,
   participants,
   chat,
+  language,
 }: ProjectDashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -159,6 +145,7 @@ export function ProjectDashboard({
   const scrollRafRef = useRef<number | null>(null);
   const skipNextLoadRef = useRef(false);
   const { openDocument } = usePdfViewer();
+  const t = strings(language);
 
   const {
     conversationId,
@@ -179,7 +166,6 @@ export function ProjectDashboard({
 
   const [projectDocuments, setProjectDocuments] = useState<ProjectDocument[]>([]);
   const [recentConversations, setRecentConversations] = useState<ProjectConversation[]>([]);
-  const [artifacts, setArtifacts] = useState<ProjectArtifact[]>([]);
   const [homeTab, setHomeTab] = useState<"chats" | "sources">("chats");
   const [dataLoading, setDataLoading] = useState(true);
   const [addSourceOpen, setAddSourceOpen] = useState(false);
@@ -187,18 +173,14 @@ export function ProjectDashboard({
   const loadDashboardData = useCallback(async () => {
     setDataLoading(true);
     try {
-      const [docsRes, convosRes, artifactsRes] = await Promise.all([
+      const [docsRes, convosRes] = await Promise.all([
         fetch(`/api/projects/${project.id}/documents`).then((r) => r.json()),
         fetch(`/api/projects/${project.id}/conversations?limit=12`).then((r) =>
           r.json(),
         ),
-        fetch(`/api/projects/${project.id}/artifacts?limit=6`)
-          .then((r) => r.json())
-          .catch(() => ({ artifacts: [] })),
       ]);
       setProjectDocuments(docsRes.documents || []);
       setRecentConversations(convosRes.conversations || []);
-      setArtifacts(artifactsRes.artifacts || []);
     } catch (err) {
       console.error("project shell load failed:", err);
     } finally {
@@ -263,58 +245,6 @@ export function ProjectDashboard({
     [openDocument],
   );
 
-  const handleSaveMemory = useCallback(
-    async (payload: {
-      text: string;
-      kind: "decision" | "fact" | "instruction" | "preference" | "risk" | "question";
-      scopeType: "project" | "shared";
-    }) => {
-      const response = await fetch("/api/memory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: payload.text,
-          kind: payload.kind,
-          scopeType: payload.scopeType,
-          scopeId: payload.scopeType === "project" ? project.id : null,
-          sourceConversationId: conversationId,
-          importance: payload.scopeType === "project" ? 0.8 : 0.7,
-        }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save memory");
-      }
-    },
-    [project.id, conversationId],
-  );
-
-  const handleSaveArtifact = useCallback(
-    async (payload: {
-      title: string;
-      kind: "email" | "memo" | "brief" | "deck" | "note" | "talking_points" | "meeting_prep";
-      content: string;
-    }) => {
-      const response = await fetch("/api/artifacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: project.id,
-          conversationId,
-          title: payload.title,
-          kind: payload.kind,
-          content: payload.content,
-        }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save output");
-      }
-      await loadDashboardData();
-    },
-    [project.id, conversationId, loadDashboardData],
-  );
-
   const handleProjectHome = useCallback(() => {
     skipNextLoadRef.current = true;
     newChat();
@@ -353,9 +283,17 @@ export function ProjectDashboard({
   );
 
   const projectContext = project.context_summary || project.description || null;
+  // Narrow "where we are" — only the live running summary, not the
+  // static description. This is what gets rendered as the prominent
+  // status card at the top of the project workspace. If it's empty
+  // the card is hidden entirely (no placeholder copy).
+  const whereWeAre = project.context_summary?.trim() || null;
+  const lastUpdatedRelative = formatUpdatedRelative(
+    project.updated_at,
+    language,
+  );
   const activeConversation =
     Boolean(requestedConvoId || conversationId || messages.length > 0 || streaming);
-  const recentOutputs = useMemo(() => artifacts.slice(0, 3), [artifacts]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
@@ -386,25 +324,23 @@ export function ProjectDashboard({
               </button>
             </div>
 
+            {whereWeAre && !conversationId && messages.length === 0 && (
+              <WhereWeAreCard
+                summary={whereWeAre}
+                lastUpdatedRelative={lastUpdatedRelative}
+                label={t.whereWeAre}
+              />
+            )}
+
             <div className="space-y-8">
               {messages.map((msg, i) => (
                 <ChatMessage
                   key={msg.id || `msg-${i}`}
                   role={msg.role}
+                  messageId={msg.id}
                   content={msg.content}
                   metadata={msg.metadata}
                   onSourceClick={handleSourceClick}
-                  memoryScopes={
-                    msg.role === "assistant"
-                      ? ASSISTANT_MEMORY_SCOPES
-                      : EMPTY_MEMORY_SCOPES
-                  }
-                  onSaveMemory={
-                    msg.role === "assistant" ? handleSaveMemory : undefined
-                  }
-                  onSaveArtifact={
-                    msg.role === "assistant" ? handleSaveArtifact : undefined
-                  }
                 />
               ))}
               {streaming && !streamingContent && routingStatus && (
@@ -489,13 +425,35 @@ export function ProjectDashboard({
                     {project.name}
                   </span>
                 </div>
-                <p className="mx-auto max-w-xl text-[13px] leading-relaxed text-slate-500" dir="auto">
-                  {projectContext || "Add a short context for this project so chats and sources stay grounded."}
-                </p>
+                {!whereWeAre && projectContext && (
+                  <p
+                    className="mx-auto max-w-xl text-[13px] leading-relaxed text-slate-500"
+                    dir="auto"
+                  >
+                    {projectContext}
+                  </p>
+                )}
+                {!whereWeAre && !projectContext && (
+                  <p
+                    className="mx-auto max-w-xl text-[13px] leading-relaxed text-slate-400"
+                    dir="auto"
+                  >
+                    {t.newProjectPlaceholder}
+                  </p>
+                )}
                 <p className="mt-2 text-[11px] text-slate-400">
                   {counts.threads} chats · {counts.documents} sources · {participants.length} linked participants
                 </p>
               </div>
+
+              {whereWeAre && (
+                <WhereWeAreCard
+                  summary={whereWeAre}
+                  lastUpdatedRelative={lastUpdatedRelative}
+                  label={t.whereWeAre}
+                  centered
+                />
+              )}
 
               <div className="rounded-[28px] border border-slate-200 bg-white p-2 shadow-sm">
                 <ChatInput
@@ -554,33 +512,6 @@ export function ProjectDashboard({
                     </div>
                   )}
 
-                  {recentOutputs.length > 0 && (
-                    <div className="mt-6">
-                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Recent outputs
-                      </p>
-                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                        {recentOutputs.map((artifact, index) => (
-                          <div
-                            key={artifact.id}
-                            className={`flex items-start gap-3 px-4 py-3 ${
-                              index < recentOutputs.length - 1 ? "border-b border-slate-100" : ""
-                            }`}
-                          >
-                            <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[14px] font-medium text-slate-800" dir="auto">
-                                {artifact.title}
-                              </p>
-                              <p className="mt-0.5 text-[12px] text-slate-400">
-                                {artifact.kind} · {formatRelative(artifact.created_at)}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </TabsContent>
 
                 <TabsContent value="sources">
@@ -1214,4 +1145,58 @@ function formatRelative(iso: string): string {
   if (diffSeconds < 86400 * 7) return `${Math.floor(diffSeconds / 86400)}d ago`;
   const date = new Date(iso);
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/**
+ * "Where we are" card — the project-level briefing surface.
+ *
+ * Renders the running project narrative (projects.context_summary)
+ * as a small card at the top of the project workspace so the VC
+ * can walk back into a project without re-reading everything.
+ *
+ * The summary itself is written by src/lib/project-summary.ts after
+ * each chat turn inside the project — this component just displays
+ * it. If the summary is empty, the caller is expected to hide the
+ * card entirely (no placeholder copy here).
+ */
+function WhereWeAreCard({
+  summary,
+  lastUpdatedRelative,
+  label,
+  centered = false,
+}: {
+  summary: string;
+  /** Pre-formatted "updated 3d ago" / "آخر تحديث منذ 3 يوم" string. */
+  lastUpdatedRelative: string | null;
+  /** Localized "Where we are" label. */
+  label: string;
+  centered?: boolean;
+}) {
+  return (
+    <div
+      className={`${centered ? "mx-auto mb-6 max-w-2xl" : "mb-5"} rounded-[20px] border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4`}
+      dir="auto"
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <MessageSquare className="h-3.5 w-3.5 text-slate-500" />
+        <p
+          className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-500"
+          dir="auto"
+        >
+          {label}
+        </p>
+        {lastUpdatedRelative && (
+          <span className="ml-auto text-[10px] text-slate-400" dir="auto">
+            {lastUpdatedRelative}
+          </span>
+        )}
+      </div>
+      <p
+        className="text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap"
+        dir="auto"
+      >
+        {summary}
+      </p>
+    </div>
+  );
 }

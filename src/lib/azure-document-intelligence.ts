@@ -1,8 +1,24 @@
 import type { AzureDocumentIntelligenceResponse } from "@/lib/extraction-v2-schema";
 
 const DEFAULT_API_VERSION = "2024-11-30";
-const POLL_INTERVAL_MS = 1500;
-const MAX_POLL_ATTEMPTS = 120;
+
+// Polling tunables. Defaults target a ~3-minute total timeout which is
+// enough for most scanned Arabic PDFs but not so long that a Vercel
+// function will hit its own `maxDuration`. Both can be overridden via
+// env vars so we can extend the window for a known-slow upload without
+// a code change (e.g., a 500-page decree scan):
+//
+//   AZURE_DOCINTEL_POLL_INTERVAL_MS=2000
+//   AZURE_DOCINTEL_MAX_POLL_ATTEMPTS=180
+const POLL_INTERVAL_MS = parseInt(
+  process.env.AZURE_DOCINTEL_POLL_INTERVAL_MS ?? "1500",
+  10,
+);
+const MAX_POLL_ATTEMPTS = parseInt(
+  process.env.AZURE_DOCINTEL_MAX_POLL_ATTEMPTS ?? "120",
+  10,
+);
+const TOTAL_TIMEOUT_SECONDS = Math.round((POLL_INTERVAL_MS * MAX_POLL_ATTEMPTS) / 1000);
 
 function normalizeEndpoint(endpoint: string): string {
   return endpoint.replace(/\/+$/, "");
@@ -110,5 +126,9 @@ export async function analyzeDocumentWithAzureLayout(
     await sleep(POLL_INTERVAL_MS);
   }
 
-  throw new Error("Azure analyze operation timed out");
+  throw new Error(
+    `Azure analyze operation timed out after ~${TOTAL_TIMEOUT_SECONDS}s ` +
+      `(${MAX_POLL_ATTEMPTS} polls × ${POLL_INTERVAL_MS}ms). ` +
+      `Tune AZURE_DOCINTEL_POLL_INTERVAL_MS / AZURE_DOCINTEL_MAX_POLL_ATTEMPTS if this document needs longer.`,
+  );
 }

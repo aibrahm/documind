@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { logAudit } from "@/lib/audit";
 import { processDocumentContent } from "@/lib/document-processing";
+import { validateUploadBuffer } from "@/lib/upload-validation";
 import {
   DOCUMENT_TYPES,
   LANGUAGE_CODES,
@@ -13,7 +14,8 @@ import {
 
 export const maxDuration = 300; // Allow up to 5 min for OCR + structuring on large PDFs
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB — enforced on buffer regardless of path
+// Hard size cap is enforced centrally inside validateUploadBuffer — see
+// src/lib/upload-validation.ts for the canonical MAX_UPLOAD_BYTES value.
 const BUCKET = "documents";
 
 function isDocumentType(value: unknown): value is DocumentType {
@@ -105,17 +107,20 @@ export async function POST(request: NextRequest) {
       }
 
       fileBuffer = Buffer.from(await blob.arrayBuffer());
-      if (fileBuffer.length > MAX_FILE_SIZE) {
-        return NextResponse.json(
-          { error: "File exceeds 50MB limit" },
-          { status: 400 },
-        );
-      }
 
-      fileName =
+      const checkName =
         typeof bodyFileName === "string" && bodyFileName.length > 0
           ? bodyFileName
           : storagePath.split("/").pop() || "file.pdf";
+      const validation = validateUploadBuffer(fileBuffer, checkName);
+      if (!validation.ok) {
+        return NextResponse.json(
+          { error: validation.error },
+          { status: validation.status ?? 400 },
+        );
+      }
+
+      fileName = checkName;
 
       // The file is already at storagePath — reuse it as the canonical file_url
       filePath = storagePath;
@@ -163,21 +168,17 @@ export async function POST(request: NextRequest) {
       if (!file) {
         return NextResponse.json({ error: "No file provided" }, { status: 400 });
       }
-      if (!file.name.toLowerCase().endsWith(".pdf")) {
-        return NextResponse.json(
-          { error: "Only PDF files are supported" },
-          { status: 400 },
-        );
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        return NextResponse.json(
-          { error: "File exceeds 50MB limit" },
-          { status: 400 },
-        );
-      }
 
       fileBuffer = Buffer.from(await file.arrayBuffer());
       fileName = file.name;
+
+      const validation = validateUploadBuffer(fileBuffer, file.name);
+      if (!validation.ok) {
+        return NextResponse.json(
+          { error: validation.error },
+          { status: validation.status ?? 400 },
+        );
+      }
 
       // Legacy path: upload to storage now
       filePath = `${Date.now()}_${randomUUID()}.pdf`;

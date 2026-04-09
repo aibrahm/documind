@@ -46,14 +46,13 @@ export interface Document {
   id: string;
   title: string;
   type: string;
-  classification: "PRIVATE" | "DOCTRINE" | "PUBLIC";
-  access_level: "private" | "public" | null;
-  knowledge_scope:
-    | "project"
-    | "shared_reference"
-    | "institutional_doctrine"
-    | "thread_local"
-    | null;
+  // Post-migration 015/016: classification is binary. PRIVATE means
+  // confidential (encrypt at rest, don't cite in outbound drafts),
+  // PUBLIC means safe to quote. Legacy DOCTRINE rows were migrated
+  // to PUBLIC in 015 and the whole concept is gone from the schema.
+  // Role (working vs reference) is derived from project_documents
+  // linkage — not stored as a column.
+  classification: "PRIVATE" | "PUBLIC";
   summary_status: "none" | "queued" | "ready" | "error";
   language: string;
   file_url: string;

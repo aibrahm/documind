@@ -29,14 +29,23 @@ interface Doc {
   created_at: string;
 }
 
-type ClassFilter = "ALL" | "PRIVATE" | "PUBLIC" | "DOCTRINE";
+type ClassFilter = "ALL" | "PRIVATE" | "PUBLIC";
 
-const CLASSIFICATIONS: ClassFilter[] = ["ALL", "PRIVATE", "PUBLIC", "DOCTRINE"];
+const CLASSIFICATIONS: ClassFilter[] = ["ALL", "PRIVATE", "PUBLIC"];
+
+// User-facing label for each classification. We use "Confidential" and
+// "Open" in the UI because those are the words the VC uses when talking
+// about documents ("is this open or confidential?"). The stored value
+// stays PRIVATE/PUBLIC for now — renaming the column isn't in this sprint.
+const CLASS_LABEL: Record<string, string> = {
+  ALL: "All",
+  PRIVATE: "Confidential",
+  PUBLIC: "Open",
+};
 
 const CLASS_STYLES: Record<string, { dot: string; text: string }> = {
   PRIVATE: { dot: "bg-rose-500", text: "text-rose-600" },
   PUBLIC: { dot: "bg-blue-500", text: "text-blue-600" },
-  DOCTRINE: { dot: "bg-emerald-500", text: "text-emerald-600" },
 };
 
 function formatRelativeDate(iso: string): string {
@@ -102,7 +111,13 @@ export default function DocumentsPage() {
 
   const filteredDocs = useMemo(() => {
     let result = docs;
-    if (filter !== "ALL") result = result.filter((d) => d.classification === filter);
+    if (filter !== "ALL") {
+      result = result.filter((d) => {
+        // Treat legacy DOCTRINE rows as PUBLIC for filter purposes.
+        const normalized = d.classification === "DOCTRINE" ? "PUBLIC" : d.classification;
+        return normalized === filter;
+      });
+    }
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       result = result.filter(
@@ -214,7 +229,7 @@ export default function DocumentsPage() {
                       : "bg-transparent text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-700"
                   }`}
                 >
-                  {c}
+                  {CLASS_LABEL[c] ?? c}
                 </button>
               ))}
             </div>
@@ -244,7 +259,11 @@ export default function DocumentsPage() {
           {!loading && filteredDocs.length > 0 && (
             <div className="space-y-1.5">
               {filteredDocs.map((doc) => {
-                const classStyle = CLASS_STYLES[doc.classification] || {
+                // Migrate any legacy DOCTRINE row to PUBLIC for display.
+                const displayClass =
+                  doc.classification === "DOCTRINE" ? "PUBLIC" : doc.classification;
+                const classLabel = CLASS_LABEL[displayClass] ?? displayClass;
+                const classStyle = CLASS_STYLES[displayClass] || {
                   dot: "bg-slate-400",
                   text: "text-slate-500",
                 };
@@ -287,7 +306,7 @@ export default function DocumentsPage() {
                         <span className="flex items-center gap-1.5">
                           <span className={`w-1.5 h-1.5 rounded-full ${classStyle.dot}`} />
                           <span className={`font-['JetBrains_Mono'] tracking-wider ${classStyle.text}`}>
-                            {doc.classification}
+                            {classLabel.toUpperCase()}
                           </span>
                         </span>
                         <span className="text-slate-300">·</span>

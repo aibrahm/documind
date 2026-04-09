@@ -17,10 +17,11 @@
 import { getOpenAI } from "@/lib/clients";
 import { supabaseAdmin } from "@/lib/supabase";
 import { createLogger } from "@/lib/logger";
+import { UTILITY_MODEL } from "@/lib/models";
 
 const log = createLogger("project-summary");
 
-const SUMMARY_MODEL = "gpt-4o-mini";
+const SUMMARY_MODEL = UTILITY_MODEL;
 const MAX_SUMMARY_CHARS = 800;
 
 interface UpdateSummaryInput {

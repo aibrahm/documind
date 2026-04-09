@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { MAX_UPLOAD_BYTES } from "@/lib/upload-validation";
 
 /**
  * Direct-to-storage upload endpoint.
@@ -22,7 +23,13 @@ import { supabaseAdmin } from "@/lib/supabase";
  *   5. browser → POST /api/upload with { storagePath, ...preferences }
  */
 
-const MAX_SIZE = 100 * 1024 * 1024; // 100 MB — generous, can be tightened
+// Align the pre-upload cap with the downstream /api/upload hard limit.
+// Previously this was set to 100MB, but /api/upload only accepts 50MB,
+// which means an attacker (or a client bug) could push a 100MB file
+// into storage that the extraction pipeline would reject anyway — so
+// storage accumulated garbage with no downstream processing path.
+// See src/lib/upload-validation.ts for the canonical cap.
+const MAX_SIZE = MAX_UPLOAD_BYTES;
 const BUCKET = "documents";
 
 export async function POST(request: NextRequest) {

@@ -11,7 +11,10 @@ export type AuditAction =
   | "extraction"
   | "project.create"
   | "project.update"
-  | "project.archive";
+  | "project.archive"
+  | "pinned_validation_dropped"
+  | "memory_warning"
+  | "workspace_profile_degraded";
 
 /**
  * Log an action to the audit trail.

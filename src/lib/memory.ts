@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase";
 import { getOpenAI } from "./clients";
+import { UTILITY_MODEL } from "./models";
 
 export type MemoryKind =
   | "decision"
@@ -48,7 +49,7 @@ export async function extractMemories(
   try {
     const openai = getOpenAI();
     const res = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: UTILITY_MODEL,
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
