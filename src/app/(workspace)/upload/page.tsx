@@ -1,20 +1,21 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Upload as UploadIcon,
-  X,
-  FileText,
-  CheckCircle2,
   AlertCircle,
-  Loader2,
   ArrowRight,
-  Sparkles,
-  GitBranch,
+  CheckCircle2,
   Copy,
+  FileText,
+  FolderOpen,
+  GitBranch,
+  Library,
   Link2,
+  Loader2,
   Plus,
+  Sparkles,
+  Upload as UploadIcon,
 } from "lucide-react";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
 import {
@@ -25,12 +26,11 @@ import {
   type LanguageCode,
 } from "@/lib/extraction-schema";
 
-// ============================================================
-// TYPES — mirror /api/librarian/analyze response
-// ============================================================
-
 type Action = "new" | "version" | "duplicate" | "related";
 type Classification = "PRIVATE" | "PUBLIC" | "DOCTRINE";
+type Stage = "idle" | "analyzing" | "review" | "uploading" | "done" | "error";
+type DocumentTypeChoice = DocumentType | "auto";
+type PlacementMode = "library" | "project";
 
 interface RelatedDoc {
   documentId: string;
@@ -77,36 +77,44 @@ interface Proposal {
   suggestedProjects?: SuggestedProject[];
 }
 
-type Stage = "idle" | "analyzing" | "review" | "uploading" | "done" | "error";
-type DocumentTypeChoice = DocumentType | "auto";
+interface ProjectOption {
+  id: string;
+  slug: string;
+  name: string;
+  color: string | null;
+  context_summary?: string | null;
+}
 
-// ============================================================
-// CONSTANTS
-// ============================================================
-
-const CLASS_COPY: Record<Classification, { label: string; description: string; dot: string }> = {
-  PRIVATE: {
-    label: "Private",
-    description: "Sensitive. Encrypted at rest. Default for memos, drafts, financial proposals.",
-    dot: "bg-rose-500",
+const ACTION_COPY: Record<
+  Action,
+  { label: string; description: string; icon: typeof Plus }
+> = {
+  new: {
+    label: "Add as a new document",
+    description: "Keep this as a distinct source in your library.",
+    icon: Plus,
   },
-  PUBLIC: {
-    label: "Public",
-    description: "Open information. Default for published laws, decrees, official reports.",
-    dot: "bg-blue-500",
+  version: {
+    label: "Add as a new version",
+    description: "Use this when it replaces or supersedes an existing document.",
+    icon: GitBranch,
   },
-  DOCTRINE: {
-    label: "Doctrine",
-    description: "Foundational. Always-on context for every analysis. Use sparingly.",
-    dot: "bg-emerald-500",
+  duplicate: {
+    label: "Skip and use the existing document",
+    description: "Use this when the upload is effectively the same file again.",
+    icon: Copy,
+  },
+  related: {
+    label: "Add and link as related",
+    description: "Keep this as a separate source but note the overlap.",
+    icon: Link2,
   },
 };
 
-const ACTION_COPY: Record<Action, { icon: typeof Plus; label: string; color: string }> = {
-  new: { icon: Plus, label: "Add as new document", color: "text-emerald-600" },
-  version: { icon: GitBranch, label: "Add as new version", color: "text-blue-600" },
-  duplicate: { icon: Copy, label: "Skip — duplicate", color: "text-amber-600" },
-  related: { icon: Link2, label: "Add and link as related", color: "text-violet-600" },
+const CLASSIFICATION_LABELS: Record<Classification, string> = {
+  PRIVATE: "Private",
+  PUBLIC: "Public",
+  DOCTRINE: "Doctrine",
 };
 
 const DOCUMENT_TYPE_COPY: Record<DocumentType, string> = {
@@ -122,26 +130,11 @@ const DOCUMENT_TYPE_COPY: Record<DocumentType, string> = {
   other: "Other",
 };
 
-const EXTRACTION_MODE_COPY: Record<
-  ExtractionMode,
-  { label: string; description: string }
-> = {
-  auto: {
-    label: "Auto",
-    description: "Use the normal router. Good default when the scan is readable.",
-  },
-  fast: {
-    label: "Fast",
-    description: "Prioritize speed. Skip the slowest fallback path and verifier pass.",
-  },
-  high_fidelity: {
-    label: "High fidelity",
-    description: "Start with the heavy extraction path and allow dense-page fallback.",
-  },
-  verbatim_legal: {
-    label: "Verbatim legal",
-    description: "Bias hard toward faithful legal-style transcription on dense official scans.",
-  },
+const EXTRACTION_MODE_COPY: Record<ExtractionMode, string> = {
+  auto: "Auto",
+  fast: "Fast",
+  high_fidelity: "High fidelity",
+  verbatim_legal: "Verbatim legal",
 };
 
 function normalizeDetectedDocumentType(value: string): DocumentType | null {
@@ -165,34 +158,39 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// ============================================================
-// PAGE
-// ============================================================
-
 export default function UploadPage() {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("idle");
   const [file, setFile] = useState<File | null>(null);
+  const [storagePath, setStoragePath] = useState<string | null>(null);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  // User overrides
   const [chosenAction, setChosenAction] = useState<Action>("new");
-  const [chosenClassification, setChosenClassification] = useState<Classification>("PRIVATE");
+  const [chosenClassification, setChosenClassification] =
+    useState<Classification>("PRIVATE");
   const [chosenTitle, setChosenTitle] = useState("");
-  const [chosenDocumentType, setChosenDocumentType] = useState<DocumentTypeChoice>("auto");
-  const [chosenExtractionMode, setChosenExtractionMode] = useState<ExtractionMode>("auto");
+  const [chosenDocumentType, setChosenDocumentType] =
+    useState<DocumentTypeChoice>("auto");
+  const [chosenExtractionMode, setChosenExtractionMode] =
+    useState<ExtractionMode>("auto");
   const [chosenTargetId, setChosenTargetId] = useState<string | null>(null);
-  // Phase 07: link-to-project toggle (set from librarian suggestion)
+
+  const [placementMode, setPlacementMode] = useState<PlacementMode>("library");
   const [linkToProjectId, setLinkToProjectId] = useState<string | null>(null);
-  // Phase 07-deferred: create new project from upload flow
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
 
-  // Recent uploads sidebar
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [recentDocs, setRecentDocs] = useState<
     Array<{ id: string; title: string; classification: string; created_at: string }>
   >([]);
+
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === linkToProjectId) ?? null,
+    [projects, linkToProjectId],
+  );
 
   const loadRecent = useCallback(() => {
     fetch("/api/documents")
@@ -200,40 +198,84 @@ export default function UploadPage() {
       .then((d) =>
         setRecentDocs(
           (d.documents || [])
-            .filter((dd: { status: string }) => dd.status === "ready")
-            .slice(0, 5),
+            .filter((doc: { status: string }) => doc.status === "ready")
+            .slice(0, 6),
         ),
       )
       .catch(() => {});
   }, []);
 
+  const loadProjects = useCallback(() => {
+    setProjectsLoading(true);
+    fetch("/api/projects?status=active")
+      .then((r) => r.json())
+      .then((d) => setProjects(d.projects || []))
+      .catch(() => setProjects([]))
+      .finally(() => setProjectsLoading(false));
+  }, []);
+
   useEffect(() => {
     loadRecent();
-  }, [loadRecent]);
+    loadProjects();
+  }, [loadRecent, loadProjects]);
 
-  // ── Analyze step ──
-  const analyzeFile = useCallback(async (f: File) => {
-    setFile(f);
+  const analyzeFile = useCallback(async (uploadedFile: File) => {
+    setFile(uploadedFile);
+    setStoragePath(null);
     setStage("analyzing");
     setError(null);
     setProposal(null);
 
     try {
-      const fd = new FormData();
-      fd.append("file", f);
-      const res = await fetch("/api/librarian/analyze", { method: "POST", body: fd });
+      const signRes = await fetch("/api/storage/signed-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: uploadedFile.name, size: uploadedFile.size }),
+      });
+      const signData = await signRes.json();
+      if (!signRes.ok) {
+        throw new Error(signData.error || "Failed to create signed upload URL");
+      }
+
+      const { signedUrl, storagePath: path } = signData as {
+        signedUrl: string;
+        storagePath: string;
+      };
+
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/pdf" },
+        body: uploadedFile,
+      });
+      if (!uploadRes.ok) {
+        const text = await uploadRes.text().catch(() => "");
+        throw new Error(
+          `Upload to storage failed (HTTP ${uploadRes.status})${
+            text ? `: ${text.slice(0, 120)}` : ""
+          }`,
+        );
+      }
+      setStoragePath(path);
+
+      const res = await fetch("/api/librarian/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storagePath: path, fileName: uploadedFile.name }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analysis failed");
-      const p: Proposal = data.proposal;
-      setProposal(p);
-      setChosenAction(p.recommendation.action);
-      setChosenClassification(p.detected.suggestedClassification);
-      setChosenTitle(p.detected.suggestedTitle);
-      setChosenDocumentType(normalizeDetectedDocumentType(p.detected.documentType) || "auto");
+
+      const nextProposal: Proposal = data.proposal;
+      setProposal(nextProposal);
+      setChosenAction(nextProposal.recommendation.action);
+      setChosenClassification(nextProposal.detected.suggestedClassification);
+      setChosenTitle(nextProposal.detected.suggestedTitle);
+      setChosenDocumentType(
+        normalizeDetectedDocumentType(nextProposal.detected.documentType) || "auto",
+      );
       setChosenExtractionMode("auto");
-      setChosenTargetId(p.recommendation.targetDocumentId || null);
-      // Phase 07: default to linking when the librarian found a project match
-      setLinkToProjectId(p.suggestedProject?.id || null);
+      setChosenTargetId(nextProposal.recommendation.targetDocumentId || null);
+      setLinkToProjectId((current) => current || nextProposal.suggestedProject?.id || null);
       setStage("review");
     } catch (e) {
       setError((e as Error).message);
@@ -241,10 +283,9 @@ export default function UploadPage() {
     }
   }, []);
 
-  // ── File input ──
   const handleFiles = useCallback(
     (files: File[]) => {
-      const pdf = files.find((f) => f.type === "application/pdf");
+      const pdf = files.find((candidate) => candidate.type === "application/pdf");
       if (!pdf) {
         setError("Please drop a PDF file");
         return;
@@ -254,39 +295,61 @@ export default function UploadPage() {
         return;
       }
       setError(null);
-      analyzeFile(pdf);
+      void analyzeFile(pdf);
     },
     [analyzeFile],
   );
 
-  // ── Confirm step ──
   const confirmUpload = useCallback(async () => {
-    if (!file || !proposal) return;
+    if (!file || !proposal || !storagePath) return;
+
+    const effectiveProjectId = placementMode === "project" ? linkToProjectId : null;
+    if (placementMode === "project" && !effectiveProjectId) {
+      setError("Pick a project before you continue.");
+      setStage("review");
+      return;
+    }
+
     setStage("uploading");
     setError(null);
 
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("classification", chosenClassification);
-      fd.append("title", chosenTitle);
       const resolvedDocumentType =
         chosenDocumentType === "auto"
           ? normalizeDetectedDocumentType(proposal.detected.documentType)
           : chosenDocumentType;
-      if (resolvedDocumentType) {
-        fd.append("documentType", resolvedDocumentType);
-        fd.append("skipClassification", "true");
-      }
-      fd.append("languageHint", proposal.detected.language);
-      fd.append("extractionMode", chosenExtractionMode);
-      if (chosenAction === "version" && chosenTargetId) fd.append("versionOf", chosenTargetId);
-      if (chosenAction === "related" && chosenTargetId) fd.append("relatedTo", chosenTargetId);
-      if (linkToProjectId) fd.append("linkToProject", linkToProjectId);
 
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const body: Record<string, unknown> = {
+        storagePath,
+        fileName: file.name,
+        classification: chosenClassification,
+        title: chosenTitle,
+        languageHint: proposal.detected.language,
+        extractionMode: chosenExtractionMode,
+      };
+
+      if (resolvedDocumentType) {
+        body.documentType = resolvedDocumentType;
+        body.skipClassification = true;
+      }
+      if (chosenAction === "version" && chosenTargetId) {
+        body.versionOf = chosenTargetId;
+      }
+      if (chosenAction === "related" && chosenTargetId) {
+        body.relatedTo = chosenTargetId;
+      }
+      if (effectiveProjectId) {
+        body.linkToProject = effectiveProjectId;
+      }
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "Upload failed");
+
       setStage("done");
       loadRecent();
     } catch (e) {
@@ -294,16 +357,18 @@ export default function UploadPage() {
       setStage("error");
     }
   }, [
-    file,
-    proposal,
     chosenAction,
     chosenClassification,
     chosenDocumentType,
     chosenExtractionMode,
-    chosenTitle,
     chosenTargetId,
+    chosenTitle,
+    file,
     linkToProjectId,
     loadRecent,
+    placementMode,
+    proposal,
+    storagePath,
   ]);
 
   const handleDuplicateSkip = useCallback(() => {
@@ -314,6 +379,7 @@ export default function UploadPage() {
   const reset = useCallback(() => {
     setStage("idle");
     setFile(null);
+    setStoragePath(null);
     setProposal(null);
     setError(null);
     setChosenAction("new");
@@ -325,52 +391,73 @@ export default function UploadPage() {
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
-      <main className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-3xl mx-auto px-6 py-10">
-          <h1 className="text-[28px] font-semibold text-slate-900 tracking-tight">
-            Add to knowledge base
-          </h1>
-          <p className="text-[14px] text-slate-500 mt-1 mb-2">
-            The librarian analyzes each document, finds related ones, and proposes how to file it.
-          </p>
-          <p className="text-[12px] text-slate-400 mb-8">
-            Just want to discuss one file?{" "}
-            <button
-              type="button"
-              onClick={() => router.push("/")}
-              className="text-slate-500 hover:text-slate-900 underline underline-offset-2 bg-transparent border-none cursor-pointer p-0 text-[12px]"
-            >
-              Drop it directly into chat
-            </button>{" "}
-            instead — it stays scoped to that conversation.
-          </p>
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-white">
+      <main className="flex-1 min-h-0 overflow-y-auto">
+        <div className="mx-auto max-w-4xl px-6 py-10">
+          <div className="mb-8 max-w-2xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-slate-600">
+              <Library className="h-4 w-4" />
+              <span className="text-[14px] font-medium">Library</span>
+            </div>
+            <h1 className="text-[30px] font-semibold tracking-tight text-slate-950">
+              Add a document
+            </h1>
+            <p className="mt-2 text-[14px] leading-relaxed text-slate-500">
+              Upload a document once, keep it in the library, and optionally link it into a
+              project so project chats can use it as source context.
+            </p>
+          </div>
 
-          {/* ────── STAGE: idle ────── */}
           {stage === "idle" && (
-            <>
-              <DropZone
-                dragOver={dragOver}
-                setDragOver={setDragOver}
-                onFiles={handleFiles}
-              />
-              {error && <ErrorBanner message={error} />}
-              {recentDocs.length > 0 && (
-                <RecentSidebar docs={recentDocs} onClick={(id) => router.push(`/documents/${id}`)} />
-              )}
-            </>
+            <div className="grid gap-6 lg:grid-cols-[1.35fr_0.9fr]">
+              <div className="space-y-4">
+                <DropZone
+                  dragOver={dragOver}
+                  setDragOver={setDragOver}
+                  onFiles={handleFiles}
+                />
+                {error && <ErrorBanner message={error} />}
+              </div>
+
+              <aside className="space-y-4">
+                <PlacementPanel
+                  placementMode={placementMode}
+                  setPlacementMode={setPlacementMode}
+                  linkToProjectId={linkToProjectId}
+                  setLinkToProjectId={setLinkToProjectId}
+                  projects={projects}
+                  projectsLoading={projectsLoading}
+                  selectedProject={selectedProject}
+                  onCreateProject={() => setCreateProjectOpen(true)}
+                />
+                <RecentSidebar
+                  docs={recentDocs}
+                  onClick={(id) => router.push(`/documents/${id}`)}
+                />
+              </aside>
+            </div>
           )}
 
-          {/* ────── STAGE: analyzing ────── */}
           {stage === "analyzing" && file && (
-            <AnalyzingCard fileName={file.name} fileSize={file.size} />
+            <AnalyzingCard
+              fileName={file.name}
+              fileSize={file.size}
+              placementMode={placementMode}
+              projectName={selectedProject?.name || null}
+            />
           )}
 
-          {/* ────── STAGE: review ────── */}
           {stage === "review" && proposal && file && (
             <ReviewCard
               file={file}
               proposal={proposal}
+              placementMode={placementMode}
+              setPlacementMode={setPlacementMode}
+              linkToProjectId={linkToProjectId}
+              setLinkToProjectId={setLinkToProjectId}
+              projects={projects}
+              projectsLoading={projectsLoading}
+              selectedProject={selectedProject}
               chosenAction={chosenAction}
               setChosenAction={setChosenAction}
               chosenClassification={chosenClassification}
@@ -383,8 +470,6 @@ export default function UploadPage() {
               setChosenExtractionMode={setChosenExtractionMode}
               chosenTargetId={chosenTargetId}
               setChosenTargetId={setChosenTargetId}
-              linkToProjectId={linkToProjectId}
-              setLinkToProjectId={setLinkToProjectId}
               setCreateProjectOpen={setCreateProjectOpen}
               onConfirm={confirmUpload}
               onSkipDuplicate={handleDuplicateSkip}
@@ -392,50 +477,50 @@ export default function UploadPage() {
             />
           )}
 
-          {/* ────── STAGE: uploading ────── */}
           {stage === "uploading" && file && (
-            <UploadingCard fileName={chosenTitle || file.name} />
+            <UploadingCard
+              fileName={chosenTitle || file.name}
+              placementMode={placementMode}
+              projectName={selectedProject?.name || null}
+            />
           )}
 
-          {/* ────── STAGE: done ────── */}
           {stage === "done" && file && (
             <DoneCard
               title={chosenTitle || file.name}
+              projectName={placementMode === "project" ? selectedProject?.name || null : null}
               onAskAbout={() => router.push("/")}
               onViewAll={() => router.push("/documents")}
               onUploadMore={reset}
             />
           )}
 
-          {/* ────── STAGE: error ────── */}
           {stage === "error" && (
-            <>
+            <div className="space-y-3">
               <ErrorBanner message={error || "Something went wrong"} />
               <button
                 type="button"
                 onClick={reset}
-                className="mt-3 text-[12px] font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 cursor-pointer"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
               >
                 Try again
               </button>
-            </>
+            </div>
           )}
         </div>
       </main>
 
-      {/* Phase 07-deferred: create-new-project flow from upload.
-          On success, the new project's slug is returned via onCreated.
-          We resolve it to an id by hitting /api/projects/[slug] and then
-          set linkToProjectId so the next confirm-and-process step links it. */}
       <CreateProjectDialog
         open={createProjectOpen}
         onOpenChange={setCreateProjectOpen}
         onCreated={async (slug) => {
           try {
+            await loadProjects();
             const res = await fetch(`/api/projects/${slug}`);
             if (res.ok) {
               const data = await res.json();
               if (data.project?.id) {
+                setPlacementMode("project");
                 setLinkToProjectId(data.project.id);
               }
             }
@@ -449,75 +534,200 @@ export default function UploadPage() {
   );
 }
 
-// ============================================================
-// SUBCOMPONENTS
-// ============================================================
-
 function DropZone({
   dragOver,
   setDragOver,
   onFiles,
 }: {
   dragOver: boolean;
-  setDragOver: (b: boolean) => void;
+  setDragOver: (value: boolean) => void;
   onFiles: (files: File[]) => void;
 }) {
   return (
-    <div
-      onClick={() => document.getElementById("file-input")?.click()}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragOver(true);
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragOver(false);
-        onFiles(Array.from(e.dataTransfer.files));
-      }}
-      className={`border-2 border-dashed rounded-xl p-14 text-center cursor-pointer transition-all ${
-        dragOver
-          ? "border-slate-900 bg-slate-50 scale-[1.01]"
-          : "border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50"
-      }`}
-    >
-      <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-white border border-slate-200 flex items-center justify-center shadow-sm">
-        <UploadIcon className="w-5 h-5 text-slate-400" />
+    <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div
+        onClick={() => document.getElementById("file-input")?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          onFiles(Array.from(e.dataTransfer.files));
+        }}
+        className={`cursor-pointer rounded-[24px] border-2 border-dashed px-6 py-14 text-center transition-all ${
+          dragOver
+            ? "scale-[1.01] border-slate-900 bg-slate-50"
+            : "border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-slate-50"
+        }`}
+      >
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <UploadIcon className="h-5 w-5 text-slate-400" />
+        </div>
+        <p className="text-[15px] font-medium text-slate-900">Drop a PDF to add it</p>
+        <p className="mt-1 text-[12px] text-slate-400">
+          OCR and librarian suggestions run automatically. Up to 50 MB.
+        </p>
+        <input
+          id="file-input"
+          type="file"
+          accept=".pdf"
+          className="hidden"
+          onChange={(e) => onFiles(Array.from(e.target.files || []))}
+        />
       </div>
-      <p className="text-[14px] font-medium text-slate-900 mb-1">Drop a PDF to get started</p>
-      <p className="text-[12px] text-slate-400">Up to 50 MB</p>
-      <input
-        id="file-input"
-        type="file"
-        accept=".pdf"
-        className="hidden"
-        onChange={(e) => onFiles(Array.from(e.target.files || []))}
-      />
     </div>
   );
 }
 
-function AnalyzingCard({ fileName, fileSize }: { fileName: string; fileSize: number }) {
+function PlacementPanel({
+  placementMode,
+  setPlacementMode,
+  linkToProjectId,
+  setLinkToProjectId,
+  projects,
+  projectsLoading,
+  selectedProject,
+  onCreateProject,
+}: {
+  placementMode: PlacementMode;
+  setPlacementMode: (value: PlacementMode) => void;
+  linkToProjectId: string | null;
+  setLinkToProjectId: (value: string | null) => void;
+  projects: ProjectOption[];
+  projectsLoading: boolean;
+  selectedProject: ProjectOption | null;
+  onCreateProject: () => void;
+}) {
   return (
-    <div className="border border-slate-200 rounded-xl p-6 bg-white">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-800 to-slate-600 flex items-center justify-center">
-          <Sparkles className="w-5 h-5 text-white" />
+    <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+        Where it should live
+      </p>
+
+      <div className="grid gap-2">
+        <button
+          type="button"
+          onClick={() => setPlacementMode("library")}
+          className={`rounded-2xl border px-4 py-3 text-left transition-all ${
+            placementMode === "library"
+              ? "border-slate-300 bg-slate-50"
+              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Library className="h-4 w-4 text-slate-500" />
+            <span className="text-[14px] font-medium text-slate-900">Library only</span>
+          </div>
+          <p className="mt-1 text-[12px] text-slate-500">
+            Keep it available globally and decide later where to link it.
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setPlacementMode("project")}
+          className={`rounded-2xl border px-4 py-3 text-left transition-all ${
+            placementMode === "project"
+              ? "border-slate-300 bg-slate-50"
+              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <FolderOpen className="h-4 w-4 text-slate-500" />
+            <span className="text-[14px] font-medium text-slate-900">Link into a project</span>
+          </div>
+          <p className="mt-1 text-[12px] text-slate-500">
+            Keep it in the library and make it primary source context for one workspace.
+          </p>
+        </button>
+      </div>
+
+      {placementMode === "project" && (
+        <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+          {projects.length > 0 ? (
+            <select
+              value={linkToProjectId || ""}
+              onChange={(e) => setLinkToProjectId(e.target.value || null)}
+              disabled={projectsLoading}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-400 focus:outline-none disabled:bg-slate-100"
+            >
+              <option value="">
+                {projectsLoading ? "Loading projects..." : "Choose a project"}
+              </option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-[12px] text-slate-500">
+              No active projects yet. Create one first.
+            </div>
+          )}
+
+          {selectedProject && (
+            <p className="text-[12px] leading-relaxed text-slate-500">
+              This document will stay in the library and be linked into{" "}
+              <span className="font-medium text-slate-700">{selectedProject.name}</span>.
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={onCreateProject}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Create new project
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnalyzingCard({
+  fileName,
+  fileSize,
+  placementMode,
+  projectName,
+}: {
+  fileName: string;
+  fileSize: number;
+  placementMode: PlacementMode;
+  projectName: string | null;
+}) {
+  return (
+    <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-slate-800 to-slate-600">
+          <Sparkles className="h-5 w-5 text-white" />
         </div>
         <div>
-          <p className="text-[14px] font-semibold text-slate-900">Librarian</p>
-          <p className="text-[12px] text-slate-400">Analyzing your document...</p>
+          <p className="text-[14px] font-semibold text-slate-900">Preparing the document</p>
+          <p className="text-[12px] text-slate-400">
+            OCR, title suggestions, duplicate checks, and project-fit hints are running now.
+          </p>
         </div>
       </div>
-      <div className="flex items-center gap-3 px-3 py-2.5 bg-slate-50 rounded-lg">
-        <Loader2 className="w-4 h-4 text-slate-400 animate-spin shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-[13px] text-slate-700 truncate" dir="auto">
-            {fileName}
-          </p>
-          <p className="font-['JetBrains_Mono'] text-[10px] text-slate-400">
-            {formatBytes(fileSize)}
-          </p>
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-slate-400" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[13px] text-slate-800" dir="auto">
+              {fileName}
+            </p>
+            <p className="text-[11px] text-slate-400">
+              {formatBytes(fileSize)}
+              {placementMode === "project" && projectName
+                ? ` · will link to ${projectName}`
+                : " · library only"}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -527,6 +737,13 @@ function AnalyzingCard({ fileName, fileSize }: { fileName: string; fileSize: num
 function ReviewCard({
   file,
   proposal,
+  placementMode,
+  setPlacementMode,
+  linkToProjectId,
+  setLinkToProjectId,
+  projects,
+  projectsLoading,
+  selectedProject,
   chosenAction,
   setChosenAction,
   chosenClassification,
@@ -539,8 +756,6 @@ function ReviewCard({
   setChosenExtractionMode,
   chosenTargetId,
   setChosenTargetId,
-  linkToProjectId,
-  setLinkToProjectId,
   setCreateProjectOpen,
   onConfirm,
   onSkipDuplicate,
@@ -548,88 +763,95 @@ function ReviewCard({
 }: {
   file: File;
   proposal: Proposal;
+  placementMode: PlacementMode;
+  setPlacementMode: (value: PlacementMode) => void;
+  linkToProjectId: string | null;
+  setLinkToProjectId: (value: string | null) => void;
+  projects: ProjectOption[];
+  projectsLoading: boolean;
+  selectedProject: ProjectOption | null;
   chosenAction: Action;
-  setChosenAction: (a: Action) => void;
+  setChosenAction: (value: Action) => void;
   chosenClassification: Classification;
-  setChosenClassification: (c: Classification) => void;
+  setChosenClassification: (value: Classification) => void;
   chosenTitle: string;
-  setChosenTitle: (t: string) => void;
+  setChosenTitle: (value: string) => void;
   chosenDocumentType: DocumentTypeChoice;
   setChosenDocumentType: (value: DocumentTypeChoice) => void;
   chosenExtractionMode: ExtractionMode;
   setChosenExtractionMode: (value: ExtractionMode) => void;
   chosenTargetId: string | null;
-  setChosenTargetId: (id: string | null) => void;
-  linkToProjectId: string | null;
-  setLinkToProjectId: (id: string | null) => void;
-  setCreateProjectOpen: (open: boolean) => void;
+  setChosenTargetId: (value: string | null) => void;
+  setCreateProjectOpen: (value: boolean) => void;
   onConfirm: () => void;
   onSkipDuplicate: () => void;
   onCancel: () => void;
 }) {
-  const { detected, related, recommendation, suggestedProject } = proposal;
+  const { detected, recommendation, related, suggestedProject } = proposal;
+  const hasOverlap = related.length > 0;
+  const suggestedDocType =
+    normalizeDetectedDocumentType(detected.documentType) || null;
+  const recommendationMeta = ACTION_COPY[recommendation.action];
+  const RecommendationIcon = recommendationMeta.icon;
 
   return (
-    <div className="space-y-4">
-      {/* Librarian header */}
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-800 to-slate-600 flex items-center justify-center shrink-0">
-          <Sparkles className="w-5 h-5 text-white" />
-        </div>
-        <div className="flex-1">
-          <p className="text-[14px] font-semibold text-slate-900 mb-1">Librarian</p>
-          <p className="text-[13px] text-slate-600 leading-relaxed">
-            {recommendation.reason}
-          </p>
-        </div>
-      </div>
-
-      {/* Detected card */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-3 bg-slate-50/50 border-b border-slate-100">
-          <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] text-slate-900 truncate" dir="auto">
-              {file.name}
+    <div className="space-y-5">
+      <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-5 flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-800 to-slate-600">
+            <RecommendationIcon className="h-5 w-5 text-white" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold text-slate-900">
+              Ready to add this document
             </p>
-            <p className="font-['JetBrains_Mono'] text-[10px] text-slate-400">
-              {detected.pageCount} {detected.pageCount === 1 ? "page" : "pages"} ·{" "}
-              {formatBytes(detected.fileSize)} · {detected.language.toUpperCase()}
+            <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+              {recommendation.reason}
             </p>
           </div>
         </div>
 
-        <div className="px-4 py-4 space-y-4">
-          {/* Title */}
-          <div>
-            <label className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">
-              Title
-            </label>
-            <input
-              type="text"
-              value={chosenTitle}
-              onChange={(e) => setChosenTitle(e.target.value)}
-              dir="auto"
-              className="w-full font-['IBM_Plex_Sans_Arabic'] text-[14px] text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:border-slate-400 focus:outline-none"
-            />
-          </div>
+        <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] text-slate-800" dir="auto">
+                    {file.name}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    {detected.pageCount} {detected.pageCount === 1 ? "page" : "pages"} ·{" "}
+                    {formatBytes(detected.fileSize)} · {detected.language.toUpperCase()}
+                  </p>
+                </div>
+              </div>
+            </div>
 
-          {/* Type + extraction mode + entities */}
-          <div className="space-y-4 text-[12px]">
             <div>
-              <label className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Title
+              </label>
+              <input
+                type="text"
+                value={chosenTitle}
+                onChange={(e) => setChosenTitle(e.target.value)}
+                dir="auto"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] text-slate-900 focus:border-slate-400 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 Document type
               </label>
               <select
                 value={chosenDocumentType}
                 onChange={(e) => setChosenDocumentType(e.target.value as DocumentTypeChoice)}
-                className="w-full text-[13px] text-slate-900 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:border-slate-400 focus:outline-none"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-400 focus:outline-none"
               >
                 <option value="auto">
-                  Auto from librarian
-                  {normalizeDetectedDocumentType(detected.documentType)
-                    ? ` (${normalizeDetectedDocumentType(detected.documentType)})`
-                    : ""}
+                  Auto{suggestedDocType ? ` (${DOCUMENT_TYPE_COPY[suggestedDocType]})` : ""}
                 </option>
                 {DOCUMENT_TYPES.map((type) => (
                   <option key={type} value={type}>
@@ -637,274 +859,232 @@ function ReviewCard({
                   </option>
                 ))}
               </select>
-              <p className="text-[11px] text-slate-400 mt-1.5">
-                The upload route will use this type directly instead of paying for a second
-                classifier pass.
-              </p>
             </div>
 
-            <div>
-              <label className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">
-                Extraction mode
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {EXTRACTION_MODES.map((mode) => {
-                  const meta = EXTRACTION_MODE_COPY[mode];
-                  const isActive = chosenExtractionMode === mode;
-                  return (
+            <PlacementPanel
+              placementMode={placementMode}
+              setPlacementMode={setPlacementMode}
+              linkToProjectId={linkToProjectId}
+              setLinkToProjectId={setLinkToProjectId}
+              projects={projects}
+              projectsLoading={projectsLoading}
+              selectedProject={selectedProject}
+              onCreateProject={() => setCreateProjectOpen(true)}
+            />
+
+            {placementMode === "library" && suggestedProject && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[12px] font-medium text-slate-800">
+                  Suggested project match
+                </p>
+                <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+                  {suggestedProject.name} looks like the best existing fit. You can keep this
+                  as library-only or link it there now.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlacementMode("project");
+                    setLinkToProjectId(suggestedProject.id);
+                  }}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  Link to {suggestedProject.name}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {hasOverlap ? (
+              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="mb-1 text-[14px] font-semibold text-slate-900">
+                  Possible overlap
+                </p>
+                <p className="mb-4 text-[12px] leading-relaxed text-slate-500">
+                  Pick the closest existing document if you want to version, skip, or link this
+                  upload. Otherwise keep it as a new source.
+                </p>
+
+                <div className="space-y-2">
+                  {related.slice(0, 4).map((item) => (
                     <button
-                      key={mode}
+                      key={item.documentId}
                       type="button"
-                      onClick={() => setChosenExtractionMode(mode)}
-                      className={`text-left px-3 py-2 rounded-lg border transition-all cursor-pointer ${
-                        isActive
-                          ? "bg-slate-50 border-slate-300 shadow-sm"
-                          : "bg-white border-slate-200 hover:border-slate-300"
+                      onClick={() =>
+                        setChosenTargetId(
+                          chosenTargetId === item.documentId ? null : item.documentId,
+                        )
+                      }
+                      className={`w-full rounded-2xl border px-3 py-3 text-left transition-all ${
+                        chosenTargetId === item.documentId
+                          ? "border-slate-300 bg-slate-50"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                       }`}
                     >
-                      <div className="text-[12px] font-medium text-slate-900 mb-0.5">
-                        {meta.label}
+                      <div className="flex items-start gap-3">
+                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-medium text-slate-800" dir="auto">
+                            {item.title}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {item.type} · {item.classification} · v{item.versionNumber} ·{" "}
+                            {formatRelative(item.createdAt)}
+                          </p>
+                          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                            {item.reason}
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-medium text-slate-400">
+                          {(item.similarity * 100).toFixed(0)}%
+                        </span>
                       </div>
-                      <p className="text-[10px] text-slate-500 leading-snug">
-                        {meta.description}
-                      </p>
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {detected.entities.length > 0 && (
-              <div className="flex-1 min-w-0">
-                <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                  Detected entities
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {detected.entities.slice(0, 8).map((e, i) => (
-                    <span
-                      key={i}
-                      className="text-[11px] text-slate-600 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5 font-['IBM_Plex_Sans_Arabic']"
-                      dir="auto"
-                    >
-                      {e.name}
-                    </span>
                   ))}
-                  {detected.entities.length > 8 && (
-                    <span className="text-[11px] text-slate-400">
-                      +{detected.entities.length - 8} more
-                    </span>
-                  )}
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {(Object.keys(ACTION_COPY) as Action[]).map((action) => {
+                    const meta = ACTION_COPY[action];
+                    const Icon = meta.icon;
+                    const requiresTarget = action !== "new";
+                    const disabled = requiresTarget && !chosenTargetId;
+                    const active = chosenAction === action;
+                    return (
+                      <button
+                        key={action}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => !disabled && setChosenAction(action)}
+                        className={`w-full rounded-2xl border px-3 py-3 text-left transition-all ${
+                          active
+                            ? "border-slate-300 bg-slate-50"
+                            : disabled
+                              ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-[13px] font-medium text-slate-800">
+                                {meta.label}
+                              </p>
+                              {action === recommendation.action && (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                  Recommended
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                              {meta.description}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+            ) : (
+              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-[14px] font-semibold text-slate-900">No strong overlap found</p>
+                <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+                  This looks like a distinct document, so you can usually keep the default and
+                  continue.
+                </p>
+              </div>
             )}
-          </div>
 
-          {/* Classification picker */}
-          <div>
-            <label className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1.5">
-              Classification
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(Object.keys(CLASS_COPY) as Classification[]).map((c) => {
-                const isActive = chosenClassification === c;
-                const meta = CLASS_COPY[c];
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setChosenClassification(c)}
-                    className={`text-left px-3 py-2 rounded-lg border transition-all cursor-pointer ${
-                      isActive
-                        ? "bg-slate-50 border-slate-300 shadow-sm"
-                        : "bg-white border-slate-200 hover:border-slate-300"
-                    }`}
+            <details className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+              <summary className="cursor-pointer list-none text-[13px] font-medium text-slate-800">
+                Advanced review
+              </summary>
+              <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Classification
+                  </label>
+                  <select
+                    value={chosenClassification}
+                    onChange={(e) =>
+                      setChosenClassification(e.target.value as Classification)
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-400 focus:outline-none"
                   >
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-                      <span className="text-[12px] font-medium text-slate-900">{meta.label}</span>
+                    {(Object.keys(CLASSIFICATION_LABELS) as Classification[]).map((value) => (
+                      <option key={value} value={value}>
+                        {CLASSIFICATION_LABELS[value]}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                    {detected.classificationReason}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Extraction mode
+                  </label>
+                  <select
+                    value={chosenExtractionMode}
+                    onChange={(e) =>
+                      setChosenExtractionMode(e.target.value as ExtractionMode)
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-400 focus:outline-none"
+                  >
+                    {EXTRACTION_MODES.map((mode) => (
+                      <option key={mode} value={mode}>
+                        {EXTRACTION_MODE_COPY[mode]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {detected.entities.length > 0 && (
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Detected entities
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {detected.entities.map((entity, index) => (
+                        <span
+                          key={`${entity.name}-${index}`}
+                          className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600"
+                          dir="auto"
+                        >
+                          {entity.name}
+                        </span>
+                      ))}
                     </div>
-                    <p className="text-[10px] text-slate-500 leading-snug">{meta.description}</p>
-                  </button>
-                );
-              })}
-            </div>
-            {detected.classificationReason && (
-              <p className="text-[11px] text-slate-400 mt-1.5">
-                Suggested: <span className="text-slate-600">{detected.classificationReason}</span>
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Phase 07: project suggestion card (now supports up to 3 alternates
-          + a 'create new project from this doc' option) */}
-      {(suggestedProject || (proposal.suggestedProjects && proposal.suggestedProjects.length > 0)) && (
-        <div className="border border-slate-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-            <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              Project match
-            </p>
-            {(proposal.suggestedProjects?.length || 0) > 1 && (
-              <span className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-slate-400">
-                {proposal.suggestedProjects!.length} candidates
-              </span>
-            )}
-          </div>
-          <div className="divide-y divide-slate-100">
-            {(proposal.suggestedProjects && proposal.suggestedProjects.length > 0
-              ? proposal.suggestedProjects
-              : suggestedProject
-                ? [suggestedProject]
-                : []
-            ).map((p) => {
-              const isPicked = linkToProjectId === p.id;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() =>
-                    setLinkToProjectId(isPicked ? null : p.id)
-                  }
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer border-none ${
-                    isPicked ? "bg-blue-50/60" : "bg-white hover:bg-slate-50"
-                  }`}
-                >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ background: p.color || "#64748B" }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-slate-900 truncate">
-                      {p.name}
-                    </p>
-                    <p className="text-[11px] text-slate-500">{p.reason}</p>
                   </div>
-                  <input
-                    type="radio"
-                    name="projectMatch"
-                    checked={isPicked}
-                    onChange={() => {
-                      // handled by the wrapping button onClick
-                    }}
-                    className="w-4 h-4 pointer-events-none"
-                  />
-                </button>
-              );
-            })}
-          </div>
-          <div className="px-4 py-2 bg-slate-50/30 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-[11px] text-slate-500">
-              {linkToProjectId
-                ? "Selected project will be linked on confirm"
-                : "No link — pick a project above or create a new one"}
-            </p>
-            <button
-              type="button"
-              onClick={() => setCreateProjectOpen(true)}
-              className="text-[11px] font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md px-2 py-1 cursor-pointer flex items-center gap-1"
-            >
-              <Plus className="w-3 h-3" />
-              Create new project
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Related documents */}
-      {related.length > 0 && (
-        <div className="border border-slate-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2.5 bg-slate-50/50 border-b border-slate-100">
-            <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              Related documents in your KB
-            </p>
-          </div>
-          <div className="divide-y divide-slate-100">
-            {related.map((r) => {
-              const isTarget = chosenTargetId === r.documentId;
-              return (
-                <button
-                  key={r.documentId}
-                  type="button"
-                  onClick={() => setChosenTargetId(isTarget ? null : r.documentId)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors cursor-pointer border-none ${
-                    isTarget ? "bg-blue-50/50" : "bg-transparent hover:bg-slate-50"
-                  }`}
-                >
-                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] text-slate-900 truncate" dir="auto">
-                      {r.title}
-                    </p>
-                    <p className="font-['JetBrains_Mono'] text-[10px] text-slate-400">
-                      {r.type} · {r.classification} · v{r.versionNumber}
-                      {!r.isCurrent ? " (old)" : ""} · {formatRelative(r.createdAt)} · {r.reason}
-                    </p>
-                  </div>
-                  <span className="font-['JetBrains_Mono'] text-[10px] text-slate-400 shrink-0">
-                    {(r.similarity * 100).toFixed(0)}%
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Action picker */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-2.5 bg-slate-50/50 border-b border-slate-100">
-          <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Action
-          </p>
-        </div>
-        <div className="px-4 py-3 space-y-1">
-          {(Object.keys(ACTION_COPY) as Action[]).map((a) => {
-            const meta = ACTION_COPY[a];
-            const Icon = meta.icon;
-            const isActive = chosenAction === a;
-            const isRecommended = a === recommendation.action;
-            // Action validity: version/duplicate/related need a target
-            const requiresTarget = a !== "new";
-            const isDisabled = requiresTarget && !chosenTargetId;
-            return (
-              <button
-                key={a}
-                type="button"
-                onClick={() => !isDisabled && setChosenAction(a)}
-                disabled={isDisabled}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left border transition-all cursor-pointer ${
-                  isActive
-                    ? "bg-slate-50 border-slate-300"
-                    : isDisabled
-                      ? "bg-transparent border-transparent opacity-40 cursor-not-allowed"
-                      : "bg-transparent border-transparent hover:bg-slate-50"
-                }`}
-              >
-                <Icon className={`w-4 h-4 shrink-0 ${meta.color}`} />
-                <span className="flex-1 text-[13px] text-slate-700">{meta.label}</span>
-                {isRecommended && (
-                  <span className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-slate-400">
-                    Recommended
-                  </span>
                 )}
-              </button>
-            );
-          })}
-        </div>
-        {chosenAction !== "new" && !chosenTargetId && (
-          <div className="px-4 py-2 bg-amber-50/50 border-t border-amber-100 text-[11px] text-amber-700">
-            Pick a related document above first.
+
+                {detected.firstPagePreview && (
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      First-page preview
+                    </p>
+                    <div className="max-h-48 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-[12px] leading-relaxed text-slate-600">
+                      <p dir="auto">{detected.firstPagePreview}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </details>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Submit row */}
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onCancel}
-          className="text-[13px] font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 cursor-pointer"
+          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
         >
           Cancel
         </button>
@@ -913,20 +1093,20 @@ function ReviewCard({
             type="button"
             onClick={onSkipDuplicate}
             disabled={!chosenTargetId}
-            className="flex-1 flex items-center justify-center gap-2 text-[13px] font-medium text-white bg-amber-600 hover:bg-amber-700 border-none rounded-lg px-4 py-2 cursor-pointer disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-amber-700 disabled:opacity-50"
           >
             Open the existing document
-            <ArrowRight className="w-3.5 h-3.5" />
+            <ArrowRight className="h-3.5 w-3.5" />
           </button>
         ) : (
           <button
             type="button"
             onClick={onConfirm}
             disabled={chosenAction !== "new" && !chosenTargetId}
-            className="flex-1 flex items-center justify-center gap-2 text-[13px] font-medium text-white bg-slate-900 hover:bg-slate-800 border-none rounded-lg px-4 py-2 cursor-pointer disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
             Confirm and process
-            <ArrowRight className="w-3.5 h-3.5" />
+            <ArrowRight className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
@@ -934,18 +1114,27 @@ function ReviewCard({
   );
 }
 
-function UploadingCard({ fileName }: { fileName: string }) {
+function UploadingCard({
+  fileName,
+  placementMode,
+  projectName,
+}: {
+  fileName: string;
+  placementMode: PlacementMode;
+  projectName: string | null;
+}) {
   return (
-    <div className="border border-slate-200 rounded-xl p-6">
-      <div className="flex items-center gap-3 mb-3">
-        <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+    <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-3 flex items-center gap-3">
+        <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
         <p className="text-[14px] font-medium text-slate-900">Processing</p>
       </div>
-      <p className="text-[13px] text-slate-600 mb-1" dir="auto">
+      <p className="mb-1 text-[13px] text-slate-700" dir="auto">
         {fileName}
       </p>
-      <p className="text-[12px] text-slate-400">
-        Running OCR and deterministic parsing. This usually takes 30–90 seconds.
+      <p className="text-[12px] leading-relaxed text-slate-500">
+        Running OCR and deterministic parsing. This usually takes 30-90 seconds.
+        {placementMode === "project" && projectName ? ` It will also link into ${projectName}.` : ""}
       </p>
     </div>
   );
@@ -953,23 +1142,30 @@ function UploadingCard({ fileName }: { fileName: string }) {
 
 function DoneCard({
   title,
+  projectName,
   onAskAbout,
   onViewAll,
   onUploadMore,
 }: {
   title: string;
+  projectName: string | null;
   onAskAbout: () => void;
   onViewAll: () => void;
   onUploadMore: () => void;
 }) {
   return (
-    <div className="border border-emerald-200 bg-emerald-50/30 rounded-xl p-5">
-      <div className="flex items-start gap-3 mb-4">
-        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+    <div className="rounded-[28px] border border-emerald-200 bg-emerald-50/40 p-5">
+      <div className="mb-4 flex items-start gap-3">
+        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
         <div className="flex-1">
-          <p className="text-[14px] font-semibold text-slate-900 mb-0.5">Added to knowledge base</p>
-          <p className="text-[13px] text-slate-700 truncate" dir="auto">
+          <p className="text-[14px] font-semibold text-slate-900">Document added</p>
+          <p className="mt-0.5 text-[13px] text-slate-700" dir="auto">
             {title}
+          </p>
+          <p className="mt-1 text-[12px] text-slate-500">
+            {projectName
+              ? `Stored in the library and linked into ${projectName}.`
+              : "Stored in the library and ready to use."}
           </p>
         </div>
       </div>
@@ -977,22 +1173,22 @@ function DoneCard({
         <button
           type="button"
           onClick={onAskAbout}
-          className="flex items-center gap-1.5 text-[13px] font-medium text-white bg-slate-900 hover:bg-slate-800 border-none rounded-lg px-3 py-1.5 cursor-pointer"
+          className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-slate-800"
         >
-          Ask DocuMind about it
-          <ArrowRight className="w-3.5 h-3.5" />
+          Ask about it
+          <ArrowRight className="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
           onClick={onViewAll}
-          className="text-[13px] font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 cursor-pointer"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
         >
-          View all documents
+          View library
         </button>
         <button
           type="button"
           onClick={onUploadMore}
-          className="text-[13px] font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 cursor-pointer"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
         >
           Upload another
         </button>
@@ -1003,8 +1199,8 @@ function DoneCard({
 
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2 text-[13px] text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-      <AlertCircle className="w-4 h-4 shrink-0" />
+    <div className="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+      <AlertCircle className="h-4 w-4 shrink-0" />
       {message}
     </div>
   );
@@ -1018,32 +1214,36 @@ function RecentSidebar({
   onClick: (id: string) => void;
 }) {
   return (
-    <div className="mt-8">
-      <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-3">
-        Recently added
+    <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+        Recent library documents
       </p>
-      <div className="space-y-1">
-        {docs.map((d) => (
-          <button
-            key={d.id}
-            type="button"
-            onClick={() => onClick(d.id)}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-all cursor-pointer bg-transparent text-left"
-          >
-            <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span className="flex-1 text-[12px] text-slate-700 truncate" dir="auto">
-              {d.title}
-            </span>
-            <span className="font-['JetBrains_Mono'] text-[9px] text-slate-400 uppercase">
-              {d.classification}
-            </span>
-            <X
-              className="w-3 h-3 text-transparent"
-              aria-hidden
-            />
-          </button>
-        ))}
-      </div>
+      {docs.length === 0 ? (
+        <p className="text-[12px] leading-relaxed text-slate-500">
+          Your latest ready documents will appear here.
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {docs.map((doc) => (
+            <button
+              key={doc.id}
+              type="button"
+              onClick={() => onClick(doc.id)}
+              className="flex w-full items-center gap-2.5 rounded-lg border border-transparent bg-transparent px-2.5 py-2 text-left transition-all hover:border-slate-200 hover:bg-slate-50"
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12px] text-slate-700" dir="auto">
+                  {doc.title}
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  {doc.classification} · {formatRelative(doc.created_at)}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
