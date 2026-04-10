@@ -22,14 +22,13 @@ export default function RootLayout({
           crossOrigin="anonymous"
         />
         {/*
-          Four font families, loaded in a single Google Fonts request:
-            - Source Serif 4 — display (greetings, briefing title, project name, page headings)
-            - IBM Plex Sans — body (English)
-            - IBM Plex Sans Arabic — body (Arabic)
-            - IBM Plex Mono — metadata labels and numeric data (sparingly)
+          Two font families, loaded in a single Google Fonts request:
+            - Inter — single sans for the entire UI (English)
+            - IBM Plex Sans Arabic — Arabic body
+            - IBM Plex Mono — only used for tabular data and ids
         */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
           rel="stylesheet"
         />
       </head>

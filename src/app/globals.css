@@ -5,47 +5,54 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ═══════════════════════════════════════
-   GTEZ INTELLIGENCE — DESIGN TOKENS
+   DOCUMIND — DESIGN TOKENS (enterprise)
    ═══════════════════════════════════════
 
-   Visual direction: premium briefing terminal. Think Economist +
-   Bloomberg Terminal + Arc. The surfaces are warm ivory, not cold
-   slate. The accent is a muted Egyptian-government gold used
-   sparingly to mark importance. Type is Source Serif 4 for display
-   and IBM Plex for body — a real serif/sans pairing, not a
-   single-family wallpaper.
+   Reference apps: Linear, Vercel, Attio, Notion, Mercury Bank.
+   Single sans typeface, cool zinc neutrals, one accent color used
+   rarely, sharp 6px radii, almost no shadows — borders carry the
+   weight. Tighter density than the previous editorial pass.
 
-   Every component should pull from these tokens. Any component
-   that hardcodes slate-400 / slate-900 / rounded-[28px] is a bug
-   against this design system — flag and replace.
+   Rules:
+   - Type: Inter for English, IBM Plex Sans Arabic for Arabic. No
+     serifs, ever. IBM Plex Mono is reserved for ids / tabular data.
+   - Surfaces are pure white. Sunken surfaces are zinc-50. The page
+     background is zinc-50.
+   - Borders are 1px solid zinc-200. They are the primary visual
+     separator, not shadows.
+   - Accent (indigo #4f46e5) is used in maybe 5 places per screen
+     max: active link, primary button, focus ring, link hover,
+     citation chip on hover. Anywhere else is a bug.
+   - Radii: 6px default (--radius-md), 4px for chips, 8px for cards.
+     Nothing is rounder than 8px except pill chips and avatars.
 */
 
 @layer base {
   :root {
     /* ── Typography — families ── */
-    --font-display: "Source Serif 4", "IBM Plex Sans Arabic", Georgia, serif;
-    --font-body: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
-    --font-arabic: "IBM Plex Sans Arabic", "IBM Plex Sans", sans-serif;
-    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --font-sans:
+      "Inter", "IBM Plex Sans Arabic", -apple-system, BlinkMacSystemFont,
+      "Segoe UI", system-ui, sans-serif;
+    --font-arabic:
+      "IBM Plex Sans Arabic", "Inter", system-ui, sans-serif;
+    --font-mono:
+      "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-    /* ── Typography — scale ──
-       Eleven-step modular scale on a 1.2 ratio from 11px.
-       Use sparingly — the product has 5-6 legitimate sizes. */
-    --text-2xs: 0.6875rem;   /* 11 — captions, metadata */
-    --text-xs: 0.75rem;      /* 12 — labels */
-    --text-sm: 0.8125rem;    /* 13 — secondary body */
-    --text-base: 0.9375rem;  /* 15 — body */
-    --text-md: 1.0625rem;    /* 17 — lead body */
-    --text-lg: 1.25rem;      /* 20 — subheadings */
-    --text-xl: 1.5rem;       /* 24 — H2 */
-    --text-2xl: 2rem;        /* 32 — H1 / greetings */
-    --text-3xl: 2.5rem;      /* 40 — display */
+    /* ── Typography — scale ── */
+    --text-2xs: 0.6875rem;   /* 11 */
+    --text-xs: 0.75rem;      /* 12 */
+    --text-sm: 0.8125rem;    /* 13 */
+    --text-base: 0.875rem;   /* 14 — body default */
+    --text-md: 0.9375rem;    /* 15 */
+    --text-lg: 1.125rem;     /* 18 */
+    --text-xl: 1.375rem;     /* 22 */
+    --text-2xl: 1.75rem;     /* 28 — page H1 */
 
     /* ── Line heights ── */
-    --leading-tight: 1.15;
-    --leading-snug: 1.3;
-    --leading-normal: 1.55;
-    --leading-relaxed: 1.75;
+    --leading-tight: 1.2;
+    --leading-snug: 1.35;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.7;
 
     /* ── Weights ── */
     --weight-regular: 400;
@@ -54,79 +61,69 @@
     --weight-bold: 700;
 
     /* ── Colors — ink (text) ──
-       Near-black with a slight blue-warm tint. Avoid pure #000. */
-    --ink: #0b0c16;
-    --ink-light: #1a1b2a;
-    --ink-muted: #4b4d62;
-    --ink-faint: #7e8094;
-    --ink-ghost: #b4b6c6;
+       Zinc-tinted near-black. No warmth. */
+    --ink: #09090b;        /* zinc-950 */
+    --ink-strong: #18181b; /* zinc-900 */
+    --ink-muted: #52525b;  /* zinc-600 */
+    --ink-faint: #71717a;  /* zinc-500 */
+    --ink-ghost: #a1a1aa;  /* zinc-400 */
+    --ink-disabled: #d4d4d8; /* zinc-300 */
 
-    /* ── Colors — surfaces ──
-       Warm ivory instead of cold slate. The base surface is #fafaf5,
-       not pure white, to soften the page and make the document cards
-       feel printed rather than screen-lit. */
-    --surface: #fafaf5;
-    --surface-raised: #ffffff;
-    --surface-sunken: #f1f1e9;
-    --surface-warm: #f5f0de;      /* briefing card background — subtle parchment */
-    --surface-overlay: rgba(11, 12, 22, 0.55);
+    /* ── Colors — surfaces ── */
+    --surface: #fafafa;        /* zinc-50 — page background */
+    --surface-raised: #ffffff; /* white — cards, dialogs */
+    --surface-sunken: #f4f4f5; /* zinc-100 — inputs, hover targets */
+    --surface-overlay: rgba(9, 9, 11, 0.5);
 
     /* ── Colors — borders ── */
-    --border: #e6e4d3;
-    --border-light: #efede2;
-    --border-strong: #d8d5c1;
+    --border: #e4e4e7;       /* zinc-200 — default border */
+    --border-strong: #d4d4d8; /* zinc-300 — emphasized */
+    --border-light: #f4f4f5;  /* zinc-100 — subtle dividers */
 
-    /* ── Colors — accent (Egyptian government gold, muted) ──
-       Used sparingly: briefing rail, active state underline, link
-       hover, focus ring. Never more than one accent region per
-       viewport. */
-    --accent: #8b6f1f;
-    --accent-hover: #a48523;
-    --accent-muted: #c3a24a;
-    --accent-faint: #e5d8a6;
-    --accent-bg: #f8f1d8;
-    --accent-on: #fffdf4;
+    /* ── Accent — single indigo, used rarely ── */
+    --accent: #4f46e5;        /* indigo-600 */
+    --accent-hover: #4338ca;  /* indigo-700 */
+    --accent-faint: #c7d2fe;  /* indigo-200 */
+    --accent-bg: #eef2ff;     /* indigo-50 */
+    --accent-on: #ffffff;
 
-    /* ── Colors — semantic ── */
-    --success: #1a7a3a;
-    --success-bg: #eefbf2;
-    --warning: #92400e;
-    --warning-bg: #fef8ec;
-    --danger: #b91c1c;
+    /* ── Semantic colors ── */
+    --success: #16a34a;       /* green-600 */
+    --success-bg: #f0fdf4;
+    --warning: #d97706;       /* amber-600 */
+    --warning-bg: #fffbeb;
+    --danger: #dc2626;        /* red-600 */
     --danger-bg: #fef2f2;
-    --info: #1e40af;
-    --info-bg: #eef2ff;
+    --info: #0284c7;          /* sky-600 */
+    --info-bg: #f0f9ff;
 
-    /* ── Spacing scale (4px base) ── */
-    --space-1: 0.25rem;   /*  4 */
-    --space-2: 0.5rem;    /*  8 */
-    --space-3: 0.75rem;   /* 12 */
-    --space-4: 1rem;      /* 16 */
-    --space-5: 1.5rem;    /* 24 */
-    --space-6: 2rem;      /* 32 */
-    --space-7: 3rem;      /* 48 */
-    --space-8: 4rem;      /* 64 */
+    /* ── Spacing (4px base) ── */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
 
-    /* ── Radii — single source of truth ──
-       Everything uses --radius-md (12px) by default. Small elements
-       (chips, badges) use --radius-sm (8px). No one should ever
-       write rounded-[28px] again. */
-    --radius-sm: 0.5rem;      /*  8 — chips, badges, small buttons */
-    --radius-md: 0.75rem;     /* 12 — cards, inputs, medium buttons */
-    --radius-lg: 1rem;        /* 16 — large cards, dialogs */
-    --radius-xl: 1.25rem;     /* 20 — hero surfaces */
+    /* ── Radii — sharper than the previous pass ── */
+    --radius-sm: 0.25rem;     /* 4 — chips, badges, inline pills */
+    --radius-md: 0.375rem;    /* 6 — buttons, inputs, default */
+    --radius-lg: 0.5rem;      /* 8 — cards, dialogs */
+    --radius-xl: 0.75rem;     /* 12 — only for hero surfaces */
 
-    /* ── Shadows ── */
-    --shadow-xs: 0 1px 2px rgba(11, 12, 22, 0.04);
-    --shadow-sm: 0 2px 6px rgba(11, 12, 22, 0.06);
-    --shadow-md: 0 6px 18px rgba(11, 12, 22, 0.08);
-    --shadow-lg: 0 16px 40px rgba(11, 12, 22, 0.12);
-    --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    /* ── Shadows — almost none ── */
+    --shadow-xs: 0 1px 0 rgba(9, 9, 11, 0.04);
+    --shadow-sm: 0 1px 2px rgba(9, 9, 11, 0.05);
+    --shadow-md: 0 4px 12px rgba(9, 9, 11, 0.08);
+    --shadow-overlay: 0 16px 48px rgba(9, 9, 11, 0.18);
 
-    /* ── Rings (focus) ── */
-    --ring-accent: 0 0 0 3px rgba(139, 111, 31, 0.22);
+    /* ── Focus ring ── */
+    --ring-accent: 0 0 0 3px rgba(79, 70, 229, 0.18);
 
-    /* ── shadcn token mapping (so shadcn primitives inherit) ── */
+    /* ── shadcn token bridge ── */
     --background: var(--surface);
     --foreground: var(--ink);
     --card: var(--surface-raised);
@@ -139,17 +136,17 @@
     --secondary-foreground: var(--ink);
     --muted: var(--surface-sunken);
     --muted-foreground: var(--ink-muted);
-    --accent-foreground: var(--ink);
+    --accent-foreground: var(--accent);
     --destructive: var(--danger);
     --input: var(--border);
     --ring: var(--accent);
-    --chart-1: #8b6f1f;
-    --chart-2: #1a1b2a;
-    --chart-3: #4b4d62;
-    --chart-4: #c3a24a;
-    --chart-5: #7e8094;
-    --radius: 0.75rem;
-    --sidebar: var(--surface);
+    --chart-1: #4f46e5;
+    --chart-2: #18181b;
+    --chart-3: #52525b;
+    --chart-4: #a1a1aa;
+    --chart-5: #d4d4d8;
+    --radius: 0.375rem;
+    --sidebar: var(--surface-raised);
     --sidebar-foreground: var(--ink);
     --sidebar-primary: var(--ink);
     --sidebar-primary-foreground: var(--surface-raised);
@@ -163,9 +160,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-body);
+  --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-  --font-heading: var(--font-display);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -206,12 +202,13 @@
     @apply border-border outline-ring/50;
   }
   html {
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     background: var(--surface);
     color: var(--ink);
+    font-feature-settings: "cv11", "ss01", "ss03";
   }
   body {
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     background: var(--surface);
     color: var(--ink);
   }
@@ -219,16 +216,11 @@
 
 /* ═══════════════════════════════════════
    COMPONENT UTILITY CLASSES
-   ═══════════════════════════════════════
-
-   Prefer these over Tailwind utility soup for anything typographic.
-   The class names are intentionally ugly (`dm-*` prefix) so they
-   stand out in JSX and invite consolidation.
-*/
+   ═══════════════════════════════════════ */
 
 @layer components {
   .dm-body {
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     font-size: var(--text-base);
     line-height: var(--leading-normal);
     color: var(--ink);
@@ -238,102 +230,79 @@
     flex-direction: column;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    font-feature-settings: "kern", "liga", "calt";
+    font-feature-settings: "cv11", "ss01", "ss03";
   }
 
-  /* ── Display headings (Source Serif 4) ── */
-  .dm-display {
-    font-family: var(--font-display);
-    font-size: var(--text-3xl);
-    font-weight: var(--weight-bold);
+  /* ── Headings ──
+     Same family as body. Hierarchy comes from weight + size + tracking,
+     not a different typeface. */
+  .dm-h1 {
+    font-family: var(--font-sans);
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-semibold);
     line-height: var(--leading-tight);
     letter-spacing: -0.02em;
     color: var(--ink);
   }
 
-  .dm-h1 {
-    font-family: var(--font-display);
-    font-size: var(--text-2xl);
-    font-weight: var(--weight-bold);
-    line-height: var(--leading-tight);
+  .dm-h2 {
+    font-family: var(--font-sans);
+    font-size: var(--text-xl);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-snug);
     letter-spacing: -0.015em;
     color: var(--ink);
   }
 
-  .dm-h2 {
-    font-family: var(--font-display);
-    font-size: var(--text-xl);
-    font-weight: var(--weight-bold);
+  .dm-h3 {
+    font-family: var(--font-sans);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
     line-height: var(--leading-snug);
     letter-spacing: -0.01em;
     color: var(--ink);
   }
 
-  .dm-h3 {
-    font-family: var(--font-body);
-    font-size: var(--text-lg);
-    font-weight: var(--weight-semibold);
-    line-height: var(--leading-snug);
-    color: var(--ink);
-  }
-
-  /* ── Body text ── */
-  .dm-lead {
-    font-family: var(--font-body);
-    font-size: var(--text-md);
-    line-height: var(--leading-normal);
-    color: var(--ink-light);
-  }
-
+  /* ── Body ── */
   .dm-text {
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     font-size: var(--text-base);
     line-height: var(--leading-normal);
     color: var(--ink);
   }
 
   .dm-text-sm {
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     font-size: var(--text-sm);
     line-height: var(--leading-snug);
     color: var(--ink-muted);
   }
 
-  /* ── Labels — tiny uppercase section headers.
-     Use SPARINGLY — no more than one per card. ── */
+  /* ── Labels ──
+     Plain sans, not uppercase mono. The previous design abused
+     mono uppercase as section markers everywhere — felt 2017
+     bootstrap-y. Enterprise tools use plain sans labels in
+     ink-faint. */
   .dm-label {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
     font-weight: var(--weight-medium);
     line-height: 1;
     color: var(--ink-faint);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
   }
 
-  .dm-label-accent {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    font-weight: var(--weight-semibold);
-    line-height: 1;
-    color: var(--accent);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-
-  /* ── Caption — small supporting text ── */
   .dm-caption {
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     font-size: var(--text-xs);
     line-height: var(--leading-snug);
     color: var(--ink-faint);
   }
 
-  /* ── Data — numeric / mono ── */
+  /* ── Mono / data ── */
   .dm-data {
     font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    color: var(--ink-muted);
+    font-size: var(--text-2xs);
+    color: var(--ink-faint);
     font-variant-numeric: tabular-nums;
   }
 
@@ -342,69 +311,70 @@
     background: var(--surface-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-xs);
   }
 
-  .dm-surface-sunken {
-    background: var(--surface-sunken);
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-md);
-  }
-
-  /* ── Briefing card — the hero surface.
-     Left accent rail + parchment background. Meant to read as
-     a physical document, not a UI card. ── */
-  .dm-briefing-card {
-    position: relative;
-    background: linear-gradient(
-      180deg,
-      var(--surface-warm) 0%,
-      #fcf9ed 100%
-    );
-    border: 1px solid var(--accent-faint);
+  .dm-card {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
+  }
+
+  /* ── Briefing card —
+     Flat white surface with a clean border. No parchment, no
+     gradient, no left rail. Looks like a Notion / Linear card. ── */
+  .dm-briefing-card {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
     padding: var(--space-5);
-  }
-  .dm-briefing-card::before {
-    content: "";
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 3px;
-    background: var(--accent);
-    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
-  }
-  html[dir="rtl"] .dm-briefing-card::before,
-  .dm-briefing-card[dir="rtl"]::before {
-    inset: 0 0 0 auto;
-    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   }
 
   /* ── Buttons ── */
   .dm-btn-primary {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: var(--space-2);
     background: var(--ink);
     color: var(--surface-raised);
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     font-size: var(--text-sm);
-    font-weight: var(--weight-semibold);
-    padding: 0.55rem 1rem;
+    font-weight: var(--weight-medium);
+    padding: 0.5rem 0.875rem;
     border-radius: var(--radius-md);
     border: 1px solid var(--ink);
     cursor: pointer;
-    transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+    transition:
+      background-color 0.12s ease,
+      border-color 0.12s ease;
   }
   .dm-btn-primary:hover {
-    background: var(--ink-light);
-  }
-  .dm-btn-primary:active {
-    transform: translateY(0.5px);
+    background: var(--ink-strong);
   }
   .dm-btn-primary:focus-visible {
     outline: none;
     box-shadow: var(--ring-accent);
+  }
+
+  .dm-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    background: var(--surface-raised);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+  }
+  .dm-btn-secondary:hover {
+    background: var(--surface-sunken);
+    border-color: var(--border-strong);
   }
 
   .dm-btn-ghost {
@@ -413,34 +383,33 @@
     gap: var(--space-2);
     background: transparent;
     color: var(--ink-muted);
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
     font-size: var(--text-sm);
     font-weight: var(--weight-medium);
-    padding: 0.4rem 0.75rem;
-    border-radius: var(--radius-sm);
+    padding: 0.375rem 0.625rem;
+    border-radius: var(--radius-md);
     border: 1px solid transparent;
     cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+    transition: background-color 0.12s ease, color 0.12s ease;
   }
   .dm-btn-ghost:hover {
     background: var(--surface-sunken);
     color: var(--ink);
-    border-color: var(--border-light);
   }
 
-  /* ── Card — clickable query / suggestion card ── */
+  /* ── Interactive card —
+     Flat hover, no lift. Background fills slightly on hover. ── */
   .dm-card-interactive {
     background: var(--surface-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    padding: var(--space-4);
+    padding: var(--space-3) var(--space-4);
     cursor: pointer;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
   }
   .dm-card-interactive:hover {
-    border-color: var(--accent-muted);
-    box-shadow: var(--shadow-sm);
-    transform: translateY(-1px);
+    background: var(--surface-sunken);
+    border-color: var(--border-strong);
   }
 
   /* ── Inputs ── */
@@ -448,8 +417,8 @@
     background: var(--surface-raised);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    padding: 0.65rem 0.875rem;
-    font-family: var(--font-body);
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-sans);
     font-size: var(--text-base);
     color: var(--ink);
     transition: border-color 0.12s ease, box-shadow 0.12s ease;
@@ -465,14 +434,15 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    padding: 0.2rem 0.55rem;
+    padding: 0.125rem 0.5rem;
     background: var(--surface-sunken);
-    border: 1px solid var(--border-light);
-    border-radius: 999px;
-    font-family: var(--font-body);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-sans);
     font-size: var(--text-xs);
     font-weight: var(--weight-medium);
     color: var(--ink-muted);
+    line-height: 1.5;
   }
   .dm-chip-accent {
     background: var(--accent-bg);
@@ -483,25 +453,14 @@
   /* ── Divider ── */
   .dm-divider {
     height: 1px;
-    background: var(--border-light);
+    background: var(--border);
     border: 0;
-  }
-
-  /* ── Serif number (for dates, counts in displays) ── */
-  .dm-serif-num {
-    font-family: var(--font-display);
-    font-variant-numeric: oldstyle-nums;
-    font-weight: var(--weight-semibold);
   }
 }
 
 /* ═══════════════════════════════════════
    ARABIC TYPOGRAPHY
-   ═══════════════════════════════════════
-   Arabic letterforms need more leading than Latin. Any element
-   that may contain Arabic should inherit .dm-body-arabic OR set
-   dir="auto" and we rely on the global leading adjustment below.
-*/
+   ═══════════════════════════════════════ */
 
 [dir="rtl"],
 :lang(ar),

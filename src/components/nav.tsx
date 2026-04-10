@@ -4,15 +4,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { Search, FileText, Upload, UserRound } from "lucide-react";
 
 /**
- * Top navigation bar.
+ * Top navigation bar — enterprise dashboard style.
  *
- * The old nav was a dark slate bar grafted onto a white body — it
- * read as a generic 2017 admin panel. The new nav is light, flush
- * with the page surface, carries the brand mark in a real serif,
- * and uses the amber accent only on the active link underline.
+ * White surface, 1px zinc border on the bottom, no shadow. Brand
+ * mark is a small geometric icon + the wordmark in Inter semibold.
+ * Active link is marked by the indigo accent on a 2px bottom line.
  *
- * The status meta (model / stages / time) that used to crowd the
- * right side is gone — it was dev telemetry for an executive user.
+ * Density: tighter than the editorial pass — 13px text, 12px icons,
+ * 12px gap between links. Reads as a Linear / Vercel header.
  */
 const links = [
   { label: "Intelligence", href: "/", icon: Search },
@@ -27,48 +26,50 @@ export function Nav() {
 
   return (
     <nav
-      className="flex h-14 shrink-0 items-center gap-8 border-b px-6"
+      className="flex h-12 shrink-0 items-center gap-6 px-5"
       style={{
-        background: "var(--surface)",
-        borderColor: "var(--border-light)",
+        background: "var(--surface-raised)",
+        borderBottom: "1px solid var(--border)",
       }}
     >
-      {/* Brand mark */}
+      {/* Brand — small filled square mark + wordmark */}
       <button
         type="button"
         onClick={() => router.push("/")}
-        className="group flex items-baseline gap-0 border-0 bg-transparent p-0 cursor-pointer"
+        className="group flex items-center gap-2 border-0 bg-transparent p-0 cursor-pointer"
       >
         <span
+          aria-hidden
+          className="flex h-5 w-5 items-center justify-center"
           style={{
-            fontFamily: "'Source Serif 4', Georgia, serif",
-            fontSize: "1.125rem",
+            background: "var(--ink)",
+            borderRadius: "var(--radius-sm)",
+            color: "var(--surface-raised)",
+            fontSize: "0.6875rem",
             fontWeight: 700,
-            letterSpacing: "-0.015em",
+            lineHeight: 1,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          D
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            letterSpacing: "-0.01em",
             color: "var(--ink)",
             lineHeight: 1,
           }}
         >
-          Docu
-        </span>
-        <span
-          style={{
-            fontFamily: "'Source Serif 4', Georgia, serif",
-            fontSize: "1.125rem",
-            fontWeight: 400,
-            fontStyle: "italic",
-            letterSpacing: "-0.01em",
-            color: "var(--ink-muted)",
-            lineHeight: 1,
-          }}
-        >
-          Mind
+          DocuMind
         </span>
       </button>
 
       <span
         aria-hidden
-        className="h-6 w-px"
+        className="h-4 w-px"
         style={{ background: "var(--border)" }}
       />
 
@@ -84,23 +85,28 @@ export function Nav() {
               key={l.href}
               type="button"
               onClick={() => router.push(l.href)}
-              className="relative flex items-center gap-1.5 border-0 bg-transparent px-3 py-2 cursor-pointer transition-colors"
+              className="relative flex items-center gap-1.5 border-0 bg-transparent px-2.5 py-2 cursor-pointer transition-colors"
               style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-sm)",
+                fontFamily: "var(--font-sans)",
+                fontSize: "0.8125rem",
                 fontWeight: active ? 600 : 500,
                 color: active ? "var(--ink)" : "var(--ink-muted)",
+                borderRadius: "var(--radius-md)",
               }}
               onMouseEnter={(e) => {
                 if (!active) {
                   (e.currentTarget as HTMLButtonElement).style.color =
                     "var(--ink)";
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    "var(--surface-sunken)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!active) {
                   (e.currentTarget as HTMLButtonElement).style.color =
                     "var(--ink-muted)";
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    "transparent";
                 }
               }}
             >
@@ -109,7 +115,7 @@ export function Nav() {
               {active && (
                 <span
                   aria-hidden
-                  className="absolute inset-x-3 -bottom-[1px] h-[2px]"
+                  className="absolute inset-x-0 -bottom-3 h-[2px]"
                   style={{ background: "var(--accent)" }}
                 />
               )}
@@ -118,9 +124,6 @@ export function Nav() {
         })}
       </div>
 
-      {/* Right side spacer — kept empty intentionally. Previous
-          versions had a dev telemetry row (model · stages · time)
-          here which served no user purpose. */}
       <div className="ms-auto" />
     </nav>
   );

@@ -534,19 +534,20 @@ function ChatMessageInner({
         )}
         {content && (
           <div
-            className="max-w-[75%] px-5 py-3"
+            className="max-w-[75%] px-4 py-2.5"
             style={{
               background: "var(--ink)",
               color: "var(--surface-raised)",
-              borderRadius: "var(--radius-md) var(--radius-md) 4px var(--radius-md)",
-              boxShadow: "var(--shadow-sm)",
+              borderRadius: "var(--radius-md)",
             }}
           >
             <p
-              className="whitespace-pre-wrap dm-text"
+              className="whitespace-pre-wrap"
               style={{
+                fontSize: "var(--text-base)",
+                lineHeight: "var(--leading-normal)",
                 color: "var(--surface-raised)",
-                fontFamily: "var(--font-body), var(--font-arabic)",
+                fontFamily: "var(--font-sans)",
               }}
               dir="auto"
             >
@@ -559,43 +560,34 @@ function ChatMessageInner({
   }
 
   return (
-    <div className="group flex gap-4">
+    <div className="group flex gap-3">
       {/*
-        Assistant identity mark. A serif "D" monogram on a warm
-        surface card — reads as "archive stamp" more than "AI
-        avatar." The accent amber letter signals that the reply
-        comes from an intelligent reader, not a chat bot.
+        Assistant identity. Small filled square with "D" monogram in
+        sans, matching the nav brand mark. Tight, geometric, no
+        gradient, no serif. Reads as a tool's product mark.
       */}
       <div
-        className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center border"
+        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center"
         style={{
-          background: "var(--surface-raised)",
-          borderColor: "var(--border)",
+          background: "var(--ink)",
+          color: "var(--surface-raised)",
           borderRadius: "var(--radius-sm)",
-          boxShadow: "var(--shadow-xs)",
+          fontSize: "0.6875rem",
+          fontWeight: 700,
+          lineHeight: 1,
+          letterSpacing: "-0.02em",
         }}
       >
-        <span
-          style={{
-            fontFamily: "'Source Serif 4', Georgia, serif",
-            fontSize: "1rem",
-            fontWeight: 700,
-            color: "var(--accent)",
-            letterSpacing: "0.02em",
-            lineHeight: 1,
-          }}
-        >
-          D
-        </span>
+        D
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="mb-2 flex items-center gap-2">
+        <div className="mb-1.5 flex items-center gap-2">
           <span
             style={{
-              fontFamily: "'Source Serif 4', Georgia, serif",
+              fontFamily: "var(--font-sans)",
               fontWeight: 600,
-              fontSize: "var(--text-base)",
+              fontSize: "var(--text-sm)",
               color: "var(--ink)",
               letterSpacing: "-0.005em",
             }}
@@ -797,16 +789,16 @@ function ChatMessageInner({
                       padding: "0.75rem 1rem",
                     }}
                     onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "var(--surface-sunken)";
                       (e.currentTarget as HTMLButtonElement).style.borderColor =
-                        "var(--accent-muted)";
-                      (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                        "var(--shadow-xs)";
+                        "var(--border-strong)";
                     }}
                     onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "var(--surface-raised)";
                       (e.currentTarget as HTMLButtonElement).style.borderColor =
                         "var(--border)";
-                      (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                        "none";
                     }}
                     title={isWeb ? source.url : source.title}
                   >
@@ -814,13 +806,13 @@ function ChatMessageInner({
                       <ExternalLink
                         className="mt-0.5 h-3.5 w-3.5 shrink-0"
                         strokeWidth={1.75}
-                        style={{ color: "var(--accent)" }}
+                        style={{ color: "var(--ink-faint)" }}
                       />
                     ) : (
                       <FileText
                         className="mt-0.5 h-3.5 w-3.5 shrink-0"
                         strokeWidth={1.75}
-                        style={{ color: "var(--accent)" }}
+                        style={{ color: "var(--ink-faint)" }}
                       />
                     )}
                     <div className="min-w-0 flex-1">
