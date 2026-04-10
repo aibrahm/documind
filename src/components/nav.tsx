@@ -1,16 +1,19 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Search, FileText, Upload, Circle, UserRound } from "lucide-react";
+import { Search, FileText, Upload, UserRound } from "lucide-react";
 
-interface NavProps {
-  meta?: {
-    time?: number | null;
-    model?: string | null;
-    stages?: number | null;
-  };
-}
-
+/**
+ * Top navigation bar.
+ *
+ * The old nav was a dark slate bar grafted onto a white body — it
+ * read as a generic 2017 admin panel. The new nav is light, flush
+ * with the page surface, carries the brand mark in a real serif,
+ * and uses the amber accent only on the active link underline.
+ *
+ * The status meta (model / stages / time) that used to crowd the
+ * right side is gone — it was dev telemetry for an executive user.
+ */
 const links = [
   { label: "Intelligence", href: "/", icon: Search },
   { label: "Documents", href: "/documents", icon: FileText },
@@ -18,74 +21,107 @@ const links = [
   { label: "Profile", href: "/settings", icon: UserRound },
 ];
 
-export function Nav({ meta }: NavProps) {
+export function Nav() {
   const pathname = usePathname();
   const router = useRouter();
 
   return (
-    <nav className="flex items-center justify-between px-5 h-12 bg-[#1E293B] shrink-0">
-      <div className="flex items-center gap-6">
-        <button
-          onClick={() => router.push("/")}
-          className="text-[15px] tracking-tight text-white bg-transparent border-none cursor-pointer p-0 flex items-baseline"
+    <nav
+      className="flex h-14 shrink-0 items-center gap-8 border-b px-6"
+      style={{
+        background: "var(--surface)",
+        borderColor: "var(--border-light)",
+      }}
+    >
+      {/* Brand mark */}
+      <button
+        type="button"
+        onClick={() => router.push("/")}
+        className="group flex items-baseline gap-0 border-0 bg-transparent p-0 cursor-pointer"
+      >
+        <span
+          style={{
+            fontFamily: "'Source Serif 4', Georgia, serif",
+            fontSize: "1.125rem",
+            fontWeight: 700,
+            letterSpacing: "-0.015em",
+            color: "var(--ink)",
+            lineHeight: 1,
+          }}
         >
-          <span className="font-bold">Docu</span>
-          <span className="font-light text-slate-300">Mind</span>
-        </button>
+          Docu
+        </span>
+        <span
+          style={{
+            fontFamily: "'Source Serif 4', Georgia, serif",
+            fontSize: "1.125rem",
+            fontWeight: 400,
+            fontStyle: "italic",
+            letterSpacing: "-0.01em",
+            color: "var(--ink-muted)",
+            lineHeight: 1,
+          }}
+        >
+          Mind
+        </span>
+      </button>
 
-        <div className="w-px h-5 bg-slate-600" />
+      <span
+        aria-hidden
+        className="h-6 w-px"
+        style={{ background: "var(--border)" }}
+      />
 
-        <div className="flex gap-0.5">
-          {links.map((l) => {
-            const active =
-              pathname === l.href ||
-              (l.href !== "/" && pathname.startsWith(l.href));
-            const Icon = l.icon;
-
-            return (
-              <button
-                key={l.href}
-                onClick={() => router.push(l.href)}
-                className={`flex items-center gap-1.5 text-[13px] font-medium border-none px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
-                  active
-                    ? "bg-white/10 text-white font-semibold"
-                    : "bg-transparent text-slate-400 hover:text-slate-300"
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {l.label}
-              </button>
-            );
-          })}
-        </div>
+      {/* Primary links */}
+      <div className="flex items-center gap-1">
+        {links.map((l) => {
+          const active =
+            pathname === l.href ||
+            (l.href !== "/" && pathname.startsWith(l.href));
+          const Icon = l.icon;
+          return (
+            <button
+              key={l.href}
+              type="button"
+              onClick={() => router.push(l.href)}
+              className="relative flex items-center gap-1.5 border-0 bg-transparent px-3 py-2 cursor-pointer transition-colors"
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-sm)",
+                fontWeight: active ? 600 : 500,
+                color: active ? "var(--ink)" : "var(--ink-muted)",
+              }}
+              onMouseEnter={(e) => {
+                if (!active) {
+                  (e.currentTarget as HTMLButtonElement).style.color =
+                    "var(--ink)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  (e.currentTarget as HTMLButtonElement).style.color =
+                    "var(--ink-muted)";
+                }
+              }}
+            >
+              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+              {l.label}
+              {active && (
+                <span
+                  aria-hidden
+                  className="absolute inset-x-3 -bottom-[1px] h-[2px]"
+                  style={{ background: "var(--accent)" }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="flex items-center gap-3">
-        {meta?.model && (
-          <span className="font-['JetBrains_Mono'] text-[10px] tracking-wider text-violet-400 bg-white/10 px-2 py-0.5 rounded">
-            {meta.model.toUpperCase()}
-          </span>
-        )}
-
-        {meta?.stages != null && (
-          <span className="font-['JetBrains_Mono'] text-[10px] tracking-wider text-slate-500">
-            {meta.stages} STAGES
-          </span>
-        )}
-
-        {meta?.time != null && (
-          <span className="font-['JetBrains_Mono'] text-[10px] tracking-wider text-slate-500">
-            {meta.time}ms
-          </span>
-        )}
-
-        <div className="flex items-center gap-1.5">
-          <Circle className="w-1.5 h-1.5 fill-green-500 text-green-500 drop-shadow-[0_0_4px_#22c55e]" />
-          <span className="font-['JetBrains_Mono'] text-[10px] tracking-wider text-slate-500">
-            ONLINE
-          </span>
-        </div>
-      </div>
+      {/* Right side spacer — kept empty intentionally. Previous
+          versions had a dev telemetry row (model · stages · time)
+          here which served no user purpose. */}
+      <div className="ms-auto" />
     </nav>
   );
 }

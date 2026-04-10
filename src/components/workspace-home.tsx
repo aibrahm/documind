@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   RotateCw,
   X,
-  Sparkles,
   ArrowRight,
   FileText,
   FolderOpen,
@@ -235,7 +234,8 @@ function WorkspaceHomeInner({
   return (
     <div className="flex flex-1 overflow-hidden">
       <div
-        className="flex-1 flex flex-col min-w-0 bg-white relative"
+        className="relative flex min-w-0 flex-1 flex-col"
+        style={{ background: "var(--surface)" }}
         onDragEnter={(e) => {
           if (e.dataTransfer?.types.includes("Files")) {
             e.preventDefault();
@@ -260,90 +260,158 @@ function WorkspaceHomeInner({
       >
         {/* Drag-drop overlay */}
         {dragOver && (
-          <div className="absolute inset-0 z-20 bg-slate-900/5 backdrop-blur-sm border-2 border-dashed border-slate-400 rounded-lg m-3 flex items-center justify-center pointer-events-none">
-            <div className="bg-white border border-slate-200 rounded-xl shadow-lg px-6 py-4 flex items-center gap-3">
-              <UploadIcon className="w-5 h-5 text-slate-500" />
+          <div
+            className="pointer-events-none absolute inset-0 z-20 m-3 flex items-center justify-center rounded-xl border-2 border-dashed"
+            style={{
+              background: "rgba(11,12,22,0.04)",
+              borderColor: "var(--accent-muted)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <div
+              className="flex items-center gap-3 rounded-xl border px-6 py-4"
+              style={{
+                background: "var(--surface-raised)",
+                borderColor: "var(--border)",
+                boxShadow: "var(--shadow-md)",
+              }}
+            >
+              <UploadIcon
+                className="h-5 w-5"
+                style={{ color: "var(--accent)" }}
+              />
               <div>
-                <p className="text-[14px] font-medium text-slate-900">Drop PDFs to attach</p>
-                <p className="text-[12px] text-slate-500">Files become context for this conversation only</p>
+                <p className="dm-text" style={{ fontWeight: 600 }}>
+                  Drop PDFs to attach
+                </p>
+                <p className="dm-caption">
+                  Files become context for this conversation only
+                </p>
               </div>
             </div>
           </div>
         )}
 
         {isIdle ? (
-          /* ── Empty / idle state: greeting + briefing + input + guided queries ── */
+          /* ── Idle state: greeting + briefing + input + guided queries ── */
           <div className="flex-1 overflow-y-auto">
-            <div className="max-w-2xl mx-auto px-6 pt-16 pb-10">
-              <h1
-                className="text-[32px] font-semibold text-slate-900 tracking-tight mb-1.5"
-                dir="auto"
-              >
+            <div className="mx-auto max-w-2xl px-8 pt-20 pb-16">
+              {/* Display greeting — the one moment where the serif
+                  gets to breathe. Kept short. */}
+              <h1 className="dm-display mb-2" dir="auto">
                 {t.greeting}
               </h1>
-              <p className="text-[15px] text-slate-500 mb-8" dir="auto">
+              <p
+                className="dm-lead mb-10"
+                style={{ color: "var(--ink-muted)" }}
+                dir="auto"
+              >
                 {t.greetingSubtitle}
               </p>
 
               {/*
-                Briefing block — the "AI is doing work for me" moment.
-                Only rendered when briefing.kind is "active" or "quiet".
-                Empty workspace (no docs at all) hides the block entirely
-                so the first-upload UX is uncluttered.
+                Briefing block — the hero surface of the entire app.
+                Renders as a proper document card (parchment background,
+                left accent rail, generous padding) so it reads as
+                "prepared for you" not as "another UI card."
               */}
               {briefing.kind === "active" && (
-                <div
-                  className="mb-8 rounded-[20px] border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5"
-                  dir="auto"
-                >
-                  <div className="mb-3 flex items-center gap-2">
-                    <Sparkles className="h-3.5 w-3.5 text-slate-500" />
-                    <p
-                      className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-500"
-                      dir="auto"
-                    >
-                      {t.briefingLabel}
-                    </p>
+                <div className="dm-briefing-card mb-10" dir="auto">
+                  <div className="mb-4 flex items-center gap-2 ps-3">
+                    <span className="dm-label-accent">{t.briefingLabel}</span>
                     <button
                       type="button"
                       onClick={handleBriefingRefresh}
                       disabled={refreshingBriefing}
-                      className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-slate-400 hover:border-slate-200 hover:bg-white hover:text-slate-700 disabled:opacity-40 cursor-pointer transition-colors"
+                      className="ms-auto inline-flex h-7 w-7 items-center justify-center rounded-lg border-0 bg-transparent cursor-pointer transition-colors disabled:opacity-40"
+                      style={{
+                        color: "var(--ink-faint)",
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.background =
+                          "var(--accent-bg)";
+                        (e.currentTarget as HTMLButtonElement).style.color =
+                          "var(--accent)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.background =
+                          "transparent";
+                        (e.currentTarget as HTMLButtonElement).style.color =
+                          "var(--ink-faint)";
+                      }}
                       title={t.briefingRefreshTooltip}
                     >
                       <RefreshCw
-                        className={`h-3 w-3 ${refreshingBriefing ? "animate-spin" : ""}`}
+                        className={`h-3.5 w-3.5 ${refreshingBriefing ? "animate-spin" : ""}`}
+                        strokeWidth={1.75}
                       />
                     </button>
                   </div>
-                  <ul className="space-y-2.5">
+                  <ul className="space-y-4 ps-3">
                     {briefing.bullets.map((bullet, i) => (
                       <li
                         key={i}
-                        className="flex items-start gap-2.5 text-[14px] leading-relaxed text-slate-700"
+                        className="dm-text flex items-start gap-3"
+                        style={{
+                          fontSize: "var(--text-md)",
+                          lineHeight: "var(--leading-normal)",
+                          color: "var(--ink-light)",
+                        }}
                         dir="auto"
                       >
-                        <span className="mt-1.5 inline-block h-1 w-1 shrink-0 rounded-full bg-slate-400" />
+                        <span
+                          aria-hidden
+                          className="dm-serif-num mt-0.5 shrink-0"
+                          style={{
+                            color: "var(--accent)",
+                            minWidth: "1.25rem",
+                            fontSize: "var(--text-md)",
+                          }}
+                        >
+                          {i + 1}.
+                        </span>
                         <div className="min-w-0 flex-1">
                           <p>{bullet.text}</p>
                           {bullet.link && (
                             <button
                               type="button"
                               onClick={() => handleBriefingLinkClick(bullet.link!)}
-                              className="mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-600 hover:border-slate-300 hover:bg-slate-50 cursor-pointer"
+                              className="dm-chip mt-2 cursor-pointer border-0 transition-colors"
+                              style={{
+                                background: "var(--surface-raised)",
+                                borderColor: "var(--border)",
+                                border: "1px solid var(--border)",
+                                color: "var(--ink-muted)",
+                              }}
+                              onMouseEnter={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.background =
+                                  "var(--accent-bg)";
+                                (e.currentTarget as HTMLButtonElement).style.borderColor =
+                                  "var(--accent-muted)";
+                                (e.currentTarget as HTMLButtonElement).style.color =
+                                  "var(--accent)";
+                              }}
+                              onMouseLeave={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.background =
+                                  "var(--surface-raised)";
+                                (e.currentTarget as HTMLButtonElement).style.borderColor =
+                                  "var(--border)";
+                                (e.currentTarget as HTMLButtonElement).style.color =
+                                  "var(--ink-muted)";
+                              }}
                               dir="auto"
                             >
                               {bullet.link.kind === "document" ? (
-                                <FileText className="h-3 w-3 text-slate-400" />
+                                <FileText className="h-3 w-3" strokeWidth={1.75} />
                               ) : (
-                                <FolderOpen className="h-3 w-3 text-slate-400" />
+                                <FolderOpen className="h-3 w-3" strokeWidth={1.75} />
                               )}
-                              <span className="max-w-[240px] truncate">
+                              <span className="max-w-[260px] truncate">
                                 {bullet.link.kind === "document"
                                   ? bullet.link.title
                                   : bullet.link.name}
                               </span>
-                              <ArrowRight className="h-3 w-3 text-slate-400" />
+                              <ArrowRight className="h-3 w-3" strokeWidth={1.75} />
                             </button>
                           )}
                         </div>
@@ -354,19 +422,31 @@ function WorkspaceHomeInner({
               )}
 
               {briefing.kind === "quiet" && (
-                <div className="mb-8 rounded-[20px] border border-slate-200 bg-slate-50/60 px-5 py-4 flex items-start gap-3">
-                  <p className="text-[13px] leading-relaxed text-slate-500 flex-1" dir="auto">
+                <div
+                  className="mb-10 flex items-start gap-4 rounded-xl border px-5 py-4"
+                  style={{
+                    background: "var(--surface-sunken)",
+                    borderColor: "var(--border-light)",
+                  }}
+                >
+                  <p
+                    className="dm-text flex-1"
+                    style={{ color: "var(--ink-muted)" }}
+                    dir="auto"
+                  >
                     {briefing.message}
                   </p>
                   <button
                     type="button"
                     onClick={handleBriefingRefresh}
                     disabled={refreshingBriefing}
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-transparent text-slate-400 hover:border-slate-200 hover:bg-white hover:text-slate-700 disabled:opacity-40 cursor-pointer transition-colors"
-                    title="Refresh briefing"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-0 bg-transparent cursor-pointer transition-colors disabled:opacity-40"
+                    style={{ color: "var(--ink-faint)" }}
+                    title={t.briefingRefreshTooltip}
                   >
                     <RefreshCw
-                      className={`h-3 w-3 ${refreshingBriefing ? "animate-spin" : ""}`}
+                      className={`h-3.5 w-3.5 ${refreshingBriefing ? "animate-spin" : ""}`}
+                      strokeWidth={1.75}
                     />
                   </button>
                 </div>
@@ -385,11 +465,8 @@ function WorkspaceHomeInner({
               </div>
 
               {/* Three guided query cards derived from real workspace data. */}
-              <div className="space-y-2">
-                <p
-                  className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2"
-                  dir="auto"
-                >
+              <div className="space-y-3">
+                <p className="dm-label mb-3" dir="auto">
                   {t.startHere}
                 </p>
                 {suggestions.map((suggestion, index) => (
@@ -397,24 +474,45 @@ function WorkspaceHomeInner({
                     key={`${suggestion.id}-${index}`}
                     type="button"
                     onClick={() => handleSuggestionClick(suggestion.prompt)}
-                    className="group w-full text-left rounded-xl border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 transition-all px-4 py-3 cursor-pointer"
+                    className="dm-card-interactive group w-full border-0 text-start"
+                    style={{ textAlign: "inherit" }}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 group-hover:bg-slate-900 group-hover:text-white transition-colors">
-                        <Sparkles className="h-3.5 w-3.5" />
-                      </div>
+                    <div className="flex items-start gap-4">
+                      <span
+                        aria-hidden
+                        className="dm-serif-num mt-0.5 shrink-0"
+                        style={{
+                          color: "var(--ink-faint)",
+                          fontSize: "var(--text-md)",
+                          minWidth: "1.25rem",
+                        }}
+                      >
+                        {index + 1}.
+                      </span>
                       <div className="min-w-0 flex-1">
                         <p
-                          className="truncate text-[14px] font-semibold text-slate-900"
+                          className="truncate dm-text"
+                          style={{
+                            fontWeight: 600,
+                            color: "var(--ink)",
+                          }}
                           dir="auto"
                         >
                           {suggestion.subject}
                         </p>
-                        <p className="mt-0.5 text-[12px] text-slate-500 leading-snug" dir="auto">
+                        <p
+                          className="dm-caption mt-1"
+                          style={{ color: "var(--ink-muted)" }}
+                          dir="auto"
+                        >
                           {suggestion.hint}
                         </p>
                       </div>
-                      <ArrowRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-700 transition-colors" />
+                      <ArrowRight
+                        className="mt-1 h-3.5 w-3.5 shrink-0 transition-colors"
+                        strokeWidth={1.75}
+                        style={{ color: "var(--ink-ghost)" }}
+                      />
                     </div>
                   </button>
                 ))}

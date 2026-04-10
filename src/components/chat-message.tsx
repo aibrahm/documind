@@ -6,7 +6,6 @@ import remarkGfm from "remark-gfm";
 import {
   FileText,
   ExternalLink,
-  Sparkles,
   Copy,
   Check,
   RotateCw,
@@ -18,7 +17,6 @@ import {
   ThumbsUp,
   ThumbsDown,
 } from "lucide-react";
-import { Tag } from "@/components/ui-system";
 import { DocumentContextCard } from "@/components/document-context-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -495,17 +493,17 @@ function ChatMessageInner({
     const attachments = metadata?.attachments ?? [];
     const pinned = metadata?.pinned ?? [];
     return (
-      <div className="group flex flex-col items-end gap-1.5">
+      <div className="group flex flex-col items-end gap-2">
         {pinned.length > 0 && (
           <div className="flex max-w-[75%] flex-wrap justify-end gap-1.5">
             {pinned.map((pinnedItem, index) => (
               <div
                 key={`pin-${index}`}
-                className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-blue-700"
+                className="dm-chip dm-chip-accent"
                 title={pinnedItem.label}
               >
-                <FileText className="h-3 w-3" />
-                <span className="max-w-[180px] truncate text-[12px]" dir="auto">
+                <FileText className="h-3 w-3" strokeWidth={1.75} />
+                <span className="max-w-[180px] truncate" dir="auto">
                   {pinnedItem.label}
                 </span>
               </div>
@@ -517,14 +515,17 @@ function ChatMessageInner({
             {attachments.map((attachment, index) => (
               <div
                 key={index}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5"
+                className="dm-chip"
                 title={attachment.title}
               >
-                <FileText className="h-3 w-3 text-slate-400" />
-                <span className="max-w-[180px] truncate text-[12px] text-slate-700" dir="auto">
+                <FileText className="h-3 w-3" strokeWidth={1.75} />
+                <span className="max-w-[180px] truncate" dir="auto">
                   {attachment.title}
                 </span>
-                <span className="font-['JetBrains_Mono'] text-[10px] text-slate-400">
+                <span
+                  className="dm-data"
+                  style={{ fontSize: "var(--text-2xs)" }}
+                >
                   {attachment.pageCount}p
                 </span>
               </div>
@@ -532,9 +533,21 @@ function ChatMessageInner({
           </div>
         )}
         {content && (
-          <div className="max-w-[75%] rounded-2xl rounded-tr-md bg-slate-900 px-4 py-2.5 text-white">
+          <div
+            className="max-w-[75%] px-5 py-3"
+            style={{
+              background: "var(--ink)",
+              color: "var(--surface-raised)",
+              borderRadius: "var(--radius-md) var(--radius-md) 4px var(--radius-md)",
+              boxShadow: "var(--shadow-sm)",
+            }}
+          >
             <p
-              className="whitespace-pre-wrap font-['IBM_Plex_Sans_Arabic'] text-[14px] leading-relaxed"
+              className="whitespace-pre-wrap dm-text"
+              style={{
+                color: "var(--surface-raised)",
+                fontFamily: "var(--font-body), var(--font-arabic)",
+              }}
               dir="auto"
             >
               {content}
@@ -547,15 +560,58 @@ function ChatMessageInner({
 
   return (
     <div className="group flex gap-4">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-800 to-slate-600">
-        <Sparkles className="h-4 w-4 text-white" />
+      {/*
+        Assistant identity mark. A serif "D" monogram on a warm
+        surface card — reads as "archive stamp" more than "AI
+        avatar." The accent amber letter signals that the reply
+        comes from an intelligent reader, not a chat bot.
+      */}
+      <div
+        className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center border"
+        style={{
+          background: "var(--surface-raised)",
+          borderColor: "var(--border)",
+          borderRadius: "var(--radius-sm)",
+          boxShadow: "var(--shadow-xs)",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "'Source Serif 4', Georgia, serif",
+            fontSize: "1rem",
+            fontWeight: 700,
+            color: "var(--accent)",
+            letterSpacing: "0.02em",
+            lineHeight: 1,
+          }}
+        >
+          D
+        </span>
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="mb-1.5 flex items-center gap-2">
-          <span className="text-[13px] font-semibold text-slate-900">DocuMind</span>
+        <div className="mb-2 flex items-center gap-2">
+          <span
+            style={{
+              fontFamily: "'Source Serif 4', Georgia, serif",
+              fontWeight: 600,
+              fontSize: "var(--text-base)",
+              color: "var(--ink)",
+              letterSpacing: "-0.005em",
+            }}
+          >
+            DocuMind
+          </span>
           {metadata?.model && (
-            <span className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-slate-400">
+            <span
+              className="dm-data"
+              style={{
+                fontSize: "var(--text-2xs)",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                color: "var(--ink-ghost)",
+              }}
+            >
               {metadata.model}
             </span>
           )}
@@ -700,13 +756,19 @@ function ChatMessageInner({
         )}
 
         {dedupedSources.length > 0 && (
-          <div className="mt-3">
-            <p className="mb-1.5 font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-slate-400">
+          <div className="mt-4">
+            <p className="dm-label mb-2">
               Sources · {dedupedSources.length}
               {docSourceCount > 0 && webSourceCount > 0 && (
-                <span className="ml-1.5 text-slate-300">
-                  ({docSourceCount} doc{docSourceCount === 1 ? "" : "s"} ·{" "}
-                  {webSourceCount} web)
+                <span
+                  className="ms-2"
+                  style={{
+                    color: "var(--ink-ghost)",
+                    letterSpacing: "0.1em",
+                  }}
+                >
+                  {docSourceCount} doc{docSourceCount === 1 ? "" : "s"} ·{" "}
+                  {webSourceCount} web
                 </span>
               )}
             </p>
@@ -718,56 +780,94 @@ function ChatMessageInner({
                   entry.pages.length === 0
                     ? ""
                     : entry.pages.length === 1
-                    ? `p.${entry.pages[0]}`
-                    : entry.pages.length <= 3
-                    ? `pp.${entry.pages.join(",")}`
-                    : `${entry.pages.length} pages`;
+                      ? `p.${entry.pages[0]}`
+                      : entry.pages.length <= 3
+                        ? `pp.${entry.pages.join(",")}`
+                        : `${entry.pages.length} pages`;
                 return (
                   <button
                     key={entry.key}
                     type="button"
                     onClick={() => onSourceClick?.(source)}
-                    className="group/src flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
+                    className="group/src flex w-full min-w-0 cursor-pointer items-start gap-3 border text-start transition-all"
+                    style={{
+                      background: "var(--surface-raised)",
+                      borderColor: "var(--border)",
+                      borderRadius: "var(--radius-md)",
+                      padding: "0.75rem 1rem",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.borderColor =
+                        "var(--accent-muted)";
+                      (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                        "var(--shadow-xs)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.borderColor =
+                        "var(--border)";
+                      (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                        "none";
+                    }}
                     title={isWeb ? source.url : source.title}
                   >
                     {isWeb ? (
-                      <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <ExternalLink
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                        strokeWidth={1.75}
+                        style={{ color: "var(--accent)" }}
+                      />
                     ) : (
-                      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <FileText
+                        className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                        strokeWidth={1.75}
+                        style={{ color: "var(--accent)" }}
+                      />
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span
-                          className="min-w-0 flex-1 truncate text-[12px] font-medium text-slate-700"
+                          className="min-w-0 flex-1 truncate dm-text"
+                          style={{
+                            fontSize: "var(--text-sm)",
+                            fontWeight: 600,
+                            color: "var(--ink)",
+                          }}
                           dir="auto"
                         >
                           {source.title}
                         </span>
-                        <span className="shrink-0 font-['JetBrains_Mono'] text-[10px] text-slate-400">
+                        <span
+                          className="dm-data shrink-0"
+                          style={{ fontSize: "var(--text-2xs)" }}
+                        >
                           {isWeb ? getDomain(source.url) : pagesLabel}
                         </span>
                         {entry.citationCount > 1 && (
-                          <span className="shrink-0 rounded bg-slate-100 px-1 font-['JetBrains_Mono'] text-[9px] text-slate-500">
+                          <span
+                            className="dm-data shrink-0 px-1"
+                            style={{
+                              fontSize: "var(--text-2xs)",
+                              background: "var(--accent-bg)",
+                              color: "var(--accent)",
+                              borderRadius: "var(--radius-sm)",
+                            }}
+                          >
                             ×{entry.citationCount}
                           </span>
                         )}
                       </div>
                       {isWeb ? (
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          Web source
-                        </p>
+                        <p className="dm-caption mt-1">Web source</p>
                       ) : (
                         <>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            {source.classification && (
-                              <Tag variant="default">{source.classification}</Tag>
-                            )}
-                            {source.sectionTitle && (
-                              <span className="text-[11px] text-slate-500" dir="auto">
-                                {source.sectionTitle}
-                              </span>
-                            )}
-                          </div>
+                          {source.sectionTitle && (
+                            <p
+                              className="dm-caption mt-1 truncate"
+                              dir="auto"
+                            >
+                              {source.sectionTitle}
+                            </p>
+                          )}
                           <DocumentContextCard
                             card={source.contextCard}
                             preferredLanguage={source.language}
@@ -785,16 +885,23 @@ function ChatMessageInner({
                 <button
                   type="button"
                   onClick={() => setSourcesExpanded((v) => !v)}
-                  className="flex items-center gap-1 rounded-md border border-dashed border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 cursor-pointer"
+                  className="dm-btn-ghost border-0 cursor-pointer"
+                  style={{
+                    background: "transparent",
+                    borderStyle: "dashed",
+                    borderWidth: "1px",
+                    borderColor: "var(--border)",
+                    fontSize: "var(--text-xs)",
+                  }}
                 >
                   {sourcesExpanded ? (
                     <>
-                      <ChevronUp className="h-3 w-3" />
+                      <ChevronUp className="h-3 w-3" strokeWidth={1.75} />
                       Show fewer
                     </>
                   ) : (
                     <>
-                      <ChevronDown className="h-3 w-3" />
+                      <ChevronDown className="h-3 w-3" strokeWidth={1.75} />
                       Show {dedupedSources.length - SOURCE_PREVIEW_COUNT} more
                     </>
                   )}
@@ -812,19 +919,34 @@ function ChatMessageInner({
           "Fail Loud, Never Fake" as a product value.
         */}
         {!isStreaming && metadata?.warnings && metadata.warnings.length > 0 && (
-          <div className="mt-3 space-y-1">
+          <div className="mt-4 space-y-2">
             {metadata.warnings.map((w, i) => (
               <div
                 key={`warn-${i}`}
-                className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
+                className="flex items-start gap-3 border px-4 py-3"
+                style={{
+                  background: "var(--warning-bg)",
+                  borderColor: "#f3dfb3",
+                  borderRadius: "var(--radius-md)",
+                }}
                 dir="auto"
               >
-                <span className="mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                <span
+                  aria-hidden
+                  className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ background: "var(--warning)" }}
+                />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[12px] font-semibold uppercase tracking-wider text-amber-900">
+                  <p
+                    className="dm-label"
+                    style={{ color: "var(--warning)" }}
+                  >
                     {w.kind} degraded
                   </p>
-                  <p className="mt-0.5 text-[12px] leading-snug text-amber-800">
+                  <p
+                    className="dm-text-sm mt-1"
+                    style={{ color: "#78350f" }}
+                  >
                     {w.message}
                   </p>
                 </div>
@@ -835,14 +957,43 @@ function ChatMessageInner({
 
         {!isStreaming && content && metadata?.coverage && (() => {
           const describe = describeCoverage(metadata.coverage);
+          // Map the old Tailwind class dots onto tokenized colors so
+          // the confidence tier reads against the warm surface palette
+          // instead of the cold slate it was designed against.
+          const dotColor =
+            describe.dot === "bg-emerald-500"
+              ? "var(--success)"
+              : describe.dot === "bg-amber-500"
+                ? "var(--warning)"
+                : "var(--danger)";
           return (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
-              <span className={`inline-block h-1.5 w-1.5 rounded-full ${describe.dot}`} />
-              <span className="font-medium text-slate-600">{describe.text}</span>
+            <div
+              className="mt-4 flex flex-wrap items-center gap-2"
+              style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--ink-muted)",
+              }}
+            >
+              <span
+                aria-hidden
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ background: dotColor }}
+              />
+              <span
+                style={{
+                  fontWeight: 600,
+                  color: "var(--ink)",
+                  fontSize: "var(--text-xs)",
+                }}
+              >
+                {describe.text}
+              </span>
               {describe.action && (
                 <>
-                  <span className="text-slate-300">·</span>
-                  <span className="text-slate-500">{describe.action}</span>
+                  <span style={{ color: "var(--ink-ghost)" }}>·</span>
+                  <span style={{ color: "var(--ink-muted)" }}>
+                    {describe.action}
+                  </span>
                 </>
               )}
             </div>
@@ -850,16 +1001,21 @@ function ChatMessageInner({
         })()}
 
         {!isStreaming && content && (
-          <div className="mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="mt-3 flex flex-wrap items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
             <Button
               type="button"
               variant="ghost"
               size="xs"
               onClick={copyContent}
-              className="text-slate-400 hover:text-slate-700"
+              className="hover:bg-transparent"
+              style={{ color: "var(--ink-faint)" }}
               title="Copy"
             >
-              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              {copied ? (
+                <Check className="h-3 w-3" strokeWidth={1.75} />
+              ) : (
+                <Copy className="h-3 w-3" strokeWidth={1.75} />
+              )}
               <span>{copied ? "Copied" : "Copy"}</span>
             </Button>
 
@@ -869,20 +1025,19 @@ function ChatMessageInner({
                 variant="ghost"
                 size="xs"
                 onClick={onRegenerate}
-                className="text-slate-400 hover:text-slate-700"
+                className="hover:bg-transparent"
+                style={{ color: "var(--ink-faint)" }}
                 title="Regenerate"
               >
-                <RotateCw className="h-3 w-3" />
+                <RotateCw className="h-3 w-3" strokeWidth={1.75} />
                 <span>Regenerate</span>
               </Button>
             )}
 
             {/*
               Per-message feedback — two buttons, no stars, no forms.
-              This is the one product metric that matters: did the VC
-              actually find this answer worth acting on. Kept deliberately
-              lightweight (no modal, no "why was this wrong?" prompt)
-              because friction on feedback kills the signal.
+              Tokenized colors: helpful turns accent-gold, wrong turns
+              the danger red. Inactive state reads as muted ink.
             */}
             {messageId && (
               <>
@@ -891,14 +1046,16 @@ function ChatMessageInner({
                   variant="ghost"
                   size="xs"
                   onClick={() => void submitFeedback("helpful")}
-                  className={
-                    feedback === "helpful"
-                      ? "text-emerald-600 hover:text-emerald-700"
-                      : "text-slate-400 hover:text-slate-700"
-                  }
+                  className="hover:bg-transparent"
+                  style={{
+                    color:
+                      feedback === "helpful"
+                        ? "var(--accent)"
+                        : "var(--ink-faint)",
+                  }}
                   title="This helped"
                 >
-                  <ThumbsUp className="h-3 w-3" />
+                  <ThumbsUp className="h-3 w-3" strokeWidth={1.75} />
                   <span>Helpful</span>
                 </Button>
                 <Button
@@ -906,18 +1063,24 @@ function ChatMessageInner({
                   variant="ghost"
                   size="xs"
                   onClick={() => void submitFeedback("wrong")}
-                  className={
-                    feedback === "wrong"
-                      ? "text-red-600 hover:text-red-700"
-                      : "text-slate-400 hover:text-slate-700"
-                  }
+                  className="hover:bg-transparent"
+                  style={{
+                    color:
+                      feedback === "wrong"
+                        ? "var(--danger)"
+                        : "var(--ink-faint)",
+                  }}
                   title="This was wrong"
                 >
-                  <ThumbsDown className="h-3 w-3" />
+                  <ThumbsDown className="h-3 w-3" strokeWidth={1.75} />
                   <span>Wrong</span>
                 </Button>
                 {feedbackError && (
-                  <span className="text-[11px] text-red-500" title={feedbackError}>
+                  <span
+                    className="dm-caption ms-1"
+                    style={{ color: "var(--danger)" }}
+                    title={feedbackError}
+                  >
                     ({feedbackError})
                   </span>
                 )}
