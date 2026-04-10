@@ -1226,9 +1226,12 @@ export type Database = {
     Functions: {
       hybrid_search: {
         Args: {
+          excluded_doc_ids?: string[]
           filter_classification?: string
           filter_document_id?: string
+          included_doc_ids?: string[]
           match_count?: number
+          max_per_document?: number
           query_embedding: string
           query_text: string
         }
@@ -1242,6 +1245,19 @@ export type Database = {
           page_number: number
           section_title: string
           similarity: number
+        }[]
+      }
+      search_conversations: {
+        Args: { match_count?: number; query_text: string }
+        Returns: {
+          conversation_id: string
+          conversation_title: string
+          last_message_at: string
+          matched_message_id: string
+          matched_message_role: string
+          project_id: string
+          rank: number
+          snippet: string
         }[]
       }
     }

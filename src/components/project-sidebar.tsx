@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useTransition, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useTransition,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,6 +22,8 @@ import {
   Folder,
   MessageSquarePlus,
   Search,
+  MessageSquare,
+  Loader2,
 } from "lucide-react";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
 import {
@@ -51,6 +60,24 @@ interface ProjectSidebarProps {
 }
 
 const FOCUS_HISTORY_SEARCH_EVENT = "documind:focus-history-search";
+
+// Minimum query length before we hit the server. Anything shorter is
+// treated as "still typing." 2 chars matches the API endpoint's own
+// minimum and avoids flooding for accidental key presses.
+const SEARCH_MIN_QUERY_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 220;
+
+// One match in the new server-side conversation search. Mirrors the
+// shape returned by /api/conversations/search.
+interface ConversationSearchResult {
+  conversationId: string;
+  title: string;
+  projectId: string | null;
+  snippet: string;
+  matchedRole: "user" | "assistant" | "system";
+  rank: number;
+  lastMessageAt: string | null;
+}
 
 // ── Date bucketing for the General section ──
 
@@ -99,8 +126,23 @@ export function ProjectSidebar({
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [historyQuery, setHistoryQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ConversationSearchResult[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [, startTransition] = useTransition();
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Project + conversation lookup tables for the search-result list.
+  // Memoized so the useCallback below doesn't re-create itself on
+  // every render — the parent passes a fresh `projects` array each
+  // time, but as long as the contents are stable the maps are too.
+  const projectsById = useMemo(
+    () => new Map(projects.map((p) => [p.id, p])),
+    [projects],
+  );
+  const projectSlugById = useMemo(
+    () => new Map(projects.map((p) => [p.id, p.slug])),
+    [projects],
+  );
 
   // Hydrate expanded-projects from localStorage on mount
   useEffect(() => {
@@ -138,6 +180,73 @@ export function ProjectSidebar({
       window.removeEventListener(FOCUS_HISTORY_SEARCH_EVENT, focusSearch);
     };
   }, []);
+
+  // ── Server-side conversation search (debounced) ──
+  //
+  // When the search box is empty, we render the existing project tree
+  // unchanged. When the user types ≥2 chars, we hit the new
+  // /api/conversations/search endpoint which queries the messages.content
+  // FTS index added in migration 019. Each result is one conversation
+  // with the highest-ranked matching message snippet (ts_headline'd).
+  //
+  // The 220ms debounce keeps the typing experience snappy without
+  // hammering the API on every keystroke.
+  useEffect(() => {
+    const trimmed = historyQuery.trim();
+    if (trimmed.length < SEARCH_MIN_QUERY_LENGTH) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    const handle = setTimeout(async () => {
+      try {
+        const url = `/api/conversations/search?q=${encodeURIComponent(trimmed)}&limit=25`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          if (!cancelled) {
+            setSearchResults([]);
+            setSearchLoading(false);
+          }
+          return;
+        }
+        const data = (await res.json()) as {
+          results: ConversationSearchResult[];
+        };
+        if (!cancelled) {
+          setSearchResults(data.results ?? []);
+          setSearchLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setSearchResults([]);
+          setSearchLoading(false);
+        }
+      }
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [historyQuery]);
+
+  // Click handler for a search result row. Navigates to the right
+  // surface (project workspace if the conversation belongs to one,
+  // root chat home otherwise) with ?conversation=<id> so the
+  // workspace component can load it.
+  const handleSearchResultClick = useCallback(
+    (result: ConversationSearchResult) => {
+      const slug = result.projectId
+        ? projectSlugById.get(result.projectId)
+        : null;
+      const target = slug
+        ? `/projects/${slug}?conversation=${result.conversationId}`
+        : `/?conversation=${result.conversationId}`;
+      router.push(target);
+    },
+    [projectSlugById, router],
+  );
 
   // Group conversations by project_id
   const convosByProject = new Map<string | null, ConversationSummary[]>();
@@ -280,22 +389,73 @@ export function ProjectSidebar({
           </button>
         </div>
 
-        <div className="px-3 py-2 border-b border-slate-200 bg-white/80">
-          <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-2 shadow-sm">
-            <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <div
+          className="px-3 py-2"
+          style={{
+            background: "var(--surface-raised)",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <div
+            className="flex items-center gap-2 px-2 py-1.5"
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
+            {searchLoading ? (
+              <Loader2
+                className="w-3.5 h-3.5 shrink-0 animate-spin"
+                style={{ color: "var(--ink-faint)" }}
+              />
+            ) : (
+              <Search
+                className="w-3.5 h-3.5 shrink-0"
+                style={{ color: "var(--ink-faint)" }}
+                strokeWidth={1.75}
+              />
+            )}
             <input
               ref={searchInputRef}
               type="search"
               value={historyQuery}
               onChange={(e) => setHistoryQuery(e.target.value)}
-              placeholder="Search chats and projects"
-              className="w-full border-none bg-transparent text-[12px] text-slate-700 outline-none placeholder:text-slate-400"
+              placeholder="Search messages, projects, threads"
+              className="w-full border-none bg-transparent outline-none"
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: "var(--text-xs)",
+                color: "var(--ink)",
+              }}
             />
           </div>
+          {historyQuery.trim().length > 0 &&
+            historyQuery.trim().length < SEARCH_MIN_QUERY_LENGTH && (
+              <p
+                className="mt-1.5 px-1"
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  color: "var(--ink-faint)",
+                }}
+              >
+                Keep typing to search…
+              </p>
+            )}
         </div>
 
-        {/* Scrollable list */}
+        {/* Scrollable list — either search results OR the project tree */}
         <div className="flex-1 overflow-y-auto py-2">
+          {searchResults !== null ? (
+            <SearchResultsList
+              results={searchResults}
+              loading={searchLoading}
+              query={historyQuery.trim()}
+              projectsById={projectsById}
+              onResultClick={handleSearchResultClick}
+            />
+          ) : (
+            <>
           {/* ── PROJECTS section ── */}
           <div className="mb-4">
             <p className="px-3 mb-1 text-[10px] font-['JetBrains_Mono'] uppercase tracking-wider text-slate-400 font-semibold">
@@ -480,14 +640,9 @@ export function ProjectSidebar({
                 </div>
               );
             })}
-            {normalizedHistoryQuery &&
-              visibleProjects.length === 0 &&
-              filteredGeneralConvos.length === 0 && (
-                <p className="px-3 py-3 text-xs text-slate-400">
-                  No chats or projects match “{historyQuery.trim()}”.
-                </p>
-              )}
           </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -506,6 +661,200 @@ export function ProjectSidebar({
       {/* Create project dialog */}
       <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
+  );
+}
+
+// ── SearchResultsList — replaces the project tree when the user
+//    is searching message content. Each row is a conversation with
+//    a snippet of the matching message body, the project name (if
+//    any), and a relative timestamp. Clicking navigates to the
+//    conversation. ──
+
+function SearchResultsList({
+  results,
+  loading,
+  query,
+  projectsById,
+  onResultClick,
+}: {
+  results: ConversationSearchResult[];
+  loading: boolean;
+  query: string;
+  projectsById: Map<string, ProjectSummary>;
+  onResultClick: (result: ConversationSearchResult) => void;
+}) {
+  if (loading && results.length === 0) {
+    return (
+      <div
+        className="px-3 py-4 flex items-center gap-2"
+        style={{
+          color: "var(--ink-faint)",
+          fontSize: "var(--text-xs)",
+        }}
+      >
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Searching messages…
+      </div>
+    );
+  }
+
+  if (results.length === 0) {
+    return (
+      <div className="px-3 py-4">
+        <p
+          style={{
+            fontSize: "var(--text-xs)",
+            color: "var(--ink-faint)",
+          }}
+        >
+          No matching messages for{" "}
+          <span style={{ color: "var(--ink-muted)" }}>
+            “{query.length > 40 ? `${query.slice(0, 40)}…` : query}”
+          </span>
+          .
+        </p>
+        <p
+          className="mt-2"
+          style={{
+            fontSize: "var(--text-2xs)",
+            color: "var(--ink-ghost)",
+            lineHeight: "var(--leading-snug)",
+          }}
+        >
+          Searches the body of every message in your conversation history.
+          Clear the box to browse projects.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-2">
+      <p
+        className="px-2 mb-1.5"
+        style={{
+          fontSize: "var(--text-2xs)",
+          fontWeight: 500,
+          color: "var(--ink-faint)",
+        }}
+      >
+        {results.length} match{results.length === 1 ? "" : "es"}
+      </p>
+      <div className="space-y-0.5">
+        {results.map((r) => {
+          const projectName = r.projectId
+            ? (projectsById.get(r.projectId)?.name ?? null)
+            : null;
+          return (
+            <button
+              key={r.conversationId}
+              type="button"
+              onClick={() => onResultClick(r)}
+              className="group block w-full text-start cursor-pointer transition-colors px-2 py-2 border-0"
+              style={{
+                background: "transparent",
+                borderRadius: "var(--radius-sm)",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "var(--surface-sunken)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "transparent";
+              }}
+            >
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <MessageSquare
+                  className="w-3 h-3 shrink-0"
+                  strokeWidth={1.75}
+                  style={{ color: "var(--ink-ghost)" }}
+                />
+                <span
+                  className="truncate flex-1"
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    fontWeight: 500,
+                    color: "var(--ink)",
+                  }}
+                  dir="auto"
+                >
+                  {r.title}
+                </span>
+              </div>
+              {projectName && (
+                <p
+                  className="ms-4 mb-0.5 truncate"
+                  style={{
+                    fontSize: "var(--text-2xs)",
+                    color: "var(--ink-faint)",
+                  }}
+                  dir="auto"
+                >
+                  {projectName}
+                </p>
+              )}
+              <SnippetText snippet={r.snippet} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Render a snippet returned by ts_headline. Postgres wraps matched
+// terms in « ... » markers so we replace those with bold spans
+// without using innerHTML or dangerouslySetInnerHTML.
+function SnippetText({ snippet }: { snippet: string }) {
+  if (!snippet) return null;
+  const parts: Array<{ text: string; emphasis: boolean }> = [];
+  let cursor = 0;
+  while (cursor < snippet.length) {
+    const start = snippet.indexOf("«", cursor);
+    if (start === -1) {
+      parts.push({ text: snippet.slice(cursor), emphasis: false });
+      break;
+    }
+    if (start > cursor) {
+      parts.push({ text: snippet.slice(cursor, start), emphasis: false });
+    }
+    const end = snippet.indexOf("»", start + 1);
+    if (end === -1) {
+      parts.push({ text: snippet.slice(start), emphasis: false });
+      break;
+    }
+    parts.push({ text: snippet.slice(start + 1, end), emphasis: true });
+    cursor = end + 1;
+  }
+  return (
+    <p
+      className="ms-4 line-clamp-2"
+      style={{
+        fontSize: "var(--text-2xs)",
+        lineHeight: "var(--leading-snug)",
+        color: "var(--ink-faint)",
+      }}
+      dir="auto"
+    >
+      {parts.map((part, i) =>
+        part.emphasis ? (
+          <span
+            key={i}
+            style={{
+              color: "var(--ink-strong)",
+              background: "var(--accent-bg)",
+              padding: "0 0.125rem",
+              borderRadius: "2px",
+            }}
+          >
+            {part.text}
+          </span>
+        ) : (
+          <span key={i}>{part.text}</span>
+        ),
+      )}
+    </p>
   );
 }
 

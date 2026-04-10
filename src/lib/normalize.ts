@@ -21,6 +21,75 @@ export function normalizeNumbers(text: string): string {
 }
 
 // ============================================================
+// SEARCH-TIME QUERY NORMALIZATION
+// ============================================================
+//
+// Applied to user queries before they hit the embedding model and
+// the FTS index. The point is to make sure two things that should
+// retrieve the same chunks actually do — Arabic has many ways to
+// write what is functionally the same string, and a strict-match
+// FTS index treats them as different tokens.
+//
+// What this normalizer does:
+//
+//   1. Convert Arabic-Indic numerals → Western numerals (so ٢٠٢٦
+//      and 2026 hit the same tokens).
+//   2. Strip diacritics (tashkeel) — fatha / kasra / damma / etc.
+//      Documents and queries rarely both carry diacritics, so
+//      removing them on both sides aligns them.
+//   3. Normalize alef variants: أ إ آ ٱ → ا. Three different ways
+//      to write the same letter exist in real Egyptian government
+//      documents and the user's query rarely matches the document's
+//      choice exactly.
+//   4. Normalize alef maksura → ya: ى → ي. Same reason.
+//   5. Normalize ta marbouta → ha: ة → ه. Same reason.
+//   6. Strip tatweel (ـ) — the kashida used to stretch text.
+//   7. Collapse whitespace.
+//   8. Lowercase Latin chars (English search terms shouldn't be
+//      case-sensitive).
+//
+// What this DOES NOT do:
+//
+//   - It doesn't strip definite articles (ال) — those carry meaning
+//     and removing them produces false matches.
+//   - It doesn't normalize ya/alef-maksura at the END of words only.
+//     We normalize globally because the OCR pipeline doesn't always
+//     get the position right.
+//   - It doesn't translate Arabic ↔ English. The Cohere multilingual
+//     embedding handles cross-language semantic match by itself.
+//
+// Apply to BOTH the query and any indexed text you want to match
+// it against. Today the chunks are NOT pre-normalized at index time
+// (changing that would require re-embedding the corpus), so the
+// gain from query normalization is purely on the FTS side. The
+// embedding model is robust enough on its own to handle the variants.
+
+const ARABIC_DIACRITICS_RE = /[\u064B-\u0652\u0670\u0640]/g;
+const ALEF_VARIANTS_RE = /[إأآٱ]/g;
+const ALEF_MAKSURA_RE = /ى/g;
+const TA_MARBOUTA_RE = /ة/g;
+
+export function normalizeForSearch(text: string): string {
+  if (!text) return "";
+  let s = text;
+  // 1. Arabic-Indic digits → Western
+  s = normalizeNumbers(s);
+  // 2. Strip diacritics + tatweel
+  s = s.replace(ARABIC_DIACRITICS_RE, "");
+  // 3. Alef variants → bare alef
+  s = s.replace(ALEF_VARIANTS_RE, "ا");
+  // 4. Alef maksura → ya
+  s = s.replace(ALEF_MAKSURA_RE, "ي");
+  // 5. Ta marbouta → ha
+  s = s.replace(TA_MARBOUTA_RE, "ه");
+  // 6. Lowercase Latin (Arabic is unaffected by toLowerCase)
+  s = s.toLowerCase();
+  // 7. Collapse whitespace
+  s = s.replace(/\s+/g, " ").trim();
+  return s;
+}
+
+// ============================================================
 // DATE NORMALIZATION
 // ============================================================
 
