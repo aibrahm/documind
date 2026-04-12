@@ -1299,7 +1299,14 @@ async function startHttp() {
         return;
       }
 
-      // Auth check
+      // Health check — before auth so Railway's healthcheck works
+      if (req.method === "GET" && req.url === "/health") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "ok", tools: 16 }));
+        return;
+      }
+
+      // Auth check — everything after this requires a token
       if (authToken) {
         const auth = req.headers.authorization;
         if (!auth || auth !== `Bearer ${authToken}`) {
@@ -1307,13 +1314,6 @@ async function startHttp() {
           res.end(JSON.stringify({ error: "Unauthorized" }));
           return;
         }
-      }
-
-      // Health check
-      if (req.method === "GET" && req.url === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", tools: 8 }));
-        return;
       }
 
       // MCP endpoint
