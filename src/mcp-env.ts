@@ -24,10 +24,9 @@ try {
     }
     if (!(k in process.env)) process.env[k] = v;
   }
-} catch (err) {
-  console.error(
-    "Could not read .env.local — MCP server needs it for Supabase/API keys:",
-    (err as Error).message,
-  );
-  process.exit(1);
+} catch {
+  // .env.local not found — that's fine on deployed environments
+  // (Railway, Docker) where env vars are injected directly.
+  // Only a problem if the vars are actually missing, which
+  // supabase.ts will catch at import time.
 }
