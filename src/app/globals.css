@@ -14,7 +14,7 @@
    weight. Tighter density than the previous editorial pass.
 
    Rules:
-   - Type: Inter for English, IBM Plex Sans Arabic for Arabic. No
+   - Type: Inter for English, Noto Sans Arabic for Arabic. No
      serifs, ever. IBM Plex Mono is reserved for ids / tabular data.
    - Surfaces are pure white. Sunken surfaces are zinc-50. The page
      background is zinc-50.
@@ -31,10 +31,10 @@
   :root {
     /* ── Typography — families ── */
     --font-sans:
-      "Inter", "IBM Plex Sans Arabic", -apple-system, BlinkMacSystemFont,
+      "Inter", "Noto Sans Arabic", -apple-system, BlinkMacSystemFont,
       "Segoe UI", system-ui, sans-serif;
     --font-arabic:
-      "IBM Plex Sans Arabic", "Inter", system-ui, sans-serif;
+      "Noto Sans Arabic", "Inter", system-ui, sans-serif;
     --font-mono:
       "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
@@ -80,11 +80,11 @@
     --border-strong: #d4d4d8; /* zinc-300 — emphasized */
     --border-light: #f4f4f5;  /* zinc-100 — subtle dividers */
 
-    /* ── Accent — single indigo, used rarely ── */
-    --accent: #4f46e5;        /* indigo-600 */
-    --accent-hover: #4338ca;  /* indigo-700 */
-    --accent-faint: #c7d2fe;  /* indigo-200 */
-    --accent-bg: #eef2ff;     /* indigo-50 */
+    /* ── Accent — scan blue, used rarely ── */
+    --accent: #2563eb;        /* blue-600 */
+    --accent-hover: #1d4ed8;  /* blue-700 */
+    --accent-faint: #bfdbfe;  /* blue-200 */
+    --accent-bg: #eff6ff;     /* blue-50 */
     --accent-on: #ffffff;
 
     /* ── Semantic colors ── */

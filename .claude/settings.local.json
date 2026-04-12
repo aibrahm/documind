@@ -77,7 +77,14 @@
       "Bash(awk:*)",
       "Bash(pnpm dev:*)",
       "Bash(tee /tmp/next-dev.log)",
-      "WebFetch(domain:claude.com)"
+      "WebFetch(domain:claude.com)",
+      "WebSearch",
+      "WebFetch(domain:vig.gmo.gov.ae)",
+      "Bash(/opt/local/bin/pdftotext -layout \"/Users/aibrahim/Downloads/style/نتائج زيارة وزير الخارجية لليابان فيما يخص الشق الاستثماري والتجاري11-9-2024.pdf\" -)",
+      "Bash(find:*)",
+      "Bash(ls -1 /Users/aibrahim/gtez-intelligence/src/lib/*.ts)",
+      "Bash(ls /Users/aibrahim/gtez-intelligence/node_modules/.pnpm/@modelcontextprotocol*)",
+      "Bash(node:*)"
     ]
   },
   "spinnerTipsEnabled": false,

@@ -62,6 +62,34 @@ export async function routeMessage(
     };
   }
 
+  // Document-generation intent — deterministic shortcut.
+  //
+  // When the user asks for a downloadable document (memo, report, deck,
+  // letter, brief…), we MUST route to deep mode. That's the only path
+  // that runs `runClaudeWithTools`, which is where `create_report` and
+  // `create_presentation` live. Going through the LLM router here risks
+  // a false negative — GPT classifies the request as "casual" and the
+  // drafter says "I don't have that tool", which is exactly the bug the
+  // user just hit. Keyword detection is cheap and eliminates the race.
+  //
+  // Keywords deliberately cover drafting verbs + document nouns in both
+  // English and Arabic. We match word boundaries where possible so we
+  // don't flip every message that happens to mention "report".
+  if (isDocumentGenerationIntent(message)) {
+    return {
+      mode: "deep",
+      shouldSearch: true,
+      shouldWebSearch: false,
+      // Drafting typically pulls from investment/governance analysis;
+      // the tool itself handles the write step, doctrines just shape
+      // retrieval. Keep it small so we don't waste scoring cycles.
+      doctrines: ["investment", "governance"],
+      searchQuery: message,
+      reasoning:
+        "Document-generation intent detected — forced deep mode so create_report / create_presentation tools are available.",
+    };
+  }
+
   const openai = getOpenAI();
 
   // Build conversation context for the router. Include last 8 messages with
@@ -196,4 +224,100 @@ If the query has NOTHING to do with documents or web search (like "tell me a jok
         "⚠️ Routing fell back to casual mode (JSON parse failure). Response may be less accurate than usual.",
     };
   }
+}
+
+/**
+ * Heuristic: does this message look like a request to GENERATE a
+ * downloadable document (as opposed to asking a question about one)?
+ *
+ * The distinction matters. "what does the memo say about X" is casual
+ * retrieval — we should NOT hand it to the drafter. "write me a memo
+ * about X" is drafting — we MUST route it to deep mode so the tool is
+ * available. The way we tell them apart is the presence of a drafting
+ * VERB ("write", "draft", "prepare", "generate", "create", Arabic
+ * equivalents) AND a document NOUN ("memo", "report", "deck",
+ * "presentation", "brief", Arabic equivalents), OR a document verb
+ * phrase like "make me a deck".
+ *
+ * Kept as a separate function so future fixes (add a new document
+ * type, new synonym) land in one obvious place.
+ */
+function isDocumentGenerationIntent(message: string): boolean {
+  const lower = message.toLowerCase();
+
+  // English drafting verbs. `\b` boundary stops false positives like
+  // "drafted a response" in a question about a past action — but we
+  // accept that trade-off since "draft me a response" still matches.
+  const enVerbRe =
+    /\b(write|draft|prepare|generate|create|make|build|compose|produce)\b/;
+  const enNounRe =
+    /\b(memo|report|deck|presentation|brief(?:ing)?|letter|document|paper|board\s+pack|decision\s+memo|term\s+sheet)\b/;
+
+  if (enVerbRe.test(lower) && enNounRe.test(lower)) return true;
+
+  // Shortcut: some English phrasings skip the verb ("a 5-slide deck
+  // on…", "I need a memo covering…"). Catch the common ones.
+  if (/\b(i\s+need|i\s+want|give\s+me)\b.*\b(memo|report|deck|presentation|brief|letter)\b/.test(lower)) {
+    return true;
+  }
+
+  // Arabic drafting verbs — cover both imperative ("اكتب لي") and
+  // polite request ("ممكن تعملي") forms. Arabic has no case, so a
+  // simple substring match is safe for these stems.
+  const arVerbs = [
+    "اكتب",
+    "اكتبلي",
+    "اكتب لي",
+    "اعمل",
+    "اعملي",
+    "اعمل لي",
+    "حضّر",
+    "حضر",
+    "جهز",
+    "جهّز",
+    "صيغ",
+    "صِغ",
+    "ابعت",
+    "أنشئ",
+    "انشئ",
+    "أعد",
+    "اعد لي",
+    "ارسم",
+    "عايز",
+    "أريد",
+    "اريد",
+    "ممكن تعمل",
+    "ممكن تكتب",
+  ];
+  const arNouns = [
+    "مذكرة",
+    "مذكره",
+    "تقرير",
+    "عرض",
+    "عرض تقديمي",
+    "بريزنتيشن",
+    "ورقة",
+    "ورقه",
+    "خطاب",
+    "رسالة",
+    "رساله",
+    "موجز",
+    "ملخص",
+    "مستند",
+    "وثيقة",
+    "ملف ورد",
+    "باوربوينت",
+    "باور بوينت",
+    "بوربوينت",
+  ];
+
+  const hasArVerb = arVerbs.some((v) => message.includes(v));
+  const hasArNoun = arNouns.some((n) => message.includes(n));
+  if (hasArVerb && hasArNoun) return true;
+
+  // Arabic noun alone is a weaker signal but still meaningful when
+  // combined with "لي" / "ليا" (for me) — "مذكرة ليا عن…".
+  if (hasArNoun && /\s(لي|ليا|لنا)\b/.test(message)) return true;
+
+  return false;
 }

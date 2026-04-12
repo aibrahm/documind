@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npx tsx src/mcp-server.ts"
+healthcheckPath = "/health"
+healthcheckTimeout = 10
+
+[[services]]
+name = "documind-mcp"

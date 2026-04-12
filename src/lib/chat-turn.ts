@@ -32,6 +32,7 @@ import {
   type DocumentContextCard,
 } from "@/lib/context-card";
 import { updateProjectSummary } from "@/lib/project-summary";
+import { STYLE_PROMPT } from "@/lib/tools/style-prompt";
 import {
   retrieveRelevantMemories,
   formatMemoriesForPrompt,
@@ -1058,9 +1059,10 @@ The PROJECT-DOC blocks in the user message are this project's linked documents �
 
   // Build system prompt based on mode
   const deliverableFormattingBlock = `DELIVERABLE FORMATTING:
-- When the user asks for a concrete draft deliverable, keep any setup outside the deliverable brief and put the deliverable itself inside a fenced block with one of these labels: email, memo, brief, talking-points, meeting-prep, deck, note.
-- For email blocks, the first line inside the block must be "Subject: ...".
-- Use these blocks only for actual deliverables, not ordinary analysis.`;
+- When the user asks for a written document you're meant to download or share (report, memo, brief, briefing note, decision memo, letter, board paper, analysis document), CALL the \`create_report\` tool instead of producing markdown inline. Put the document body in the tool input. The tool returns a signed download URL — include it in your response so the user can open the file.
+- When the user asks for slides, a deck, a presentation, briefing pack, or board slides, CALL the \`create_presentation\` tool instead of describing slides in markdown. Same pattern: structured input, returns a signed download URL to include in your response.
+- For short inline deliverables the user is reading in chat (quick email drafts, talking points, meeting prep notes, short notes), keep them inside a fenced block with one of these labels: email, memo, brief, talking-points, meeting-prep, deck, note. For email blocks, the first line inside the block must be "Subject: ...". Use these blocks only for actual deliverables, not ordinary analysis.
+- Never claim to have "attached" a file if you didn't call a generation tool — the user can't receive a file unless a tool was used.`;
 
   let systemPrompt: string;
   if (routing.mode === "deep") {
@@ -1072,6 +1074,8 @@ The PROJECT-DOC blocks in the user message are this project's linked documents �
       memoryBlock +
       "\n\n" +
       deliverableFormattingBlock +
+      "\n\n" +
+      STYLE_PROMPT +
       "\n\n" +
       UNTRUSTED_CONTENT_BLOCK +
       "\n\n" +
@@ -1146,6 +1150,8 @@ ATTACHED FILES:
 - "This document" or "this file" always means the attached file, not the knowledge base.
 
 ${deliverableFormattingBlock}
+
+${STYLE_PROMPT}
 
 ${UNTRUSTED_CONTENT_BLOCK}
 
@@ -1287,12 +1293,33 @@ ${POSTURE_BLOCK}`;
 
   if (useClaude) {
     try {
+      // Anthropic rejects the ENTIRE request if any message has empty
+      // content ("messages.N: user messages must have non-empty
+      // content"). That happens in practice because our `messages` DB
+      // table can hold rows with an empty content string — legacy
+      // rows, aborted tool-result placeholders, an imported reset, or
+      // a user who hit send with only an attachment and no text.
+      // GPT-4-family endpoints silently accept empty strings so this
+      // bug was invisible on the fallback path but deadly on the
+      // deep-mode path. Coerce to a single non-space placeholder here
+      // instead of filtering, because filtering a user message in the
+      // middle of a history can break the user/assistant alternation
+      // Anthropic also requires.
+      const sanitizedForClaude = llmMessages.slice(1).map((m) => {
+        const rawContent = m.content;
+        const content =
+          typeof rawContent === "string" && rawContent.trim().length > 0
+            ? rawContent
+            : "(empty message)";
+        return {
+          role: m.role as "user" | "assistant",
+          content,
+        };
+      });
+
       fullText = await runClaudeWithTools({
         systemPrompt,
-        messages: llmMessages.slice(1).map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })),
+        messages: sanitizedForClaude as { role: "user" | "assistant"; content: string }[],
         temperature: routing.mode === "deep" ? 0.3 : 0.2,
         // 8192 was too low for long bilingual Arabic responses — Arabic uses
         // ~2× the tokens per visible character vs English, and deep-mode
@@ -1326,22 +1353,74 @@ ${POSTURE_BLOCK}`;
         webEvidence.push(...additionalWebSources);
       }
     } catch (claudeErr) {
-      console.error(`Claude failed, falling back to ${PRIMARY_CHAT_MODEL}:`, claudeErr);
-      const llmStream = await getOpenAI().chat.completions.create({
-        model: PRIMARY_CHAT_MODEL,
-        ...openAiTemperature(PRIMARY_CHAT_MODEL, 0.1),
-        ...openAiCompletionLimit(PRIMARY_CHAT_MODEL, 16000),
-        stream: true,
-        messages: llmMessages,
-      });
-      for await (const chunk of llmStream) {
-        const delta = chunk.choices[0]?.delta?.content;
-        if (delta) {
-          fullText += delta;
-          emit("text", { content: delta });
+      // Fail LOUD per CLAUDE.md. The previous behaviour was a silent
+      // fallback to GPT-5.4 with no tools — which meant a drafting
+      // request would "succeed" visually but produce inline ASCII-art
+      // tables instead of a downloadable DOCX, with no indication
+      // anything had gone wrong. That's exactly the "silently degrades
+      // to look fine" anti-pattern the error-handling policy bans.
+      //
+      // New behaviour:
+      //   1. Log the full error with stack to the server console.
+      //   2. Emit a visible warning line into the chat stream so the
+      //      user knows the deep path died and what the error was.
+      //   3. If the turn was a drafting intent (document generation),
+      //      do NOT fall back at all — fallback cannot produce the
+      //      download the user asked for, so pretending it worked is
+      //      strictly worse than failing.
+      //   4. Otherwise fall back to GPT-5.4 for non-drafting turns so
+      //      conversations still work through Anthropic outages.
+      const errMsg =
+        claudeErr instanceof Error ? claudeErr.message : String(claudeErr);
+      const errStack =
+        claudeErr instanceof Error ? claudeErr.stack : undefined;
+      console.error(
+        `[chat-turn] Claude tool-use path failed.`,
+        `\n  error: ${errMsg}`,
+        errStack ? `\n  stack: ${errStack}` : "",
+      );
+
+      // Is this a document-generation intent? If yes, fallback is
+      // pointless — the whole point of the turn is to produce a file,
+      // and the fallback path has no tools. Surface the error directly.
+      const lastUserMsg =
+        [...llmMessages].reverse().find((m) => m.role === "user")?.content ??
+        "";
+      const isDraftingIntent =
+        typeof lastUserMsg === "string" &&
+        /\b(write|draft|prepare|generate|create|make|produce)\b.*\b(memo|report|deck|presentation|brief|letter|document)\b/i.test(
+          lastUserMsg,
+        );
+
+      const visibleWarning = `\n\n⚠️ **Deep-mode drafting failed.** The Claude tool-use path threw an error before it could call \`create_report\`/\`create_presentation\`, so no downloadable file was produced.\n\n**Error:** \`${errMsg}\`\n\n`;
+
+      if (isDraftingIntent) {
+        // Emit the warning as visible text and stop. No fallback.
+        emit("text", { content: visibleWarning });
+        fullText += visibleWarning;
+        modelUsed = DEEP_ANALYSIS_MODEL;
+      } else {
+        // Non-drafting turn: emit the warning and fall back to GPT so
+        // the conversation still works, but the user SEES that the
+        // deep path died.
+        emit("text", { content: visibleWarning });
+        fullText += visibleWarning;
+        const llmStream = await getOpenAI().chat.completions.create({
+          model: PRIMARY_CHAT_MODEL,
+          ...openAiTemperature(PRIMARY_CHAT_MODEL, 0.1),
+          ...openAiCompletionLimit(PRIMARY_CHAT_MODEL, 16000),
+          stream: true,
+          messages: llmMessages,
+        });
+        for await (const chunk of llmStream) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            fullText += delta;
+            emit("text", { content: delta });
+          }
         }
+        modelUsed = PRIMARY_CHAT_MODEL;
       }
-      modelUsed = PRIMARY_CHAT_MODEL;
     }
   } else {
     // All visible chat replies now use GPT-5.4 for consistency and drafting quality.

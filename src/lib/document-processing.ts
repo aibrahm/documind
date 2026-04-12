@@ -13,6 +13,7 @@ import { detectReferences, storeAndResolveReferences } from "@/lib/references";
 import { canonicalizeEntities } from "@/lib/entities";
 import { logAudit } from "@/lib/audit";
 import { generateContextCard, loadProjectHints } from "@/lib/context-card";
+import { extractKnowledgeGraph } from "@/lib/knowledge-graph";
 
 interface ProcessDocumentInput {
   docId: string;
@@ -377,11 +378,15 @@ export async function processDocumentContent({
       .eq("id", docId);
   }
 
-  // Bust the landing-page briefing cache so the next app load doesn't
-  // serve a briefing that was generated before this document existed.
-  // Fire-and-forget — a failure to bust the cache just means the VC
-  // sees the old briefing for up to the normal 1-hour TTL, which is
-  // the pre-invalidation behavior and strictly better than nothing.
+  // Knowledge graph extraction — relationships, obligations, fact versions.
+  // Fire-and-forget so a failure doesn't block the document from being ready.
+  void extractKnowledgeGraph(docId).catch((err) => {
+    console.error(
+      `processDocument(${docId}): knowledge graph extraction failed:`,
+      (err as Error).message,
+    );
+  });
+
   void invalidateBriefingCache().catch(() => {});
 
   return {

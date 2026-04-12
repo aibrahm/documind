@@ -1,23 +1,22 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Search, FileText, Upload, UserRound } from "lucide-react";
+import {
+  LayoutDashboard,
+  FileText,
+  FolderKanban,
+  Network,
+  Upload,
+  Settings,
+} from "lucide-react";
 
-/**
- * Top navigation bar — enterprise dashboard style.
- *
- * White surface, 1px zinc border on the bottom, no shadow. Brand
- * mark is a small geometric icon + the wordmark in Inter semibold.
- * Active link is marked by the indigo accent on a 2px bottom line.
- *
- * Density: tighter than the editorial pass — 13px text, 12px icons,
- * 12px gap between links. Reads as a Linear / Vercel header.
- */
 const links = [
-  { label: "Intelligence", href: "/", icon: Search },
+  { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Documents", href: "/documents", icon: FileText },
+  { label: "Projects", href: "/projects", icon: FolderKanban },
+  { label: "Entities", href: "/entities", icon: Network },
   { label: "Upload", href: "/upload", icon: Upload },
-  { label: "Profile", href: "/settings", icon: UserRound },
+  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Nav() {

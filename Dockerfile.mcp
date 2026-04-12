@@ -1,0 +1,20 @@
+FROM node:20-slim AS base
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod=false
+
+COPY src/ src/
+COPY tsconfig.json ./
+
+ENV MCP_TRANSPORT=http
+ENV MCP_PORT=3100
+
+EXPOSE 3100
+
+HEALTHCHECK --interval=30s --timeout=5s \
+  CMD curl -f http://localhost:3100/health || exit 1
+
+CMD ["pnpm", "mcp"]

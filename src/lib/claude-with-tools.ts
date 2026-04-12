@@ -5,6 +5,8 @@ import { webSearch } from "@/lib/web-search";
 import { runFinancialModel } from "@/lib/tools/financial-model";
 import { runFetchUrl } from "@/lib/tools/fetch-url";
 import { runExtractKeyTerms as runExtractWorkspaceFacts } from "@/lib/tools/extract-key-terms";
+import { runCreateReport } from "@/lib/tools/create-report";
+import { runCreatePresentation } from "@/lib/tools/create-presentation";
 
 /**
  * Claude streaming with autonomous web_search tool use.
@@ -158,6 +160,270 @@ const EXTRACT_WORKSPACE_FACTS_TOOL: Anthropic.Tool = {
   },
 };
 
+const CREATE_REPORT_TOOL: Anthropic.Tool = {
+  name: "create_report",
+  description:
+    "Generate a formal DOCX (Microsoft Word) report using the operator's executive template — branded header/footer, GTEZ styling, automatic RTL layout for Arabic, operator signature block. Use this whenever the user asks for a written document (memo, brief, briefing note, decision memo, analysis report, official letter, board paper). Always call this tool — never produce a DOCX via markdown tables or file names in your text. The tool returns a signed download URL you should include in your response so the user can open the file. Prefer this over long inline prose when the output is meant to be saved or shared.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      title: {
+        type: "string",
+        description:
+          "Document title as it should appear on the cover. Keep it specific, e.g. 'Elsewedy Scenario 2 — Negotiation Brief' not 'Report'.",
+      },
+      subtitle: {
+        type: "string",
+        description:
+          "Optional subtitle describing the document type: 'Decision Memo', 'Analysis Report', 'Term Sheet Markup', etc.",
+      },
+      language: {
+        type: "string",
+        enum: ["ar", "en", "mixed"],
+        description:
+          "Primary language. Drives RTL layout, font selection, and digit system. Use 'ar' when the user's conversation was in Arabic; 'en' for English; 'mixed' when both appear substantially.",
+      },
+      executive_summary: {
+        type: "string",
+        description:
+          "A 3–5 sentence paragraph that stands alone. A reader who only reads this should know the decision, the rationale, and the ask. Lead with the answer, not the background.",
+      },
+      sections: {
+        type: "array",
+        description:
+          "Ordered body sections. Each has a heading (H2), body paragraphs, and optional tables rendered after the prose. Typical structure: Context → Analysis → Key Numbers → Risks. Keep section count tight (3–6). Do NOT put recommendations inside sections — use the `recommendations` field instead. Use tables for comparisons, financial breakdowns, timelines, or any data that reads better as rows and columns than as prose.",
+        items: {
+          type: "object",
+          properties: {
+            heading: { type: "string", description: "Short section heading" },
+            paragraphs: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Ordered paragraphs of body text for this section. Prose preferred over bullets — use actual sentences. May be empty if the section is purely a table.",
+            },
+            tables: {
+              type: "array",
+              description:
+                "Optional tables rendered after the paragraphs. Use for comparisons, financial figures, schedules, anything that reads better as a grid. Each table has headers + rows of the same length. Keep tables compact (≤ 6 columns, ≤ 12 rows) so they fit the page.",
+              items: {
+                type: "object",
+                properties: {
+                  caption: {
+                    type: "string",
+                    description:
+                      "Optional short caption above the table (e.g. 'Table 1: Revenue projections — 2026 to 2030').",
+                  },
+                  headers: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Column headers — one string per column.",
+                  },
+                  rows: {
+                    type: "array",
+                    description:
+                      "Data rows. Each row is an array of cell values (strings). Must have the same length as `headers`. Cells are plain strings — include units and currency inline (e.g. '2.3 B EGP', '14%').",
+                    items: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                  },
+                },
+                required: ["headers", "rows"],
+              },
+            },
+          },
+          required: ["heading", "paragraphs"],
+        },
+      },
+      recommendations: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Numbered list of concrete recommendations. Each item should be actionable and specific. Empty array if not applicable.",
+      },
+      next_steps: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Concrete next actions with owners and dates where possible (e.g. 'Finance team to draft revised term sheet by April 20'). Empty array if not applicable.",
+      },
+    },
+    required: ["title", "language", "executive_summary", "sections"],
+  },
+};
+
+const CREATE_PRESENTATION_TOOL: Anthropic.Tool = {
+  name: "create_presentation",
+  description:
+    "Generate a formal PPTX (Microsoft PowerPoint) presentation using the operator's executive template — GTEZ slide master, consistent branding, automatic RTL for Arabic, operator signature on the title slide. Use this whenever the user asks for slides, a deck, a briefing pack, board slides, or something to present in a meeting. Always call this tool — never describe slide contents in markdown inline. Keep decks tight: 6–10 slides unless the user explicitly asks for more. Returns a signed download URL to include in your response.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      title: { type: "string", description: "Deck title on the cover slide" },
+      subtitle: {
+        type: "string",
+        description: "Optional subtitle / deck description",
+      },
+      language: {
+        type: "string",
+        enum: ["ar", "en", "mixed"],
+        description: "Primary language. Drives RTL layout and font selection.",
+      },
+      slides: {
+        type: "array",
+        description:
+          "Ordered list of slides. Do NOT include the cover/title slide — the tool adds it automatically from the top-level title. Typical structure: context → findings → analysis → recommendations → next_steps. 4–9 slides ideal; hard cap 20.",
+        items: {
+          type: "object",
+          properties: {
+            layout: {
+              type: "string",
+              enum: [
+                "title",
+                "section_header",
+                "content",
+                "two_column",
+                "numbers",
+                "conclusion",
+                "table",
+                "chart",
+              ],
+              description:
+                "Which slide layout to use. 'content' = title + bullets or paragraph. 'two_column' = side-by-side comparison (use left/right fields). 'numbers' = big-figure dashboard with up to 4 metrics (use data field). 'section_header' = divider slide between chapters. 'conclusion' = next-steps slide with eyebrow label. 'title' = extra title slide (rare, only if deck has multiple chapters). 'table' = title + tabular data (use the `table` field). 'chart' = title + native editable chart, bar/column/line/pie (use the `chart` field).",
+            },
+            title: {
+              type: "string",
+              description: "Slide title / headline",
+            },
+            subtitle: {
+              type: "string",
+              description:
+                "Optional subtitle (only used by 'title' and 'section_header' layouts)",
+            },
+            bullets: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Bullet points for 'content' and 'conclusion' layouts. 3–6 bullets per slide max. Short sentences. No nested bullets.",
+            },
+            body: {
+              type: "string",
+              description:
+                "Paragraph body for 'content' layout when bullets are not the right form.",
+            },
+            left: {
+              type: "string",
+              description:
+                "Left column body for 'two_column' layout. Use for one side of a comparison.",
+            },
+            right: {
+              type: "string",
+              description:
+                "Right column body for 'two_column' layout.",
+            },
+            data: {
+              type: "array",
+              description:
+                "Up to 4 key metrics for 'numbers' layout. Each item has a big-display value and a smaller caption label.",
+              items: {
+                type: "object",
+                properties: {
+                  label: {
+                    type: "string",
+                    description: "Metric caption (e.g. 'NPV at 12%')",
+                  },
+                  value: {
+                    type: "string",
+                    description:
+                      "Big-display value as a string (so you control formatting). Include units: '2.3 B EGP', '85%', '14 yrs'.",
+                  },
+                },
+                required: ["label", "value"],
+              },
+            },
+            table: {
+              type: "object",
+              description:
+                "Tabular data for 'table' layout. Keep it compact (≤ 6 columns, ≤ 10 rows) so it fits the slide. Include units in the cells ('2.3 B EGP', '14%').",
+              properties: {
+                caption: {
+                  type: "string",
+                  description: "Optional caption rendered below the table in muted type.",
+                },
+                headers: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Column headers — one string per column.",
+                },
+                rows: {
+                  type: "array",
+                  description:
+                    "Data rows. Each row is an array of strings with the same length as headers.",
+                  items: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                },
+              },
+              required: ["headers", "rows"],
+            },
+            chart: {
+              type: "object",
+              description:
+                "Chart data for 'chart' layout. Renders a native editable PowerPoint chart (not an image). Use when the point of the slide is the shape of the numbers (trend, comparison, composition). For raw tables of figures use the 'table' layout instead. For a handful of big KPIs use 'numbers'.",
+              properties: {
+                type: {
+                  type: "string",
+                  enum: ["bar", "column", "line", "pie"],
+                  description:
+                    "'bar' = horizontal bars (good for category comparison with long labels). 'column' = vertical bars (good for time-series of a few points). 'line' = trend over time with multiple points. 'pie' = composition/share (single series, 3–6 slices max).",
+                },
+                categories: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "X-axis category labels (or slice labels for pie). Example: ['2026', '2027', '2028', '2029', '2030'].",
+                },
+                series: {
+                  type: "array",
+                  description:
+                    "One or more data series. For pie charts, use exactly ONE series — its values map to the categories as slice sizes.",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: {
+                        type: "string",
+                        description:
+                          "Series name shown in the legend (e.g. 'Revenue', 'EBITDA').",
+                      },
+                      values: {
+                        type: "array",
+                        items: { type: "number" },
+                        description:
+                          "Numeric values, one per category, in the same order as `categories`.",
+                      },
+                    },
+                    required: ["name", "values"],
+                  },
+                },
+                caption: {
+                  type: "string",
+                  description:
+                    "Optional caption below the chart (e.g. 'Source: internal model, base case').",
+                },
+              },
+              required: ["type", "categories", "series"],
+            },
+          },
+          required: ["layout"],
+        },
+      },
+    },
+    required: ["title", "language", "slides"],
+  },
+};
+
 export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
   const {
     systemPrompt,
@@ -168,7 +434,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
     onToolStart,
     onToolEnd,
     onComplete,
-    maxToolRounds = 6,
+    maxToolRounds = 4,
   } = opts;
 
   const anthropic = getAnthropic();
@@ -207,11 +473,28 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
         FINANCIAL_MODEL_TOOL,
         FETCH_URL_TOOL,
         EXTRACT_WORKSPACE_FACTS_TOOL,
+        CREATE_REPORT_TOOL,
+        CREATE_PRESENTATION_TOOL,
       ],
       messages: workingMessages as Anthropic.MessageParam[],
     });
 
-    // Collect tool_use blocks AND text from this round
+    // Collect tool_use blocks AND text from this round.
+    //
+    // KEY UX FIX: emit `onToolStart` the INSTANT Claude starts
+    // streaming a tool_use block — NOT after the full JSON input has
+    // been accumulated and parsed. Without this the UI goes completely
+    // silent for 10-30 seconds while Claude streams the (invisible)
+    // JSON payload, and the user thinks the chat is frozen.
+    const TOOL_LABELS: Record<string, string> = {
+      web_search: "Searching the web",
+      financial_model: "Running calculations",
+      create_report: "Generating report",
+      create_presentation: "Building presentation",
+      extract_workspace_facts: "Analyzing documents",
+      fetch_url: "Fetching page",
+    };
+
     const assistantBlocks: Block[] = [];
     let currentTextBlock: { type: "text"; text: string } | null = null;
     let currentToolUse: {
@@ -234,11 +517,18 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
             input: {},
             _inputJson: "",
           };
+          // ▸ IMMEDIATE feedback — the user sees "Generating report"
+          //   the moment Claude starts the tool_use block, before any
+          //   JSON has been streamed. This closes the biggest perceived
+          //   "hang" gap.
+          onToolStart?.(
+            TOOL_LABELS[event.content_block.name] || event.content_block.name,
+            event.content_block.name,
+          );
         }
       } else if (event.type === "content_block_delta") {
         if (event.delta.type === "text_delta" && currentTextBlock) {
           currentTextBlock.text += event.delta.text;
-          // Stream final text directly to the UI
           onText(event.delta.text);
           fullFinalText += event.delta.text;
         } else if (event.delta.type === "input_json_delta" && currentToolUse) {
@@ -255,7 +545,6 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
           } catch {
             currentToolUse.input = { _raw: currentToolUse._inputJson };
           }
-          // strip the helper field before passing on
           const { _inputJson, ...toolBlock } = currentToolUse;
           void _inputJson;
           assistantBlocks.push(toolBlock);
@@ -271,13 +560,17 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
     const toolUses = assistantBlocks.filter((b): b is Extract<Block, { type: "tool_use" }> => b.type === "tool_use");
     if (toolUses.length === 0) break;
 
-    // Run each tool in parallel and build tool_result blocks
+    // Run each tool in parallel and build tool_result blocks.
+    //
+    // onToolStart already fired during the streaming phase (see above)
+    // so dispatch only calls onToolEnd with the detailed result label.
+    // This way the user sees "Generating report" instantly, then
+    // "Drafting report: <title>" when it completes. No silent gaps.
     const toolResults: Block[] = await Promise.all(
       toolUses.map(async (tu): Promise<Block> => {
         // ── web_search ──
         if (tu.name === "web_search") {
           const query = (tu.input.query as string) || "";
-          onToolStart?.(query, "web_search");
           try {
             const results = await webSearch(query, 5);
             for (const r of results) {
@@ -314,16 +607,18 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
           }
         }
 
-        // ── financial_model (instant, no UI status emit) ──
+        // ── financial_model ──
         if (tu.name === "financial_model") {
           try {
             const resultText = await runFinancialModel(tu.input);
+            onToolEnd?.("Calculations complete", 1, "financial_model");
             return {
               type: "tool_result" as const,
               tool_use_id: tu.id,
               content: resultText,
             };
           } catch (err) {
+            onToolEnd?.("Calculation failed", 0, "financial_model");
             return {
               type: "tool_result" as const,
               tool_use_id: tu.id,
@@ -332,21 +627,20 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
           }
         }
 
-        // ── fetch_url (slow, status visible to UI via onToolStart/End) ──
+        // ── fetch_url ──
         if (tu.name === "fetch_url") {
           const url = (tu.input.url as string) || "";
-          onToolStart?.(`Reading: ${url}`, "fetch_url");
           try {
             const resultText = await runFetchUrl(tu.input);
             const parsed = JSON.parse(resultText) as { ok?: boolean };
-            onToolEnd?.(`Reading: ${url}`, parsed.ok ? 1 : 0, "fetch_url");
+            onToolEnd?.(`Read: ${url}`, parsed.ok ? 1 : 0, "fetch_url");
             return {
               type: "tool_result" as const,
               tool_use_id: tu.id,
               content: resultText,
             };
           } catch (err) {
-            onToolEnd?.(`Reading: ${url}`, 0, "fetch_url");
+            onToolEnd?.(`Fetch failed: ${url}`, 0, "fetch_url");
             return {
               type: "tool_result" as const,
               tool_use_id: tu.id,
@@ -355,7 +649,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
           }
         }
 
-        // ── extract_workspace_facts (slow — LLM + DB) ──
+        // ── extract_workspace_facts ──
         if (tu.name === "extract_workspace_facts") {
           const label =
             (typeof tu.input.project === "string"
@@ -364,7 +658,6 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
             (Array.isArray(tu.input.document_ids)
               ? `${(tu.input.document_ids as string[]).length} docs`
               : "documents");
-          onToolStart?.(`Extracting structured facts (${label})`, "extract_workspace_facts");
           try {
             const resultText = await runExtractWorkspaceFacts(tu.input);
             const parsed = JSON.parse(resultText) as {
@@ -372,7 +665,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
               error?: string;
             };
             onToolEnd?.(
-              `Extracting structured facts (${label})`,
+              `Facts extracted (${label})`,
               parsed.document_count ?? 0,
               "extract_workspace_facts",
             );
@@ -383,7 +676,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
             };
           } catch (err) {
             onToolEnd?.(
-              `Extracting structured facts (${label})`,
+              `Extraction failed (${label})`,
               0,
               "extract_workspace_facts",
             );
@@ -391,6 +684,72 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
               type: "tool_result" as const,
               tool_use_id: tu.id,
               content: `Extraction failed: ${(err as Error).message}`,
+            };
+          }
+        }
+
+        // ── create_report ──
+        if (tu.name === "create_report") {
+          const title =
+            (typeof tu.input.title === "string" ? tu.input.title : "") ||
+            "report";
+          try {
+            const resultText = await runCreateReport(tu.input);
+            const parsed = JSON.parse(resultText) as { ok?: boolean };
+            onToolEnd?.(
+              `Report ready: ${title}`,
+              parsed.ok ? 1 : 0,
+              "create_report",
+            );
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: resultText,
+            };
+          } catch (err) {
+            onToolEnd?.(`Report failed: ${title}`, 0, "create_report");
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: JSON.stringify({
+                ok: false,
+                error: `Report generation failed: ${(err as Error).message}`,
+              }),
+            };
+          }
+        }
+
+        // ── create_presentation ──
+        if (tu.name === "create_presentation") {
+          const title =
+            (typeof tu.input.title === "string" ? tu.input.title : "") ||
+            "presentation";
+          try {
+            const resultText = await runCreatePresentation(tu.input);
+            const parsed = JSON.parse(resultText) as { ok?: boolean };
+            onToolEnd?.(
+              `Deck ready: ${title}`,
+              parsed.ok ? 1 : 0,
+              "create_presentation",
+            );
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: resultText,
+            };
+          } catch (err) {
+            onToolEnd?.(
+              `Deck failed: ${title}`,
+              0,
+              "create_presentation",
+            );
+            return {
+              type: "tool_result" as const,
+              tool_use_id: tu.id,
+              content: JSON.stringify({
+                ok: false,
+                error: `Presentation generation failed: ${(err as Error).message}`,
+              }),
             };
           }
         }
@@ -423,7 +782,7 @@ export async function runClaudeWithTools(opts: RunOpts): Promise<string> {
     workingMessages.push({
       role: "user",
       content:
-        "You've gathered enough information. Now produce the final analysis using everything you've learned. Do not call any more tools — write the complete answer directly. Respond in the user's original language. Use Arabic-Indic numerals if responding in Arabic.",
+        "You've gathered enough information. Now produce the final analysis using everything you've learned. Do not call any more tools — write the complete answer directly. Respond in the user's original language. If a tool returned a download URL, include it prominently so the user can access the file.",
     });
 
     const finalStream = anthropic.messages.stream({
