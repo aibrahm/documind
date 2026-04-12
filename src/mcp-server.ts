@@ -1269,7 +1269,8 @@ async function startStdio() {
 }
 
 async function startHttp() {
-  const port = parseInt(process.env.MCP_PORT ?? "3100", 10);
+  // Railway injects PORT; fall back to MCP_PORT or 3100
+  const port = parseInt(process.env.PORT ?? process.env.MCP_PORT ?? "3100", 10);
   const authToken = process.env.MCP_AUTH_TOKEN ?? null;
 
   if (!authToken) {
