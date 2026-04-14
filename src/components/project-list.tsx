@@ -26,16 +26,16 @@ export function ProjectList({ projects }: { projects: Project[] }) {
   const router = useRouter();
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
-      <div className="mb-6 flex items-end justify-between">
+    <div className="mx-auto max-w-5xl px-8 py-12">
+      <div className="mb-8 flex items-end justify-between">
         <div>
           <h1
-            className="text-xl font-semibold"
-            style={{ color: "var(--ink)", letterSpacing: "-0.01em" }}
+            className="text-3xl font-semibold tracking-tight"
+            style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
           >
             Projects
           </h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--ink-muted)" }}>
+          <p className="mt-1.5 text-sm" style={{ color: "var(--ink-muted)" }}>
             {projects.length} active project{projects.length !== 1 ? "s" : ""}
           </p>
         </div>
@@ -44,16 +44,16 @@ export function ProjectList({ projects }: { projects: Project[] }) {
           onClick={() => {
             /* TODO: open create project dialog */
           }}
-          className="flex items-center gap-2 px-3 py-2 text-sm font-medium cursor-pointer"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
           style={{
-            background: "var(--accent)",
-            color: "#fff",
+            background: "var(--ink)",
+            color: "var(--surface-raised)",
             border: "none",
             borderRadius: "var(--radius-md)",
           }}
         >
-          <Plus className="h-4 w-4" />
-          New Project
+          <Plus className="h-3.5 w-3.5" />
+          New project
         </button>
       </div>
 
@@ -76,20 +76,20 @@ export function ProjectList({ projects }: { projects: Project[] }) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {projects.map((p) => (
             <button
               key={p.id}
               type="button"
               onClick={() => router.push(`/projects/${p.slug}`)}
-              className="group flex flex-col gap-3 p-4 text-left cursor-pointer transition-all"
+              className="group flex flex-col gap-4 p-6 text-left cursor-pointer transition-all min-h-[160px]"
               style={{
                 background: "var(--surface-raised)",
                 border: "1px solid var(--border)",
-                borderRadius: "var(--radius-lg)",
+                borderRadius: "var(--radius-xl)",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--accent)";
+                e.currentTarget.style.borderColor = "var(--border-strong)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.borderColor = "var(--border)";

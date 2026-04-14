@@ -46,16 +46,16 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
   }, [entities, search, typeFilter]);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
-      <div className="mb-6">
+    <div className="mx-auto max-w-5xl px-8 py-12">
+      <div className="mb-8">
         <h1
-          className="text-xl font-semibold"
-          style={{ color: "var(--ink)", letterSpacing: "-0.01em" }}
+          className="text-3xl font-semibold tracking-tight"
+          style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
         >
           Entities
         </h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--ink-muted)" }}>
-          {entities.length} entities extracted from your documents
+        <p className="mt-1.5 text-sm" style={{ color: "var(--ink-muted)" }}>
+          {entities.length} extracted from your documents
         </p>
       </div>
 

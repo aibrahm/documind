@@ -182,23 +182,37 @@ export default function DocumentsPage() {
   );
 
   return (
-    <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
+    <div className="flex flex-1 flex-col overflow-hidden min-h-0" style={{ background: "var(--surface)" }}>
       <main className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-5xl mx-auto px-6 py-10">
+        <div className="max-w-5xl mx-auto px-8 py-12">
           {/* Header */}
-          <div className="flex items-end justify-between mb-2">
+          <div className="flex items-end justify-between mb-8">
             <div>
-              <h1 className="text-[28px] font-semibold text-slate-900 tracking-tight">Knowledge base</h1>
-              <p className="text-[14px] text-slate-500 mt-1">
+              <h1
+                className="text-3xl font-semibold tracking-tight"
+                style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
+              >
+                Documents
+              </h1>
+              <p
+                className="mt-1.5 text-sm"
+                style={{ color: "var(--ink-muted)" }}
+              >
                 {stats.total === 0
                   ? "No documents yet."
-                  : `${stats.ready} ready · ${stats.processing > 0 ? `${stats.processing} processing · ` : ""}${stats.total} total`}
+                  : `${stats.total} document${stats.total === 1 ? "" : "s"}${stats.processing > 0 ? ` · ${stats.processing} processing` : ""}`}
               </p>
             </div>
             <button
               type="button"
               onClick={() => router.push("/upload")}
-              className="flex items-center gap-1.5 text-[13px] font-medium px-4 py-2 bg-slate-900 text-white border-none rounded-lg cursor-pointer hover:bg-slate-800 transition-colors shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium cursor-pointer transition-all"
+              style={{
+                background: "var(--ink)",
+                color: "var(--surface-raised)",
+                border: "none",
+                borderRadius: "var(--radius-md)",
+              }}
             >
               <UploadIcon className="w-3.5 h-3.5" />
               Upload
@@ -206,15 +220,24 @@ export default function DocumentsPage() {
           </div>
 
           {/* Search + filter row */}
-          <div className="flex items-center gap-3 mt-6 mb-5">
+          <div className="flex items-center gap-3 mb-5">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+                style={{ color: "var(--ink-ghost)" }}
+              />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by title or entity..."
-                className="w-full pl-9 pr-3 py-2 text-[13px] bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:border-slate-300 focus:outline-none transition-colors placeholder:text-slate-400"
+                placeholder="Search documents..."
+                className="w-full pl-9 pr-3 py-2 text-sm outline-none transition-colors"
+                style={{
+                  background: "var(--surface-raised)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--ink)",
+                }}
               />
             </div>
             <div className="flex items-center gap-1 ml-auto">
@@ -223,11 +246,22 @@ export default function DocumentsPage() {
                   key={c}
                   type="button"
                   onClick={() => setFilter(c)}
-                  className={`font-['JetBrains_Mono'] text-[10px] font-semibold tracking-wider uppercase px-2.5 py-1.5 rounded-md cursor-pointer transition-colors border ${
-                    filter === c
-                      ? "bg-slate-900 text-white border-slate-900"
-                      : "bg-transparent text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-700"
-                  }`}
+                  className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+                  style={{
+                    background:
+                      filter === c
+                        ? "var(--ink)"
+                        : "var(--surface-raised)",
+                    color:
+                      filter === c
+                        ? "var(--surface-raised)"
+                        : "var(--ink-muted)",
+                    border:
+                      filter === c
+                        ? "1px solid var(--ink)"
+                        : "1px solid var(--border)",
+                    borderRadius: "var(--radius-md)",
+                  }}
                 >
                   {CLASS_LABEL[c] ?? c}
                 </button>
@@ -249,7 +283,11 @@ export default function DocumentsPage() {
               {[1, 2, 3, 4].map((i) => (
                 <div
                   key={i}
-                  className="h-[68px] bg-slate-50 border border-slate-100 rounded-lg animate-pulse"
+                  className="h-[76px] animate-pulse"
+                  style={{
+                    background: "var(--surface-sunken)",
+                    borderRadius: "var(--radius-lg)",
+                  }}
                 />
               ))}
             </div>
@@ -257,9 +295,8 @@ export default function DocumentsPage() {
 
           {/* Document list */}
           {!loading && filteredDocs.length > 0 && (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {filteredDocs.map((doc) => {
-                // Migrate any legacy DOCTRINE row to PUBLIC for display.
                 const displayClass =
                   doc.classification === "DOCTRINE" ? "PUBLIC" : doc.classification;
                 const classLabel = CLASS_LABEL[displayClass] ?? displayClass;
@@ -271,11 +308,32 @@ export default function DocumentsPage() {
                   <div
                     key={doc.id}
                     onClick={() => editingId !== doc.id && router.push(`/documents/${doc.id}`)}
-                    className="group flex items-center gap-4 px-4 py-3 bg-white border border-slate-200 hover:border-slate-300 hover:shadow-sm rounded-lg cursor-pointer transition-all"
+                    className="group flex items-center gap-4 px-5 py-4 cursor-pointer transition-all"
+                    style={{
+                      background: "var(--surface-raised)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-lg)",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border-strong)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                    }}
                   >
                     {/* Icon */}
-                    <div className="w-9 h-9 rounded-md bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
-                      <FileText className="w-4 h-4 text-slate-400" />
+                    <div
+                      className="w-10 h-10 flex items-center justify-center shrink-0"
+                      style={{
+                        background: "var(--surface-sunken)",
+                        borderRadius: "var(--radius-md)",
+                      }}
+                    >
+                      <FileText
+                        className="w-4 h-4"
+                        style={{ color: "var(--ink-muted)" }}
+                        strokeWidth={1.5}
+                      />
                     </div>
 
                     {/* Title + meta */}
@@ -403,28 +461,55 @@ export default function DocumentsPage() {
 
           {/* Empty states */}
           {!loading && filteredDocs.length === 0 && !error && (
-            <div className="border border-dashed border-slate-200 rounded-xl p-16 text-center">
-              <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-slate-50 flex items-center justify-center">
-                <FileText className="w-5 h-5 text-slate-300" />
+            <div
+              className="p-16 text-center"
+              style={{
+                background: "var(--surface-raised)",
+                border: "1px dashed var(--border)",
+                borderRadius: "var(--radius-xl)",
+              }}
+            >
+              <div
+                className="w-12 h-12 mx-auto mb-4 flex items-center justify-center"
+                style={{
+                  background: "var(--surface-sunken)",
+                  borderRadius: "var(--radius-md)",
+                }}
+              >
+                <FileText
+                  className="w-5 h-5"
+                  style={{ color: "var(--ink-ghost)" }}
+                  strokeWidth={1.5}
+                />
               </div>
               {docs.length === 0 ? (
                 <>
-                  <p className="text-[15px] font-medium text-slate-900 mb-1">Your knowledge base is empty</p>
-                  <p className="text-[13px] text-slate-500 mb-5">
-                    Upload your first document to make it searchable.
+                  <p className="text-sm font-medium mb-1" style={{ color: "var(--ink)" }}>
+                    Your library is empty
+                  </p>
+                  <p className="text-sm mb-5" style={{ color: "var(--ink-muted)" }}>
+                    Upload your first document to get started.
                   </p>
                   <button
                     type="button"
                     onClick={() => router.push("/upload")}
-                    className="text-[13px] font-medium text-white bg-slate-900 hover:bg-slate-800 border-none rounded-lg px-4 py-2 cursor-pointer transition-colors"
+                    className="text-sm font-medium px-4 py-2 cursor-pointer transition-colors"
+                    style={{
+                      background: "var(--ink)",
+                      color: "var(--surface-raised)",
+                      border: "none",
+                      borderRadius: "var(--radius-md)",
+                    }}
                   >
-                    Upload your first document
+                    Upload document
                   </button>
                 </>
               ) : (
                 <>
-                  <p className="text-[15px] font-medium text-slate-900 mb-1">No matches</p>
-                  <p className="text-[13px] text-slate-500">
+                  <p className="text-sm font-medium mb-1" style={{ color: "var(--ink)" }}>
+                    No matches
+                  </p>
+                  <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
                     Try a different search or filter.
                   </p>
                 </>
