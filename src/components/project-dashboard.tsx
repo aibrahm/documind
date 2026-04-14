@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Network, Calendar, Target } from "lucide-react";
+import { FileText, Network, Calendar, Target, BookOpen, Save } from "lucide-react";
 import type { Database } from "@/lib/database.types";
 
 type Project = Database["public"]["Tables"]["projects"]["Row"];
@@ -33,10 +33,31 @@ interface LinkedEntity {
 
 export function ProjectDashboard({ project, counts }: Props) {
   const router = useRouter();
-  const [tab, setTab] = useState<"documents" | "entities">("documents");
+  const [tab, setTab] = useState<"context" | "documents" | "entities">(
+    "context",
+  );
   const [docs, setDocs] = useState<LinkedDoc[]>([]);
   const [entities, setEntities] = useState<LinkedEntity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [contextDraft, setContextDraft] = useState(
+    (project as { context_md?: string | null }).context_md ?? "",
+  );
+  const [contextSaving, setContextSaving] = useState(false);
+  const [contextDirty, setContextDirty] = useState(false);
+
+  const saveContext = useCallback(async () => {
+    setContextSaving(true);
+    try {
+      await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ context_md: contextDraft }),
+      });
+      setContextDirty(false);
+    } finally {
+      setContextSaving(false);
+    }
+  }, [project.id, contextDraft]);
 
   useEffect(() => {
     async function load() {
@@ -112,25 +133,16 @@ export function ProjectDashboard({ project, counts }: Props) {
         </div>
       </div>
 
-      {project.context_summary && (
-        <div
-          className="mb-6 p-4 text-sm"
-          style={{
-            background: "var(--surface-raised)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            color: "var(--ink)",
-            lineHeight: 1.6,
-          }}
-        >
-          {project.context_summary}
-        </div>
-      )}
-
       <div
         className="mb-4 flex items-center gap-1 border-b"
         style={{ borderColor: "var(--border)" }}
       >
+        <TabButton
+          active={tab === "context"}
+          onClick={() => setTab("context")}
+          icon={BookOpen}
+          label="Context"
+        />
         <TabButton
           active={tab === "documents"}
           onClick={() => setTab("documents")}
@@ -155,7 +167,45 @@ export function ProjectDashboard({ project, counts }: Props) {
           overflow: "hidden",
         }}
       >
-        {loading ? (
+        {tab === "context" ? (
+          <div className="p-0">
+            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: "1px solid var(--border-light)" }}>
+              <div className="text-xs" style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}>
+                CONTEXT.MD
+              </div>
+              <button
+                type="button"
+                onClick={saveContext}
+                disabled={!contextDirty || contextSaving}
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium cursor-pointer transition-colors disabled:opacity-40"
+                style={{
+                  background: contextDirty ? "var(--ink)" : "var(--surface-sunken)",
+                  color: contextDirty ? "var(--surface-raised)" : "var(--ink-muted)",
+                  border: "none",
+                  borderRadius: "var(--radius-sm)",
+                }}
+              >
+                <Save className="h-3 w-3" strokeWidth={1.75} />
+                {contextSaving ? "Saving..." : contextDirty ? "Save" : "Saved"}
+              </button>
+            </div>
+            <textarea
+              value={contextDraft}
+              onChange={(e) => {
+                setContextDraft(e.target.value);
+                setContextDirty(true);
+              }}
+              placeholder={`## Current State\nWhat's happening with this project right now.\n\n## Timeline\n2026-04-14  First entry — what happened today`}
+              className="w-full p-4 bg-transparent border-0 outline-none font-mono text-sm resize-none"
+              style={{
+                color: "var(--ink)",
+                minHeight: "420px",
+                lineHeight: 1.6,
+              }}
+              spellCheck={false}
+            />
+          </div>
+        ) : loading ? (
           <div
             className="p-8 text-center text-sm"
             style={{ color: "var(--ink-muted)" }}
@@ -291,7 +341,7 @@ function TabButton({
   onClick: () => void;
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   label: string;
-  count: number;
+  count?: number;
 }) {
   return (
     <button
@@ -305,16 +355,18 @@ function TabButton({
     >
       <Icon className="h-4 w-4" strokeWidth={1.5} />
       {label}
-      <span
-        className="ml-0.5 px-1.5 py-0.5 text-xs tabular-nums"
-        style={{
-          color: "var(--ink-faint)",
-          background: "var(--surface-sunken)",
-          borderRadius: "var(--radius-sm)",
-        }}
-      >
-        {count}
-      </span>
+      {typeof count === "number" && (
+        <span
+          className="ml-0.5 px-1.5 py-0.5 text-xs tabular-nums"
+          style={{
+            color: "var(--ink-faint)",
+            background: "var(--surface-sunken)",
+            borderRadius: "var(--radius-sm)",
+          }}
+        >
+          {count}
+        </span>
+      )}
       {active && (
         <span
           aria-hidden

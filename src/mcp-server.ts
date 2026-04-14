@@ -384,6 +384,7 @@ server.tool(
         stage: project.stage,
         objective: project.objective,
         context_summary: project.context_summary,
+        context_md: (project as { context_md?: string | null }).context_md ?? null,
         brief: project.brief,
         next_actions: project.next_actions,
         start_date: project.start_date,
@@ -395,6 +396,53 @@ server.tool(
         role: c.role,
       })),
     });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Tool 5a: update_project_context
+// ─────────────────────────────────────────────────────────────────
+
+server.tool(
+  "update_project_context",
+  "Update a project's context.md — the living notes file for this project. Use 'replace' to overwrite the whole file (when rewriting the Current State section). Use 'append' to add a timestamped line to the Timeline section.",
+  {
+    project_id: z.string().describe("UUID of the project"),
+    mode: z
+      .enum(["replace", "append"])
+      .describe("replace: overwrite context_md. append: add a timestamped line at the end."),
+    content: z.string().describe("New content (if replace) or line to append"),
+  },
+  async ({ project_id, mode, content }) => {
+    if (mode === "replace") {
+      const { error } = await supabaseAdmin
+        .from("projects")
+        .update({ context_md: content })
+        .eq("id", project_id);
+      if (error) return textResult(`Update failed: ${error.message}`);
+      return jsonResult({ ok: true, mode, length: content.length });
+    }
+
+    // append mode — add a timestamped line
+    const { data: cur } = await supabaseAdmin
+      .from("projects")
+      .select("context_md")
+      .eq("id", project_id)
+      .single();
+
+    const existing =
+      (cur as { context_md?: string | null } | null)?.context_md ?? "";
+    const stamp = new Date().toISOString().slice(0, 10);
+    const newContent = existing
+      ? `${existing}\n${stamp}  ${content}`
+      : `## Timeline\n${stamp}  ${content}`;
+
+    const { error } = await supabaseAdmin
+      .from("projects")
+      .update({ context_md: newContent })
+      .eq("id", project_id);
+    if (error) return textResult(`Append failed: ${error.message}`);
+    return jsonResult({ ok: true, mode, total_length: newContent.length });
   },
 );
 
@@ -1357,33 +1405,44 @@ server.tool(
 
 server.tool(
   "add_note",
-  "Save a note or decision to the project memory. Claude can use this to persist important context that should survive across conversations — decisions made, instructions from the user, things to remember.",
+  "Append a timestamped note to a project's context.md timeline. Use this to record decisions, facts, instructions, or things to remember — they become part of the project's permanent context that Claude reads on every future question.",
   {
-    content: z.string().describe("The note content"),
-    project_id: z.string().optional().describe("Link to a project"),
-    type: z
-      .enum(["decision", "instruction", "fact", "risk", "question"])
-      .optional()
-      .describe("Type of note (default: fact)"),
+    content: z
+      .string()
+      .describe(
+        "The note content — a short factual sentence. E.g. 'Board approved Stage 2 on 2026-04-15' or 'Xingfa requires confirmed electricity supply before Term Sheet'",
+      ),
+    project_id: z
+      .string()
+      .describe("Project UUID to attach the note to (required)"),
   },
-  async ({ content, project_id, type }) => {
-    const { data, error } = await supabaseAdmin
-      .from("conversation_memory")
-      .insert({
-        kind: type ?? "fact",
-        text: content,
-        importance: 1.0,
-        project_id: project_id ?? null,
-      })
-      .select("id")
+  async ({ content, project_id }) => {
+    const { data: cur } = await supabaseAdmin
+      .from("projects")
+      .select("context_md, name")
+      .eq("id", project_id)
       .single();
+
+    if (!cur) return textResult(`Project not found: ${project_id}`);
+
+    const existing =
+      (cur as { context_md?: string | null }).context_md ?? "";
+    const stamp = new Date().toISOString().slice(0, 10);
+    const line = `${stamp}  ${content.trim()}`;
+    const newContent = existing
+      ? `${existing}\n${line}`
+      : `## Timeline\n${line}`;
+
+    const { error } = await supabaseAdmin
+      .from("projects")
+      .update({ context_md: newContent })
+      .eq("id", project_id);
 
     if (error) return textResult(`Failed to save note: ${error.message}`);
     return jsonResult({
       ok: true,
-      note_id: data.id,
-      type: type ?? "fact",
-      project_linked: !!project_id,
+      project_id,
+      appended: line,
     });
   },
 );

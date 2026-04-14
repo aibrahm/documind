@@ -14,7 +14,8 @@
     "biome:check": "biome check .",
     "biome:write": "biome check --write .",
     "format": "biome format --write .",
-    "mcp": "tsx src/mcp-server.ts"
+    "mcp": "tsx src/mcp-server.ts",
+    "backfill": "tsx scripts/backfill-all.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

@@ -25,11 +25,15 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Pull membership counts in parallel
-    const [docs, entities, convos] = await Promise.all([
-      supabaseAdmin.from("project_documents").select("project_id", { count: "exact", head: true }).eq("project_id", projectId),
-      supabaseAdmin.from("project_entities").select("project_id", { count: "exact", head: true }).eq("project_id", projectId),
-      supabaseAdmin.from("conversations").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+    const [docs, entities] = await Promise.all([
+      supabaseAdmin
+        .from("project_documents")
+        .select("project_id", { count: "exact", head: true })
+        .eq("project_id", projectId),
+      supabaseAdmin
+        .from("project_entities")
+        .select("project_id", { count: "exact", head: true })
+        .eq("project_id", projectId),
     ]);
 
     return NextResponse.json({
@@ -37,7 +41,6 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       counts: {
         documents: docs.count || 0,
         entities: entities.count || 0,
-        threads: convos.count || 0,
       },
     });
   } catch (err) {

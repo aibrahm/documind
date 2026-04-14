@@ -6,7 +6,6 @@ import { chunkDocument } from "@/lib/chunking";
 import { generateEmbeddings } from "@/lib/embeddings";
 import { withRetry } from "@/lib/retry";
 import { generateCanonicalTitle } from "@/lib/title-convention";
-import { invalidateBriefingCache } from "@/lib/daily-briefing";
 import { encrypt } from "@/lib/encryption";
 import { writeExtractionArtifact } from "@/lib/extraction-artifacts";
 import { detectReferences, storeAndResolveReferences } from "@/lib/references";
@@ -386,8 +385,6 @@ export async function processDocumentContent({
       (err as Error).message,
     );
   });
-
-  void invalidateBriefingCache().catch(() => {});
 
   return {
     title: finalTitle,

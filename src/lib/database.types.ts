@@ -84,13 +84,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "artifacts_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "artifacts_entity_id_fkey"
             columns: ["entity_id"]
             isOneToOne: false
@@ -173,197 +166,6 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "documents"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      conversation_documents: {
-        Row: {
-          added_at: string
-          conversation_id: string
-          document_id: string
-          role: string | null
-        }
-        Insert: {
-          added_at?: string
-          conversation_id: string
-          document_id: string
-          role?: string | null
-        }
-        Update: {
-          added_at?: string
-          conversation_id?: string
-          document_id?: string
-          role?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "conversation_documents_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "conversation_documents_document_id_fkey"
-            columns: ["document_id"]
-            isOneToOne: false
-            referencedRelation: "documents"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      conversation_entities: {
-        Row: {
-          added_at: string
-          conversation_id: string
-          entity_id: string
-          role: string | null
-        }
-        Insert: {
-          added_at?: string
-          conversation_id: string
-          entity_id: string
-          role?: string | null
-        }
-        Update: {
-          added_at?: string
-          conversation_id?: string
-          entity_id?: string
-          role?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "conversation_entities_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "conversation_entities_entity_id_fkey"
-            columns: ["entity_id"]
-            isOneToOne: false
-            referencedRelation: "entities"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      conversation_memory: {
-        Row: {
-          conversation_id: string | null
-          created_at: string | null
-          entities: string[] | null
-          id: string
-          importance: number | null
-          kind: string
-          project_id: string | null
-          text: string
-        }
-        Insert: {
-          conversation_id?: string | null
-          created_at?: string | null
-          entities?: string[] | null
-          id?: string
-          importance?: number | null
-          kind: string
-          project_id?: string | null
-          text: string
-        }
-        Update: {
-          conversation_id?: string | null
-          created_at?: string | null
-          entities?: string[] | null
-          id?: string
-          importance?: number | null
-          kind?: string
-          project_id?: string | null
-          text?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "conversation_memory_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "conversation_memory_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      conversations: {
-        Row: {
-          classification: Json | null
-          created_at: string | null
-          id: string
-          kind: string
-          last_message_at: string | null
-          mode: string
-          model: string | null
-          project_id: string | null
-          purpose: string | null
-          query: string
-          response: string | null
-          scores: Json | null
-          search_results: Json | null
-          sources: Json | null
-          status: string
-          summary: string | null
-          title: string
-          updated_at: string | null
-        }
-        Insert: {
-          classification?: Json | null
-          created_at?: string | null
-          id?: string
-          kind?: string
-          last_message_at?: string | null
-          mode?: string
-          model?: string | null
-          project_id?: string | null
-          purpose?: string | null
-          query: string
-          response?: string | null
-          scores?: Json | null
-          search_results?: Json | null
-          sources?: Json | null
-          status?: string
-          summary?: string | null
-          title: string
-          updated_at?: string | null
-        }
-        Update: {
-          classification?: Json | null
-          created_at?: string | null
-          id?: string
-          kind?: string
-          last_message_at?: string | null
-          mode?: string
-          model?: string | null
-          project_id?: string | null
-          purpose?: string | null
-          query?: string
-          response?: string | null
-          scores?: Json | null
-          search_results?: Json | null
-          sources?: Json | null
-          status?: string
-          summary?: string | null
-          title?: string
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "conversations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -482,6 +284,7 @@ export type Database = {
           reference_text: string
           reference_type: string
           resolved: boolean | null
+          similarity: number | null
           source_id: string
           target_id: string | null
         }
@@ -491,6 +294,7 @@ export type Database = {
           reference_text: string
           reference_type?: string
           resolved?: boolean | null
+          similarity?: number | null
           source_id: string
           target_id?: string | null
         }
@@ -500,6 +304,7 @@ export type Database = {
           reference_text?: string
           reference_type?: string
           resolved?: boolean | null
+          similarity?: number | null
           source_id?: string
           target_id?: string | null
         }
@@ -531,6 +336,7 @@ export type Database = {
           file_url: string
           id: string
           is_current: boolean | null
+          is_reference: boolean
           language: string
           metadata: Json | null
           page_count: number | null
@@ -554,6 +360,7 @@ export type Database = {
           file_url: string
           id?: string
           is_current?: boolean | null
+          is_reference?: boolean
           language?: string
           metadata?: Json | null
           page_count?: number | null
@@ -577,6 +384,7 @@ export type Database = {
           file_url?: string
           id?: string
           is_current?: boolean | null
+          is_reference?: boolean
           language?: string
           metadata?: Json | null
           page_count?: number | null
@@ -775,15 +583,7 @@ export type Database = {
           id?: string
           rating?: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "feedback_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       graph_edges: {
         Row: {
@@ -863,13 +663,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "knowledge_source_conversation_id_fkey"
-            columns: ["source_conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "knowledge_source_document_id_fkey"
             columns: ["source_document_id"]
             isOneToOne: false
@@ -919,13 +712,6 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "memory_items_source_conversation_id_fkey"
-            columns: ["source_conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "memory_items_source_document_id_fkey"
             columns: ["source_document_id"]
@@ -992,105 +778,7 @@ export type Database = {
           metadata?: Json | null
           role?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "messages_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      negotiation_documents: {
-        Row: {
-          added_at: string
-          document_id: string
-          negotiation_id: string
-          role: string | null
-        }
-        Insert: {
-          added_at?: string
-          document_id: string
-          negotiation_id: string
-          role?: string | null
-        }
-        Update: {
-          added_at?: string
-          document_id?: string
-          negotiation_id?: string
-          role?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "negotiation_documents_document_id_fkey"
-            columns: ["document_id"]
-            isOneToOne: false
-            referencedRelation: "documents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "negotiation_documents_negotiation_id_fkey"
-            columns: ["negotiation_id"]
-            isOneToOne: false
-            referencedRelation: "negotiations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      negotiations: {
-        Row: {
-          closed_at: string | null
-          counterparty_entity_id: string | null
-          created_at: string
-          id: string
-          key_terms: Json | null
-          name: string
-          opened_at: string
-          project_id: string
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          closed_at?: string | null
-          counterparty_entity_id?: string | null
-          created_at?: string
-          id?: string
-          key_terms?: Json | null
-          name: string
-          opened_at?: string
-          project_id: string
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          closed_at?: string | null
-          counterparty_entity_id?: string | null
-          created_at?: string
-          id?: string
-          key_terms?: Json | null
-          name?: string
-          opened_at?: string
-          project_id?: string
-          status?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "negotiations_counterparty_entity_id_fkey"
-            columns: ["counterparty_entity_id"]
-            isOneToOne: false
-            referencedRelation: "entities"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "negotiations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       obligations: {
         Row: {
@@ -1310,6 +998,7 @@ export type Database = {
           brief: Json | null
           closed_at: string | null
           color: string | null
+          context_md: string | null
           context_summary: string | null
           created_at: string
           description: string | null
@@ -1330,6 +1019,7 @@ export type Database = {
           brief?: Json | null
           closed_at?: string | null
           color?: string | null
+          context_md?: string | null
           context_summary?: string | null
           created_at?: string
           description?: string | null
@@ -1350,6 +1040,7 @@ export type Database = {
           brief?: Json | null
           closed_at?: string | null
           color?: string | null
+          context_md?: string | null
           context_summary?: string | null
           created_at?: string
           description?: string | null

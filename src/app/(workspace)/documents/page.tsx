@@ -24,14 +24,18 @@ interface Doc {
   processing_error: string | null;
   entities: string[];
   created_at: string;
+  is_reference?: boolean;
+  project_ids?: string[];
+  project_names?: string[];
 }
 
-type ClassFilter = "ALL" | "PRIVATE" | "PUBLIC";
-const CLASSIFICATIONS: ClassFilter[] = ["ALL", "PRIVATE", "PUBLIC"];
-const CLASS_LABEL: Record<string, string> = {
+type ScopeFilter = "ALL" | "UNASSIGNED" | "REFERENCE" | "IN_PROJECT";
+const SCOPES: ScopeFilter[] = ["ALL", "UNASSIGNED", "REFERENCE", "IN_PROJECT"];
+const SCOPE_LABEL: Record<string, string> = {
   ALL: "All",
-  PRIVATE: "Confidential",
-  PUBLIC: "Open",
+  UNASSIGNED: "Unassigned",
+  REFERENCE: "Reference",
+  IN_PROJECT: "In project",
 };
 
 function formatDate(iso: string): string {
@@ -54,7 +58,7 @@ export default function DocumentsPage() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<ClassFilter>("ALL");
+  const [scope, setScope] = useState<ScopeFilter>("ALL");
   const [query, setQuery] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
   const router = useRouter();
@@ -90,11 +94,14 @@ export default function DocumentsPage() {
 
   const filteredDocs = useMemo(() => {
     let result = docs;
-    if (filter !== "ALL") {
+    if (scope !== "ALL") {
       result = result.filter((d) => {
-        const normalized =
-          d.classification === "DOCTRINE" ? "PUBLIC" : d.classification;
-        return normalized === filter;
+        const inProject = (d.project_ids?.length ?? 0) > 0;
+        const isReference = d.is_reference === true;
+        if (scope === "UNASSIGNED") return !inProject && !isReference;
+        if (scope === "REFERENCE") return isReference && !inProject;
+        if (scope === "IN_PROJECT") return inProject;
+        return true;
       });
     }
     if (query.trim()) {
@@ -106,7 +113,7 @@ export default function DocumentsPage() {
       );
     }
     return result;
-  }, [docs, filter, query]);
+  }, [docs, scope, query]);
 
   const stats = useMemo(() => {
     const processing = docs.filter((d) => d.status === "processing").length;
@@ -204,27 +211,27 @@ export default function DocumentsPage() {
           />
         </div>
         <div className="flex items-center gap-1 ml-auto">
-          {CLASSIFICATIONS.map((c) => (
+          {SCOPES.map((s) => (
             <button
-              key={c}
+              key={s}
               type="button"
-              onClick={() => setFilter(c)}
+              onClick={() => setScope(s)}
               className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
               style={{
                 background:
-                  filter === c ? "var(--ink)" : "var(--surface-raised)",
+                  scope === s ? "var(--ink)" : "var(--surface-raised)",
                 color:
-                  filter === c
+                  scope === s
                     ? "var(--surface-raised)"
                     : "var(--ink-muted)",
                 border:
-                  filter === c
+                  scope === s
                     ? "1px solid var(--ink)"
                     : "1px solid var(--border)",
                 borderRadius: "var(--radius-md)",
               }}
             >
-              {CLASS_LABEL[c] ?? c}
+              {SCOPE_LABEL[s] ?? s}
             </button>
           ))}
         </div>
@@ -339,6 +346,44 @@ export default function DocumentsPage() {
                     </span>
                   </div>
                 </div>
+
+                {/* Project / reference badge */}
+                {doc.project_names && doc.project_names.length > 0 ? (
+                  <span
+                    className="text-xs shrink-0 px-2 py-0.5"
+                    style={{
+                      color: "var(--accent)",
+                      background: "var(--accent-bg)",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    {doc.project_names[0]}
+                    {doc.project_names.length > 1 &&
+                      ` +${doc.project_names.length - 1}`}
+                  </span>
+                ) : doc.is_reference ? (
+                  <span
+                    className="text-xs shrink-0 px-2 py-0.5"
+                    style={{
+                      color: "var(--ink-muted)",
+                      background: "var(--surface-sunken)",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    Reference
+                  </span>
+                ) : (
+                  <span
+                    className="text-xs shrink-0 px-2 py-0.5"
+                    style={{
+                      color: "var(--warning)",
+                      background: "var(--warning-bg)",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    Unassigned
+                  </span>
+                )}
 
                 {doc.status === "processing" && (
                   <span

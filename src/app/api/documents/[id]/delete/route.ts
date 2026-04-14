@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { deleteExtractionArtifact } from "@/lib/extraction-artifacts";
-import { invalidateBriefingCache } from "@/lib/daily-briefing";
 
 export async function DELETE(
   _request: NextRequest,
@@ -42,10 +41,6 @@ export async function DELETE(
       await deleteExtractionArtifact(id, metadata);
       await supabaseAdmin.storage.from("documents").remove([doc.file_url]);
     }
-
-    // Bust the briefing cache so the next landing page load doesn't
-    // reference a document that no longer exists.
-    void invalidateBriefingCache().catch(() => {});
 
     return NextResponse.json({ ok: true });
   } catch (err) {

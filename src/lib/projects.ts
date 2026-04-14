@@ -105,6 +105,7 @@ export const CREATE_FIELDS = [
   "color",
   "icon",
   "context_summary",
+  "context_md",
   "start_date",
   "target_close",
 ] as const;
@@ -126,6 +127,7 @@ export const UPDATE_FIELDS = [
   "color",
   "icon",
   "context_summary",
+  "context_md",
   "start_date",
   "target_close",
   "closed_at",
