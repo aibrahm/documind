@@ -184,24 +184,32 @@ export default function DocumentsPage() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden min-h-0" style={{ background: "var(--surface)" }}>
       <main className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-5xl mx-auto px-8 py-12">
+        <div className="max-w-6xl mx-auto px-8 py-12">
           {/* Header */}
-          <div className="flex items-end justify-between mb-8">
+          <div className="flex items-end justify-between mb-10">
             <div>
+              <div
+                className="text-xs font-medium mb-2"
+                style={{
+                  color: "var(--ink-faint)",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                LIBRARY
+              </div>
               <h1
-                className="text-3xl font-semibold tracking-tight"
+                className="text-4xl font-semibold tracking-tight"
                 style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
               >
-                Documents
+                {stats.total}{" "}
+                <span
+                  className="text-2xl font-normal"
+                  style={{ color: "var(--ink-muted)" }}
+                >
+                  document{stats.total === 1 ? "" : "s"}
+                  {stats.processing > 0 ? ` · ${stats.processing} processing` : ""}
+                </span>
               </h1>
-              <p
-                className="mt-1.5 text-sm"
-                style={{ color: "var(--ink-muted)" }}
-              >
-                {stats.total === 0
-                  ? "No documents yet."
-                  : `${stats.total} document${stats.total === 1 ? "" : "s"}${stats.processing > 0 ? ` · ${stats.processing} processing` : ""}`}
-              </p>
             </div>
             <button
               type="button"
@@ -293,9 +301,20 @@ export default function DocumentsPage() {
             </div>
           )}
 
-          {/* Document list */}
+          {/* Document list — gridlines wrapper */}
           {!loading && filteredDocs.length > 0 && (
-            <div className="space-y-2">
+            <div
+              className="overflow-hidden"
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-xl)",
+                background: "var(--border)",
+              }}
+            >
+              <div
+                className="grid grid-cols-1"
+                style={{ gap: "1px", background: "var(--border)" }}
+              >
               {filteredDocs.map((doc) => {
                 const displayClass =
                   doc.classification === "DOCTRINE" ? "PUBLIC" : doc.classification;
@@ -308,17 +327,15 @@ export default function DocumentsPage() {
                   <div
                     key={doc.id}
                     onClick={() => editingId !== doc.id && router.push(`/documents/${doc.id}`)}
-                    className="group flex items-center gap-4 px-5 py-4 cursor-pointer transition-all"
+                    className="group flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors"
                     style={{
                       background: "var(--surface-raised)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius-lg)",
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border-strong)";
+                      e.currentTarget.style.background = "var(--surface-sunken)";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.background = "var(--surface-raised)";
                     }}
                   >
                     {/* Icon */}
@@ -456,6 +473,7 @@ export default function DocumentsPage() {
                   </div>
                 );
               })}
+              </div>
             </div>
           )}
 

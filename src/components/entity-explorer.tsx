@@ -46,23 +46,33 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
   }, [entities, search, typeFilter]);
 
   return (
-    <div className="mx-auto max-w-5xl px-8 py-12">
-      <div className="mb-8">
+    <div className="mx-auto max-w-6xl px-8 py-12">
+      {/* Header */}
+      <div className="mb-10">
+        <div
+          className="text-xs font-medium mb-2"
+          style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
+        >
+          ENTITIES
+        </div>
         <h1
-          className="text-3xl font-semibold tracking-tight"
+          className="text-4xl font-semibold tracking-tight"
           style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
         >
-          Entities
+          {entities.length}{" "}
+          <span
+            className="text-2xl font-normal"
+            style={{ color: "var(--ink-muted)" }}
+          >
+            extracted
+          </span>
         </h1>
-        <p className="mt-1.5 text-sm" style={{ color: "var(--ink-muted)" }}>
-          {entities.length} extracted from your documents
-        </p>
       </div>
 
       {/* Filters */}
       <div className="mb-4 flex items-center gap-3">
         <div
-          className="flex items-center gap-2 flex-1 px-3 py-2"
+          className="flex items-center gap-2 flex-1 max-w-md px-3 py-2"
           style={{
             background: "var(--surface-raised)",
             border: "1px solid var(--border)",
@@ -70,8 +80,9 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
           }}
         >
           <Search
-            className="h-4 w-4 shrink-0"
+            className="h-3.5 w-3.5 shrink-0"
             style={{ color: "var(--ink-ghost)" }}
+            strokeWidth={1.5}
           />
           <input
             type="text"
@@ -85,134 +96,164 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
             }}
           />
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
+        <div className="flex items-center gap-1 ml-auto">
+          <FilterChip
+            active={!typeFilter}
             onClick={() => setTypeFilter(null)}
-            className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
-            style={{
-              background: !typeFilter
-                ? "var(--ink)"
-                : "var(--surface-raised)",
-              color: !typeFilter ? "#fff" : "var(--ink-muted)",
-              border: !typeFilter ? "none" : "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-            }}
           >
             All
-          </button>
+          </FilterChip>
           {types.map((t) => (
-            <button
+            <FilterChip
               key={t}
-              type="button"
+              active={typeFilter === t}
               onClick={() => setTypeFilter(typeFilter === t ? null : t)}
-              className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
-              style={{
-                background:
-                  typeFilter === t
-                    ? "var(--ink)"
-                    : "var(--surface-raised)",
-                color:
-                  typeFilter === t ? "#fff" : "var(--ink-muted)",
-                border:
-                  typeFilter === t ? "none" : "1px solid var(--border)",
-                borderRadius: "var(--radius-sm)",
-              }}
             >
               {t}
-            </button>
+            </FilterChip>
           ))}
         </div>
       </div>
 
-      {/* Entity List */}
-      <div
-        style={{
-          background: "var(--surface-raised)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-lg)",
-          overflow: "hidden",
-        }}
-      >
-        {/* Header */}
+      {/* Entity grid with visible gridlines */}
+      {filtered.length === 0 ? (
         <div
-          className="grid grid-cols-[1fr_200px_80px_100px] gap-4 px-4 py-2 text-xs font-medium"
+          className="p-16 text-center"
           style={{
-            color: "var(--ink-faint)",
-            background: "var(--surface-sunken)",
-            borderBottom: "1px solid var(--border)",
+            background: "var(--surface-raised)",
+            border: "1px dashed var(--border)",
+            borderRadius: "var(--radius-xl)",
           }}
         >
-          <span>Name</span>
-          <span>English Name</span>
-          <span>Type</span>
-          <span className="text-right">Documents</span>
+          <Network
+            className="mx-auto h-10 w-10 mb-3"
+            style={{ color: "var(--ink-ghost)" }}
+            strokeWidth={1.25}
+          />
+          <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
+            {search || typeFilter
+              ? "No entities match your filters."
+              : "No entities extracted yet."}
+          </p>
         </div>
-
-        {filtered.length === 0 ? (
-          <div className="py-12 text-center">
-            <Network
-              className="mx-auto h-8 w-8 mb-2"
-              style={{ color: "var(--ink-ghost)" }}
-              strokeWidth={1.25}
-            />
-            <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
-              {search || typeFilter
-                ? "No entities match your filters."
-                : "No entities extracted yet."}
-            </p>
+      ) : (
+        <div
+          className="overflow-hidden"
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-xl)",
+            background: "var(--border)",
+          }}
+        >
+          {/* Header row */}
+          <div
+            className="grid grid-cols-[1fr_180px_100px_80px]"
+            style={{
+              background: "var(--surface-sunken)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            <HeaderCell label="Name" />
+            <HeaderCell label="English" />
+            <HeaderCell label="Type" />
+            <HeaderCell label="Docs" align="right" />
           </div>
-        ) : (
-          filtered.map((entity, i) => (
-            <div
-              key={entity.id}
-              className="grid grid-cols-[1fr_200px_80px_100px] gap-4 px-4 py-3 items-center text-sm transition-colors cursor-default"
-              style={{
-                borderBottom:
-                  i < filtered.length - 1
-                    ? "1px solid var(--border-light)"
-                    : "none",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--surface-sunken)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <span
-                className="font-medium truncate"
-                style={{ color: "var(--ink)" }}
+
+          {/* Body rows — gridlines via gap:1px on background */}
+          <div
+            className="grid grid-cols-1"
+            style={{ gap: "1px", background: "var(--border)" }}
+          >
+            {filtered.map((entity) => (
+              <div
+                key={entity.id}
+                className="grid grid-cols-[1fr_180px_100px_80px] items-center text-sm transition-colors cursor-default"
+                style={{ background: "var(--surface-raised)" }}
               >
-                {entity.name}
-              </span>
-              <span
-                className="truncate text-xs"
-                style={{ color: "var(--ink-muted)" }}
-              >
-                {entity.name_en ?? "—"}
-              </span>
-              <span
-                className="text-xs px-1.5 py-0.5 w-fit"
-                style={{
-                  color: TYPE_COLORS[entity.type] ?? "var(--ink-faint)",
-                  background: `color-mix(in srgb, ${TYPE_COLORS[entity.type] ?? "var(--ink-faint)"} 10%, transparent)`,
-                  borderRadius: "var(--radius-sm)",
-                }}
-              >
-                {entity.type}
-              </span>
-              <span
-                className="text-right flex items-center justify-end gap-1 text-xs"
-                style={{ color: "var(--ink-faint)" }}
-              >
-                <FileText className="h-3 w-3" />
-                {entity.documentCount}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
+                <div
+                  className="px-4 py-3 font-medium truncate"
+                  style={{ color: "var(--ink)" }}
+                >
+                  {entity.name}
+                </div>
+                <div
+                  className="px-4 py-3 truncate text-xs"
+                  style={{ color: "var(--ink-muted)" }}
+                >
+                  {entity.name_en ?? "—"}
+                </div>
+                <div className="px-4 py-3">
+                  <span
+                    className="text-xs px-1.5 py-0.5"
+                    style={{
+                      color:
+                        TYPE_COLORS[entity.type] ?? "var(--ink-faint)",
+                      background: `color-mix(in srgb, ${TYPE_COLORS[entity.type] ?? "var(--ink-faint)"} 10%, transparent)`,
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    {entity.type}
+                  </span>
+                </div>
+                <div
+                  className="px-4 py-3 text-right flex items-center justify-end gap-1 text-xs tabular-nums"
+                  style={{ color: "var(--ink-faint)" }}
+                >
+                  <FileText className="h-3 w-3" strokeWidth={1.5} />
+                  {entity.documentCount}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function HeaderCell({
+  label,
+  align,
+}: {
+  label: string;
+  align?: "right";
+}) {
+  return (
+    <div
+      className="px-4 py-2.5 text-xs font-medium"
+      style={{
+        color: "var(--ink-faint)",
+        letterSpacing: "0.04em",
+        textAlign: align ?? "left",
+      }}
+    >
+      {label.toUpperCase()}
+    </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+      style={{
+        background: active ? "var(--ink)" : "var(--surface-raised)",
+        color: active ? "var(--surface-raised)" : "var(--ink-muted)",
+        border: active ? "1px solid var(--ink)" : "1px solid var(--border)",
+        borderRadius: "var(--radius-md)",
+      }}
+    >
+      {children}
+    </button>
   );
 }
