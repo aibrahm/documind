@@ -220,8 +220,9 @@ export function Dashboard({ counts, recentDocs }: Props) {
                   <span
                     className="text-xs shrink-0 tabular-nums w-16 text-right"
                     style={{ color: "var(--ink-ghost)" }}
+                    suppressHydrationWarning
                   >
-                    {new Date(doc.created_at).toLocaleDateString(undefined, {
+                    {new Date(doc.created_at).toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                     })}
