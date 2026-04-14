@@ -197,11 +197,10 @@ async function main() {
       }
     }
 
-    // High-confidence → auto-link
-    // Medium confidence → leave unassigned (user triages)
-    // Low confidence → mark as reference
+    // Binary model: project OR reference. No unassigned state.
+    // High-confidence (>= 0.70) → link to best project.
+    // Everything else → is_reference=true (general reference library).
     const HIGH = 0.7;
-    const LOW = 0.45;
 
     if (bestProjectId && bestScore >= HIGH) {
       const { error } = await supabaseAdmin
@@ -215,21 +214,17 @@ async function main() {
           `  → ${doc.title.slice(0, 60)} → ${projName} (${(bestScore * 100).toFixed(0)}%)`,
         );
       }
-    } else if (bestScore < LOW) {
-      // No project matches well — mark as reference
+    } else {
       const { error } = await supabaseAdmin
         .from("documents")
         .update({ is_reference: true })
         .eq("id", doc.id);
       if (!error) {
         markedReference++;
-        console.log(`  ~ ${doc.title.slice(0, 60)} → reference library`);
+        console.log(
+          `  ~ ${doc.title.slice(0, 60)} → Reference (best project match ${(bestScore * 100).toFixed(0)}%)`,
+        );
       }
-    } else {
-      // Medium confidence — leave as unassigned
-      console.log(
-        `  ? ${doc.title.slice(0, 60)} → Unassigned (best match ${(bestScore * 100).toFixed(0)}%)`,
-      );
     }
   }
 

@@ -29,11 +29,10 @@ interface Doc {
   project_names?: string[];
 }
 
-type ScopeFilter = "ALL" | "UNASSIGNED" | "REFERENCE" | "IN_PROJECT";
-const SCOPES: ScopeFilter[] = ["ALL", "UNASSIGNED", "REFERENCE", "IN_PROJECT"];
+type ScopeFilter = "ALL" | "REFERENCE" | "IN_PROJECT";
+const SCOPES: ScopeFilter[] = ["ALL", "IN_PROJECT", "REFERENCE"];
 const SCOPE_LABEL: Record<string, string> = {
   ALL: "All",
-  UNASSIGNED: "Unassigned",
   REFERENCE: "Reference",
   IN_PROJECT: "In project",
 };
@@ -97,9 +96,7 @@ export default function DocumentsPage() {
     if (scope !== "ALL") {
       result = result.filter((d) => {
         const inProject = (d.project_ids?.length ?? 0) > 0;
-        const isReference = d.is_reference === true;
-        if (scope === "UNASSIGNED") return !inProject && !isReference;
-        if (scope === "REFERENCE") return isReference && !inProject;
+        if (scope === "REFERENCE") return !inProject;
         if (scope === "IN_PROJECT") return inProject;
         return true;
       });
@@ -114,6 +111,15 @@ export default function DocumentsPage() {
     }
     return result;
   }, [docs, scope, query]);
+
+  const scopeCounts = useMemo(() => {
+    const inProject = docs.filter((d) => (d.project_ids?.length ?? 0) > 0).length;
+    return {
+      ALL: docs.length,
+      IN_PROJECT: inProject,
+      REFERENCE: docs.length - inProject,
+    } as Record<ScopeFilter, number>;
+  }, [docs]);
 
   const stats = useMemo(() => {
     const processing = docs.filter((d) => d.status === "processing").length;
@@ -216,7 +222,7 @@ export default function DocumentsPage() {
               key={s}
               type="button"
               onClick={() => setScope(s)}
-              className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
               style={{
                 background:
                   scope === s ? "var(--ink)" : "var(--surface-raised)",
@@ -232,6 +238,17 @@ export default function DocumentsPage() {
               }}
             >
               {SCOPE_LABEL[s] ?? s}
+              <span
+                className="tabular-nums text-[10px]"
+                style={{
+                  color:
+                    scope === s
+                      ? "color-mix(in srgb, var(--surface-raised) 60%, transparent)"
+                      : "var(--ink-faint)",
+                }}
+              >
+                {scopeCounts[s] ?? 0}
+              </span>
             </button>
           ))}
         </div>
@@ -361,7 +378,7 @@ export default function DocumentsPage() {
                     {doc.project_names.length > 1 &&
                       ` +${doc.project_names.length - 1}`}
                   </span>
-                ) : doc.is_reference ? (
+                ) : (
                   <span
                     className="text-xs shrink-0 px-2 py-0.5"
                     style={{
@@ -371,17 +388,6 @@ export default function DocumentsPage() {
                     }}
                   >
                     Reference
-                  </span>
-                ) : (
-                  <span
-                    className="text-xs shrink-0 px-2 py-0.5"
-                    style={{
-                      color: "var(--warning)",
-                      background: "var(--warning-bg)",
-                      borderRadius: "var(--radius-sm)",
-                    }}
-                  >
-                    Unassigned
                   </span>
                 )}
 
