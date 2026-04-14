@@ -1,7 +1,4 @@
-import { supabaseAdmin as _sb } from "@/lib/supabase";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabaseAdmin = _sb as any;
+import { supabaseAdmin } from "@/lib/supabase";
 import { getOpenAI } from "@/lib/clients";
 import { UTILITY_MODEL } from "@/lib/models";
 import { createLogger } from "@/lib/logger";

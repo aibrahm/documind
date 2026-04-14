@@ -1,7 +1,5 @@
-import { supabaseAdmin as _sb } from "@/lib/supabase";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabaseAdmin = _sb as any;
+import { supabaseAdmin } from "@/lib/supabase";
+import type { Database } from "@/lib/database.types";
 import { getOpenAI } from "@/lib/clients";
 import { UTILITY_MODEL } from "@/lib/models";
 import { createLogger } from "@/lib/logger";
@@ -114,7 +112,7 @@ export async function saveStyleProfile(
       user_id: "default",
       document_type: documentType,
       language,
-      profile_json: profile as unknown as Record<string, unknown>,
+      profile_json: profile as unknown as Database["public"]["Tables"]["style_profiles"]["Insert"]["profile_json"],
       source_document_ids: documentIds,
       is_active: true,
       version: 1,

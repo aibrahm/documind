@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 
 import { Packer } from "docx";
 import { supabaseAdmin } from "./lib/supabase";
+import type { Database } from "./lib/database.types";
 import { hybridSearch } from "./lib/search";
 import { processDocumentContent } from "./lib/document-processing";
 import { validateUploadBuffer } from "./lib/upload-validation";
@@ -58,10 +59,7 @@ import { extractKnowledgeGraph } from "./lib/knowledge-graph";
 // Constants
 // ─────────────────────────────────────────────────────────────────
 
-// Untyped alias for tables not yet in generated Supabase types.
-// Remove after running migrations + `supabase gen types`.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabaseAdmin as any;
+const db = supabaseAdmin;
 
 const BUCKET = "documents";
 const SIGNED_URL_TTL = 60 * 60 * 24 * 7; // 7 days
@@ -397,6 +395,147 @@ server.tool(
         role: c.role,
       })),
     });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Tool 5b: list_projects
+// ─────────────────────────────────────────────────────────────────
+
+server.tool(
+  "list_projects",
+  "List all projects in the workspace with status, document count, and summary. Use this to find the right project before calling get_project_context.",
+  {
+    status: z
+      .enum(["active", "archived", "paused"])
+      .optional()
+      .describe("Filter by status (default: all non-archived)"),
+    kind: z.string().optional().describe("Filter by project kind"),
+  },
+  async ({ status, kind }) => {
+    let query = supabaseAdmin
+      .from("projects")
+      .select(
+        "id, name, slug, description, status, kind, stage, objective, context_summary, start_date, target_close, updated_at",
+      )
+      .order("updated_at", { ascending: false });
+
+    if (status) {
+      query = query.eq("status", status);
+    } else {
+      query = query.neq("status", "archived");
+    }
+    if (kind) query = query.eq("kind", kind);
+
+    const { data: projects, error } = await query;
+    if (error) return textResult(`Query failed: ${error.message}`);
+
+    // Get document counts per project
+    const projectIds = (projects ?? []).map((p) => p.id);
+    const docCounts: Record<string, number> = {};
+    if (projectIds.length > 0) {
+      const { data: links } = await supabaseAdmin
+        .from("project_documents")
+        .select("project_id")
+        .in("project_id", projectIds);
+      for (const link of links ?? []) {
+        docCounts[link.project_id] = (docCounts[link.project_id] ?? 0) + 1;
+      }
+    }
+
+    return jsonResult({
+      count: projects?.length ?? 0,
+      projects: (projects ?? []).map((p) => ({
+        ...p,
+        document_count: docCounts[p.id] ?? 0,
+      })),
+    });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Tool 5c: create_project
+// ─────────────────────────────────────────────────────────────────
+
+server.tool(
+  "create_project",
+  "Create a new project to organize documents and track work. Use when the user mentions starting a new initiative, deal, or matter that will have documents attached.",
+  {
+    name: z.string().describe("Project name (required)"),
+    description: z
+      .string()
+      .optional()
+      .describe("Short description of what this project covers"),
+    kind: z
+      .string()
+      .optional()
+      .describe(
+        "Type of project — e.g. 'investment', 'legal', 'partnership', 'regulatory'",
+      ),
+    stage: z
+      .string()
+      .optional()
+      .describe("Current stage — e.g. 'discovery', 'negotiation', 'closed'"),
+    objective: z
+      .string()
+      .optional()
+      .describe("What this project is trying to achieve"),
+  },
+  async ({ name, description, kind, stage, objective }) => {
+    // Generate a URL-safe slug from the name
+    const slug = name
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\u0600-\u06ff]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+
+    const insertRow: Database["public"]["Tables"]["projects"]["Insert"] = {
+      name: name.trim(),
+      slug: `${slug}-${Math.random().toString(36).slice(2, 6)}`,
+      status: "active",
+    };
+    if (description) insertRow.description = description.trim();
+    if (kind) insertRow.kind = kind;
+    if (stage) insertRow.stage = stage;
+    if (objective) insertRow.objective = objective.trim();
+
+    const { data, error } = await supabaseAdmin
+      .from("projects")
+      .insert(insertRow)
+      .select("id, name, slug")
+      .single();
+
+    if (error) return textResult(`Failed to create project: ${error.message}`);
+
+    return jsonResult({
+      ok: true,
+      project_id: data.id,
+      name: data.name,
+      slug: data.slug,
+    });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────
+// Tool 5d: link_document_to_project
+// ─────────────────────────────────────────────────────────────────
+
+server.tool(
+  "link_document_to_project",
+  "Attach a document to a project. Use after ingesting a document or when the user says a specific existing document belongs to a project.",
+  {
+    document_id: z.string(),
+    project_id: z.string(),
+  },
+  async ({ document_id, project_id }) => {
+    const { error } = await supabaseAdmin
+      .from("project_documents")
+      .upsert({ document_id, project_id });
+
+    if (error) return textResult(`Failed to link: ${error.message}`);
+    return jsonResult({ ok: true, document_id, project_id });
   },
 );
 

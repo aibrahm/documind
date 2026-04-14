@@ -1,17 +1,13 @@
 import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getWorkspaceLanguage } from "@/lib/workspace-profile";
 import { WorkspaceClient } from "./workspace-client";
 
 export default async function ProjectWorkspacePage({
   params,
-  searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ tab?: string }>;
 }) {
   const { slug } = await params;
-  const { tab = "brief" } = await searchParams;
 
   const { data: project, error } = await supabaseAdmin
     .from("projects")
@@ -23,54 +19,22 @@ export default async function ProjectWorkspacePage({
     notFound();
   }
 
-  // Membership counts + linked participants + UI chrome language
-  // fetched in parallel.
-  const [docsCount, entityLinks, convosCount, language] = await Promise.all([
+  const [docsCount, entitiesCount] = await Promise.all([
     supabaseAdmin
       .from("project_documents")
       .select("project_id", { count: "exact", head: true })
       .eq("project_id", project.id),
     supabaseAdmin
       .from("project_entities")
-      .select(
-        `
-        role,
-        entity:entities ( id, name, name_en, type )
-      `,
-      )
+      .select("project_id", { count: "exact", head: true })
       .eq("project_id", project.id),
-    supabaseAdmin
-      .from("conversations")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", project.id),
-    getWorkspaceLanguage(),
   ]);
-
-  const participants = (entityLinks.data || [])
-    .filter((l) => l.entity)
-    .map((l) => {
-      const e = l.entity as { id: string; name: string; name_en: string | null };
-      return {
-        id: e.id,
-        name: e.name,
-        name_en: e.name_en,
-        role: l.role as string,
-      };
-    });
 
   const counts = {
     documents: docsCount.count || 0,
-    entities: participants.length,
-    threads: convosCount.count || 0,
+    entities: entitiesCount.count || 0,
+    threads: 0,
   };
 
-  return (
-    <WorkspaceClient
-      project={project}
-      initialTab={tab}
-      counts={counts}
-      participants={participants}
-      language={language}
-    />
-  );
+  return <WorkspaceClient project={project} counts={counts} />;
 }

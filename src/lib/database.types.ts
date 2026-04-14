@@ -634,6 +634,122 @@ export type Database = {
         }
         Relationships: []
       }
+      entity_relationships: {
+        Row: {
+          confidence: string
+          direction: string
+          entity_a_id: string
+          entity_b_id: string
+          extracted_at: string
+          id: string
+          relation_type: string
+          source_chunk_id: string | null
+          source_document_id: string | null
+        }
+        Insert: {
+          confidence?: string
+          direction?: string
+          entity_a_id: string
+          entity_b_id: string
+          extracted_at?: string
+          id?: string
+          relation_type: string
+          source_chunk_id?: string | null
+          source_document_id?: string | null
+        }
+        Update: {
+          confidence?: string
+          direction?: string
+          entity_a_id?: string
+          entity_b_id?: string
+          extracted_at?: string
+          id?: string
+          relation_type?: string
+          source_chunk_id?: string | null
+          source_document_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_relationships_entity_a_id_fkey"
+            columns: ["entity_a_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_relationships_entity_b_id_fkey"
+            columns: ["entity_b_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_relationships_source_chunk_id_fkey"
+            columns: ["source_chunk_id"]
+            isOneToOne: false
+            referencedRelation: "chunks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_relationships_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fact_versions: {
+        Row: {
+          claim_key: string
+          claim_label: string
+          document_date: string | null
+          extracted_at: string
+          id: string
+          previous_value: string | null
+          source_chunk_id: string | null
+          source_document_id: string | null
+          value: string
+        }
+        Insert: {
+          claim_key: string
+          claim_label: string
+          document_date?: string | null
+          extracted_at?: string
+          id?: string
+          previous_value?: string | null
+          source_chunk_id?: string | null
+          source_document_id?: string | null
+          value: string
+        }
+        Update: {
+          claim_key?: string
+          claim_label?: string
+          document_date?: string | null
+          extracted_at?: string
+          id?: string
+          previous_value?: string | null
+          source_chunk_id?: string | null
+          source_document_id?: string | null
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fact_versions_source_chunk_id_fkey"
+            columns: ["source_chunk_id"]
+            isOneToOne: false
+            referencedRelation: "chunks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fact_versions_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       feedback: {
         Row: {
           comment: string | null
@@ -976,6 +1092,87 @@ export type Database = {
           },
         ]
       }
+      obligations: {
+        Row: {
+          action: string
+          counterparty_entity_id: string | null
+          created_at: string
+          deadline: string | null
+          id: string
+          note: string | null
+          project_id: string | null
+          responsible_entity_id: string | null
+          source_chunk_id: string | null
+          source_document_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          action: string
+          counterparty_entity_id?: string | null
+          created_at?: string
+          deadline?: string | null
+          id?: string
+          note?: string | null
+          project_id?: string | null
+          responsible_entity_id?: string | null
+          source_chunk_id?: string | null
+          source_document_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          action?: string
+          counterparty_entity_id?: string | null
+          created_at?: string
+          deadline?: string | null
+          id?: string
+          note?: string | null
+          project_id?: string | null
+          responsible_entity_id?: string | null
+          source_chunk_id?: string | null
+          source_document_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obligations_counterparty_entity_id_fkey"
+            columns: ["counterparty_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obligations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obligations_responsible_entity_id_fkey"
+            columns: ["responsible_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obligations_source_chunk_id_fkey"
+            columns: ["source_chunk_id"]
+            isOneToOne: false
+            referencedRelation: "chunks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obligations_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_companies: {
         Row: {
           added_at: string
@@ -1168,6 +1365,45 @@ export type Database = {
           status?: string
           target_close?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      style_profiles: {
+        Row: {
+          created_at: string
+          document_type: string
+          id: string
+          is_active: boolean
+          language: string
+          profile_json: Json
+          source_document_ids: string[]
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          document_type?: string
+          id?: string
+          is_active?: boolean
+          language?: string
+          profile_json: Json
+          source_document_ids?: string[]
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          document_type?: string
+          id?: string
+          is_active?: boolean
+          language?: string
+          profile_json?: Json
+          source_document_ids?: string[]
+          updated_at?: string
+          user_id?: string
+          version?: number
         }
         Relationships: []
       }

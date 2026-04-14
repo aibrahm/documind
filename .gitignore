@@ -53,3 +53,4 @@ supabase/.temp/
 /extraction_*.json
 /extraction_*.txt
 /full_document_output.json
+setup-for-vc/env-keys.txt
