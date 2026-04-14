@@ -23,20 +23,17 @@ export function Nav() {
   const pathname = usePathname();
 
   return (
-    <nav
-      className="sticky top-0 z-40 flex h-14 shrink-0 items-center px-6"
+    <header
+      className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between px-6"
       style={{
-        background:
-          "color-mix(in srgb, var(--surface-raised) 85%, transparent)",
-        backdropFilter: "saturate(180%) blur(20px)",
-        WebkitBackdropFilter: "saturate(180%) blur(20px)",
+        background: "var(--surface)",
         borderBottom: "1px solid var(--border-light)",
       }}
     >
       {/* Brand */}
       <Link
         href="/"
-        className="flex items-center gap-2.5 mr-8 transition-opacity hover:opacity-80"
+        className="flex items-center gap-2 transition-opacity hover:opacity-70"
       >
         <span
           aria-hidden
@@ -66,8 +63,16 @@ export function Nav() {
         </span>
       </Link>
 
-      {/* Primary links */}
-      <div className="flex items-center gap-1">
+      {/* Centered nav pill — segmented control with gridlines */}
+      <div
+        className="flex items-center overflow-hidden"
+        style={{
+          background: "var(--border)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-md)",
+          gap: "1px",
+        }}
+      >
         {LINKS.map((l) => {
           const active =
             pathname === l.href ||
@@ -77,14 +82,15 @@ export function Nav() {
             <Link
               key={l.href}
               href={l.href}
-              className="flex items-center gap-2 px-3 py-1.5 transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 transition-colors"
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.8125rem",
-                fontWeight: 500,
-                color: active ? "var(--ink)" : "var(--ink-muted)",
-                background: active ? "var(--surface-sunken)" : "transparent",
-                borderRadius: "var(--radius-md)",
+                fontWeight: active ? 600 : 500,
+                color: active
+                  ? "var(--surface-raised)"
+                  : "var(--ink-muted)",
+                background: active ? "var(--ink)" : "var(--surface-raised)",
               }}
             >
               <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -94,14 +100,11 @@ export function Nav() {
         })}
       </div>
 
-      {/* Settings on the right */}
+      {/* Settings icon */}
       <Link
         href="/settings"
-        className="ms-auto flex items-center gap-2 px-2.5 py-1.5 transition-colors"
+        className="flex items-center justify-center h-8 w-8 transition-colors"
         style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: "0.8125rem",
-          fontWeight: 500,
           color:
             pathname === "/settings" ? "var(--ink)" : "var(--ink-muted)",
           background:
@@ -112,8 +115,8 @@ export function Nav() {
         }}
         aria-label="Settings"
       >
-        <Settings className="h-3.5 w-3.5" strokeWidth={1.75} />
+        <Settings className="h-4 w-4" strokeWidth={1.75} />
       </Link>
-    </nav>
+    </header>
   );
 }
