@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "rm -rf .next && TURBOPACK=0 next dev --no-turbo",
-    "dev:clean": "rm -rf .next && pnpm dev",
+    "dev": "rm -rf .next && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
