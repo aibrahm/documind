@@ -1,19 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Upload as UploadIcon,
-  Trash2,
-  Pencil,
-  Check,
-  X,
   FileText,
   Search,
   AlertCircle,
   Loader2,
+  Trash2,
+  MoreHorizontal,
 } from "lucide-react";
-import { DocumentContextCard } from "@/components/document-context-card";
 
 interface Doc {
   id: string;
@@ -24,40 +22,32 @@ interface Doc {
   page_count: number | null;
   status: string;
   processing_error: string | null;
-  context_card: Record<string, unknown> | null;
   entities: string[];
   created_at: string;
 }
 
 type ClassFilter = "ALL" | "PRIVATE" | "PUBLIC";
-
 const CLASSIFICATIONS: ClassFilter[] = ["ALL", "PRIVATE", "PUBLIC"];
-
-// User-facing label for each classification. We use "Confidential" and
-// "Open" in the UI because those are the words the VC uses when talking
-// about documents ("is this open or confidential?"). The stored value
-// stays PRIVATE/PUBLIC for now — renaming the column isn't in this sprint.
 const CLASS_LABEL: Record<string, string> = {
   ALL: "All",
   PRIVATE: "Confidential",
   PUBLIC: "Open",
 };
 
-const CLASS_STYLES: Record<string, { dot: string; text: string }> = {
-  PRIVATE: { dot: "bg-rose-500", text: "text-rose-600" },
-  PUBLIC: { dot: "bg-blue-500", text: "text-blue-600" },
-};
-
-function formatRelativeDate(iso: string): string {
+function formatDate(iso: string): string {
   const date = new Date(iso);
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffDays = Math.floor((startOfToday.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays <= 0) return "Today";
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export default function DocumentsPage() {
@@ -66,10 +56,7 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<ClassFilter>("ALL");
   const [query, setQuery] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
   const fetchDocs = useCallback(() => {
@@ -94,7 +81,6 @@ export default function DocumentsPage() {
     fetchDocs().finally(() => setLoading(false));
   }, [fetchDocs]);
 
-  // Auto-poll while documents are processing
   useEffect(() => {
     const hasProcessing = docs.some((d) => d.status === "processing");
     if (!hasProcessing) return;
@@ -102,19 +88,12 @@ export default function DocumentsPage() {
     return () => clearInterval(interval);
   }, [docs, fetchDocs]);
 
-  useEffect(() => {
-    if (editingId && editInputRef.current) {
-      editInputRef.current.focus();
-      editInputRef.current.select();
-    }
-  }, [editingId]);
-
   const filteredDocs = useMemo(() => {
     let result = docs;
     if (filter !== "ALL") {
       result = result.filter((d) => {
-        // Treat legacy DOCTRINE rows as PUBLIC for filter purposes.
-        const normalized = d.classification === "DOCTRINE" ? "PUBLIC" : d.classification;
+        const normalized =
+          d.classification === "DOCTRINE" ? "PUBLIC" : d.classification;
         return normalized === filter;
       });
     }
@@ -130,412 +109,345 @@ export default function DocumentsPage() {
   }, [docs, filter, query]);
 
   const stats = useMemo(() => {
-    const ready = docs.filter((d) => d.status === "ready").length;
     const processing = docs.filter((d) => d.status === "processing").length;
-    const errored = docs.filter((d) => d.status === "error").length;
-    return { ready, processing, errored, total: docs.length };
+    return { total: docs.length, processing };
   }, [docs]);
 
-  const handleDelete = useCallback(async (e: React.MouseEvent, docId: string) => {
-    e.stopPropagation();
-    if (!window.confirm("Delete this document? This cannot be undone.")) return;
-    setDeleting(docId);
-    try {
-      const res = await fetch(`/api/documents/${docId}/delete`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Delete failed");
-      setDocs((prev) => prev.filter((d) => d.id !== docId));
-    } catch {
-      window.alert("Failed to delete document");
-    } finally {
-      setDeleting(null);
-    }
-  }, []);
-
-  const startRename = useCallback((e: React.MouseEvent, doc: Doc) => {
-    e.stopPropagation();
-    setEditingId(doc.id);
-    setEditTitle(doc.title);
-  }, []);
-
-  const saveRename = useCallback(
-    async (docId: string) => {
-      const trimmed = editTitle.trim();
-      if (!trimmed) {
-        setEditingId(null);
+  const handleDelete = useCallback(
+    async (e: React.MouseEvent, docId: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!window.confirm("Delete this document? This cannot be undone."))
         return;
-      }
+      setDeleting(docId);
       try {
-        const res = await fetch(`/api/documents/${docId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: trimmed }),
+        const res = await fetch(`/api/documents/${docId}/delete`, {
+          method: "DELETE",
         });
-        if (!res.ok) throw new Error("Rename failed");
-        setDocs((prev) => prev.map((d) => (d.id === docId ? { ...d, title: trimmed } : d)));
+        if (!res.ok) throw new Error("Delete failed");
+        setDocs((prev) => prev.filter((d) => d.id !== docId));
       } catch {
-        window.alert("Failed to rename document");
+        window.alert("Failed to delete document");
       } finally {
-        setEditingId(null);
+        setDeleting(null);
       }
     },
-    [editTitle],
+    [],
   );
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden min-h-0" style={{ background: "var(--surface)" }}>
-      <main className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-6xl mx-auto px-8 py-12">
-          {/* Header */}
-          <div className="flex items-end justify-between mb-10">
-            <div>
-              <div
-                className="text-xs font-medium mb-2"
-                style={{
-                  color: "var(--ink-faint)",
-                  letterSpacing: "0.04em",
-                }}
-              >
-                LIBRARY
-              </div>
-              <h1
-                className="text-4xl font-semibold tracking-tight"
-                style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
-              >
-                {stats.total}{" "}
-                <span
-                  className="text-2xl font-normal"
-                  style={{ color: "var(--ink-muted)" }}
-                >
-                  document{stats.total === 1 ? "" : "s"}
-                  {stats.processing > 0 ? ` · ${stats.processing} processing` : ""}
-                </span>
-              </h1>
-            </div>
+    <div className="mx-auto max-w-6xl px-8 py-12">
+      {/* Header */}
+      <div className="mb-10 flex items-end justify-between">
+        <div>
+          <div
+            className="text-xs font-medium mb-2"
+            style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
+          >
+            LIBRARY
+          </div>
+          <h1
+            className="text-4xl font-semibold tracking-tight"
+            style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
+          >
+            {stats.total}{" "}
+            <span
+              className="text-2xl font-normal"
+              style={{ color: "var(--ink-muted)" }}
+            >
+              {stats.total === 1 ? "document" : "documents"}
+              {stats.processing > 0 ? ` · ${stats.processing} processing` : ""}
+            </span>
+          </h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push("/upload")}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
+          style={{
+            background: "var(--ink)",
+            color: "var(--surface-raised)",
+            border: "none",
+            borderRadius: "var(--radius-md)",
+          }}
+        >
+          <UploadIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
+          Upload
+        </button>
+      </div>
+
+      {/* Search + filter */}
+      <div className="mb-4 flex items-center gap-2">
+        <div
+          className="flex items-center gap-2 flex-1 max-w-sm px-3 py-2"
+          style={{
+            background: "var(--surface-raised)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
+          }}
+        >
+          <Search
+            className="h-3.5 w-3.5 shrink-0"
+            style={{ color: "var(--ink-ghost)" }}
+            strokeWidth={1.5}
+          />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search documents..."
+            className="flex-1 bg-transparent border-0 outline-none text-sm"
+            style={{
+              color: "var(--ink)",
+              fontFamily: "var(--font-sans)",
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-1 ml-auto">
+          {CLASSIFICATIONS.map((c) => (
             <button
+              key={c}
               type="button"
-              onClick={() => router.push("/upload")}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium cursor-pointer transition-all"
+              onClick={() => setFilter(c)}
+              className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
               style={{
-                background: "var(--ink)",
-                color: "var(--surface-raised)",
-                border: "none",
+                background:
+                  filter === c ? "var(--ink)" : "var(--surface-raised)",
+                color:
+                  filter === c
+                    ? "var(--surface-raised)"
+                    : "var(--ink-muted)",
+                border:
+                  filter === c
+                    ? "1px solid var(--ink)"
+                    : "1px solid var(--border)",
                 borderRadius: "var(--radius-md)",
               }}
             >
-              <UploadIcon className="w-3.5 h-3.5" />
-              Upload
+              {CLASS_LABEL[c] ?? c}
             </button>
-          </div>
+          ))}
+        </div>
+      </div>
 
-          {/* Search + filter row */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="relative flex-1 max-w-md">
-              <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
-                style={{ color: "var(--ink-ghost)" }}
-              />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search documents..."
-                className="w-full pl-9 pr-3 py-2 text-sm outline-none transition-colors"
-                style={{
-                  background: "var(--surface-raised)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--ink)",
-                }}
-              />
-            </div>
-            <div className="flex items-center gap-1 ml-auto">
-              {CLASSIFICATIONS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setFilter(c)}
-                  className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
-                  style={{
-                    background:
-                      filter === c
-                        ? "var(--ink)"
-                        : "var(--surface-raised)",
-                    color:
-                      filter === c
-                        ? "var(--surface-raised)"
-                        : "var(--ink-muted)",
-                    border:
-                      filter === c
-                        ? "1px solid var(--ink)"
-                        : "1px solid var(--border)",
-                    borderRadius: "var(--radius-md)",
-                  }}
-                >
-                  {CLASS_LABEL[c] ?? c}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Error */}
+      {error && (
+        <div
+          className="flex items-center gap-2 text-sm px-3 py-2 mb-3"
+          style={{
+            color: "var(--danger)",
+            background: "var(--danger-bg)",
+            border: "1px solid var(--danger)",
+            borderRadius: "var(--radius-md)",
+          }}
+        >
+          <AlertCircle className="w-4 h-4" />
+          Failed to load documents: {error}
+        </div>
+      )}
 
-          {/* Error */}
-          {error && (
-            <div className="flex items-center gap-2 text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3">
-              <AlertCircle className="w-4 h-4" />
-              Failed to load documents: {error}
-            </div>
-          )}
-
-          {/* Loading */}
-          {loading && (
-            <div className="space-y-2">
-              {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="h-[76px] animate-pulse"
-                  style={{
-                    background: "var(--surface-sunken)",
-                    borderRadius: "var(--radius-lg)",
-                  }}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Document list — gridlines wrapper */}
-          {!loading && filteredDocs.length > 0 && (
+      {/* Loading skeleton */}
+      {loading && (
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+          style={{ gap: "1px", background: "var(--border)" }}
+        >
+          {[1, 2, 3, 4, 5, 6].map((i) => (
             <div
-              className="overflow-hidden"
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-xl)",
-                background: "var(--border)",
-              }}
-            >
-              <div
-                className="grid grid-cols-1"
-                style={{ gap: "1px", background: "var(--border)" }}
+              key={i}
+              className="h-32 animate-pulse"
+              style={{ background: "var(--surface-raised)" }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Document grid with gridlines */}
+      {!loading && filteredDocs.length > 0 && (
+        <div
+          className="overflow-hidden"
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-xl)",
+            background: "var(--border)",
+          }}
+        >
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+            style={{ gap: "1px", background: "var(--border)" }}
+          >
+            {filteredDocs.map((doc) => (
+              <Link
+                key={doc.id}
+                href={`/documents/${doc.id}`}
+                className="group flex flex-col gap-3 p-5 transition-colors min-h-[140px] relative"
+                style={{ background: "var(--surface-raised)" }}
               >
-              {filteredDocs.map((doc) => {
-                const displayClass =
-                  doc.classification === "DOCTRINE" ? "PUBLIC" : doc.classification;
-                const classLabel = CLASS_LABEL[displayClass] ?? displayClass;
-                const classStyle = CLASS_STYLES[displayClass] || {
-                  dot: "bg-slate-400",
-                  text: "text-slate-500",
-                };
-                return (
+                <div className="flex items-start gap-3">
                   <div
-                    key={doc.id}
-                    onClick={() => editingId !== doc.id && router.push(`/documents/${doc.id}`)}
-                    className="group flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors"
+                    className="flex h-9 w-9 items-center justify-center shrink-0"
                     style={{
-                      background: "var(--surface-raised)",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "var(--surface-sunken)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "var(--surface-raised)";
-                    }}
-                  >
-                    {/* Icon */}
-                    <div
-                      className="w-10 h-10 flex items-center justify-center shrink-0"
-                      style={{
-                        background: "var(--surface-sunken)",
-                        borderRadius: "var(--radius-md)",
-                      }}
-                    >
-                      <FileText
-                        className="w-4 h-4"
-                        style={{ color: "var(--ink-muted)" }}
-                        strokeWidth={1.5}
-                      />
-                    </div>
-
-                    {/* Title + meta */}
-                    <div className="flex-1 min-w-0">
-                      {editingId === doc.id ? (
-                        <input
-                          ref={editInputRef}
-                          dir="auto"
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveRename(doc.id);
-                            if (e.key === "Escape") setEditingId(null);
-                          }}
-                          onBlur={() => saveRename(doc.id)}
-                          className="w-full font-['IBM_Plex_Sans_Arabic'] text-[14px] font-medium text-slate-900 bg-slate-50 border border-slate-300 rounded px-2 py-0.5 outline-none focus:border-slate-400"
-                        />
-                      ) : (
-                        <p
-                          className="font-['IBM_Plex_Sans_Arabic'] text-[14px] font-medium text-slate-900 truncate"
-                          dir="auto"
-                        >
-                          {doc.title}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
-                        <span className="flex items-center gap-1.5">
-                          <span className={`w-1.5 h-1.5 rounded-full ${classStyle.dot}`} />
-                          <span className={`font-['JetBrains_Mono'] tracking-wider ${classStyle.text}`}>
-                            {classLabel.toUpperCase()}
-                          </span>
-                        </span>
-                        <span className="text-slate-300">·</span>
-                        <span className="font-['JetBrains_Mono']">{doc.type.toUpperCase()}</span>
-                        {doc.page_count !== null && (
-                          <>
-                            <span className="text-slate-300">·</span>
-                            <span className="font-['JetBrains_Mono']">{doc.page_count} pages</span>
-                          </>
-                        )}
-                        <span className="text-slate-300">·</span>
-                        <span className="font-['JetBrains_Mono']">{formatRelativeDate(doc.created_at)}</span>
-                      </div>
-                      <DocumentContextCard
-                        card={doc.context_card}
-                        preferredLanguage={doc.language}
-                        variant="compact"
-                        bordered={false}
-                        className="mt-2"
-                      />
-                      {doc.processing_error && (
-                        <p className="mt-2 text-[12px] leading-relaxed text-amber-700">
-                          Extraction warning: {doc.processing_error}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Status indicator */}
-                    {doc.status === "processing" && (
-                      <span className="flex items-center gap-1.5 text-[11px] text-amber-600 font-['JetBrains_Mono'] uppercase tracking-wider shrink-0">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        Processing
-                      </span>
-                    )}
-                    {doc.status === "error" && (
-                      <span className="flex items-center gap-1.5 text-[11px] text-red-600 font-['JetBrains_Mono'] uppercase tracking-wider shrink-0">
-                        <AlertCircle className="w-3 h-3" />
-                        Error
-                      </span>
-                    )}
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {editingId === doc.id ? (
-                        <>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              saveRename(doc.id);
-                            }}
-                            className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer bg-transparent border-none"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setEditingId(null);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded cursor-pointer bg-transparent border-none"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={(e) => startRename(e, doc)}
-                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded cursor-pointer bg-transparent border-none"
-                            title="Rename"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDelete(e, doc.id)}
-                            disabled={deleting === doc.id}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded cursor-pointer bg-transparent border-none disabled:opacity-50"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              </div>
-            </div>
-          )}
-
-          {/* Empty states */}
-          {!loading && filteredDocs.length === 0 && !error && (
-            <div
-              className="p-16 text-center"
-              style={{
-                background: "var(--surface-raised)",
-                border: "1px dashed var(--border)",
-                borderRadius: "var(--radius-xl)",
-              }}
-            >
-              <div
-                className="w-12 h-12 mx-auto mb-4 flex items-center justify-center"
-                style={{
-                  background: "var(--surface-sunken)",
-                  borderRadius: "var(--radius-md)",
-                }}
-              >
-                <FileText
-                  className="w-5 h-5"
-                  style={{ color: "var(--ink-ghost)" }}
-                  strokeWidth={1.5}
-                />
-              </div>
-              {docs.length === 0 ? (
-                <>
-                  <p className="text-sm font-medium mb-1" style={{ color: "var(--ink)" }}>
-                    Your library is empty
-                  </p>
-                  <p className="text-sm mb-5" style={{ color: "var(--ink-muted)" }}>
-                    Upload your first document to get started.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => router.push("/upload")}
-                    className="text-sm font-medium px-4 py-2 cursor-pointer transition-colors"
-                    style={{
-                      background: "var(--ink)",
-                      color: "var(--surface-raised)",
-                      border: "none",
+                      background: "var(--surface-sunken)",
                       borderRadius: "var(--radius-md)",
                     }}
                   >
-                    Upload document
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-medium mb-1" style={{ color: "var(--ink)" }}>
-                    No matches
-                  </p>
-                  <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
-                    Try a different search or filter.
-                  </p>
-                </>
-              )}
-            </div>
+                    <FileText
+                      className="h-4 w-4"
+                      style={{ color: "var(--ink-muted)" }}
+                      strokeWidth={1.5}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className="text-sm font-medium leading-tight line-clamp-2"
+                      dir="auto"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      {doc.title}
+                    </div>
+                    <div
+                      className="text-xs mt-1 capitalize"
+                      style={{ color: "var(--ink-faint)" }}
+                    >
+                      {doc.type}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 mt-auto text-xs" style={{ color: "var(--ink-faint)" }}>
+                  {doc.page_count !== null && (
+                    <>
+                      <span className="tabular-nums">
+                        {doc.page_count} {doc.page_count === 1 ? "page" : "pages"}
+                      </span>
+                      <span
+                        className="h-1 w-1 rounded-full"
+                        style={{ background: "var(--ink-ghost)" }}
+                      />
+                    </>
+                  )}
+                  <span suppressHydrationWarning>
+                    {formatDate(doc.created_at)}
+                  </span>
+                  {doc.status === "processing" && (
+                    <>
+                      <span
+                        className="h-1 w-1 rounded-full ml-auto"
+                        style={{ background: "var(--warning)" }}
+                      />
+                      <span
+                        className="flex items-center gap-1"
+                        style={{ color: "var(--warning)" }}
+                      >
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Processing
+                      </span>
+                    </>
+                  )}
+                  {doc.status === "error" && (
+                    <span
+                      className="flex items-center gap-1 ml-auto"
+                      style={{ color: "var(--danger)" }}
+                    >
+                      <AlertCircle className="h-3 w-3" />
+                      Error
+                    </span>
+                  )}
+                </div>
+
+                {/* Delete action - hover reveal */}
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(e, doc.id)}
+                  disabled={deleting === doc.id}
+                  className="absolute top-3 right-3 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  style={{
+                    color: "var(--ink-muted)",
+                    background: "var(--surface-sunken)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-sm)",
+                  }}
+                  aria-label="Delete document"
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "var(--danger)";
+                    e.currentTarget.style.borderColor = "var(--danger)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "var(--ink-muted)";
+                    e.currentTarget.style.borderColor = "var(--border)";
+                  }}
+                >
+                  <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                </button>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && filteredDocs.length === 0 && !error && (
+        <div
+          className="p-16 text-center"
+          style={{
+            background: "var(--surface-raised)",
+            border: "1px dashed var(--border)",
+            borderRadius: "var(--radius-xl)",
+          }}
+        >
+          <div
+            className="w-12 h-12 mx-auto mb-4 flex items-center justify-center"
+            style={{
+              background: "var(--surface-sunken)",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
+            <FileText
+              className="w-5 h-5"
+              style={{ color: "var(--ink-ghost)" }}
+              strokeWidth={1.5}
+            />
+          </div>
+          {docs.length === 0 ? (
+            <>
+              <p
+                className="text-sm font-medium mb-1"
+                style={{ color: "var(--ink)" }}
+              >
+                Your library is empty
+              </p>
+              <p className="text-sm mb-5" style={{ color: "var(--ink-muted)" }}>
+                Upload your first document to get started.
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push("/upload")}
+                className="text-sm font-medium px-4 py-2 cursor-pointer transition-colors"
+                style={{
+                  background: "var(--ink)",
+                  color: "var(--surface-raised)",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                }}
+              >
+                Upload document
+              </button>
+            </>
+          ) : (
+            <>
+              <p
+                className="text-sm font-medium mb-1"
+                style={{ color: "var(--ink)" }}
+              >
+                No matches
+              </p>
+              <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
+                Try a different search or filter.
+              </p>
+            </>
           )}
         </div>
-      </main>
+      )}
     </div>
   );
 }

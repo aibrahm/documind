@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Network, Search, FileText } from "lucide-react";
+import { Search, FileText, Building2, Landmark, User2, Briefcase, Shapes } from "lucide-react";
 
 interface Entity {
   id: string;
@@ -12,12 +12,12 @@ interface Entity {
   created_at: string | null;
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  company: "var(--accent)",
-  ministry: "var(--info)",
-  authority: "var(--warning)",
-  person: "var(--success)",
-  project: "var(--danger)",
+const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string; strokeWidth?: number; style?: React.CSSProperties }>> = {
+  company: Building2,
+  ministry: Landmark,
+  authority: Landmark,
+  person: User2,
+  project: Briefcase,
 };
 
 export function EntityExplorer({ entities }: { entities: Entity[] }) {
@@ -42,37 +42,40 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
     if (typeFilter) {
       list = list.filter((e) => e.type === typeFilter);
     }
-    return list;
+    // Sort by doc count descending — most referenced first
+    return [...list].sort((a, b) => b.documentCount - a.documentCount);
   }, [entities, search, typeFilter]);
 
   return (
     <div className="mx-auto max-w-6xl px-8 py-12">
       {/* Header */}
-      <div className="mb-10">
-        <div
-          className="text-xs font-medium mb-2"
-          style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
-        >
-          ENTITIES
-        </div>
-        <h1
-          className="text-4xl font-semibold tracking-tight"
-          style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
-        >
-          {entities.length}{" "}
-          <span
-            className="text-2xl font-normal"
-            style={{ color: "var(--ink-muted)" }}
+      <div className="mb-10 flex items-end justify-between">
+        <div>
+          <div
+            className="text-xs font-medium mb-2"
+            style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
           >
-            extracted
-          </span>
-        </h1>
+            ENTITIES
+          </div>
+          <h1
+            className="text-4xl font-semibold tracking-tight"
+            style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
+          >
+            {entities.length}{" "}
+            <span
+              className="text-2xl font-normal"
+              style={{ color: "var(--ink-muted)" }}
+            >
+              {entities.length === 1 ? "entity" : "entities"}
+            </span>
+          </h1>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="mb-4 flex items-center gap-3">
+      {/* Search + type filter row */}
+      <div className="mb-4 flex items-center gap-2">
         <div
-          className="flex items-center gap-2 flex-1 max-w-md px-3 py-2"
+          className="flex items-center gap-2 flex-1 max-w-sm px-3 py-2"
           style={{
             background: "var(--surface-raised)",
             border: "1px solid var(--border)",
@@ -88,7 +91,7 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search entities..."
+            placeholder="Search..."
             className="flex-1 bg-transparent border-0 outline-none text-sm"
             style={{
               color: "var(--ink)",
@@ -115,7 +118,7 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
         </div>
       </div>
 
-      {/* Entity grid with visible gridlines */}
+      {/* Grid */}
       {filtered.length === 0 ? (
         <div
           className="p-16 text-center"
@@ -125,14 +128,14 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
             borderRadius: "var(--radius-xl)",
           }}
         >
-          <Network
+          <Shapes
             className="mx-auto h-10 w-10 mb-3"
             style={{ color: "var(--ink-ghost)" }}
             strokeWidth={1.25}
           />
           <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
             {search || typeFilter
-              ? "No entities match your filters."
+              ? "No matches."
               : "No entities extracted yet."}
           </p>
         </div>
@@ -145,89 +148,72 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
             background: "var(--border)",
           }}
         >
-          {/* Header row */}
           <div
-            className="grid grid-cols-[1fr_180px_100px_80px]"
-            style={{
-              background: "var(--surface-sunken)",
-              borderBottom: "1px solid var(--border)",
-            }}
-          >
-            <HeaderCell label="Name" />
-            <HeaderCell label="English" />
-            <HeaderCell label="Type" />
-            <HeaderCell label="Docs" align="right" />
-          </div>
-
-          {/* Body rows — gridlines via gap:1px on background */}
-          <div
-            className="grid grid-cols-1"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
             style={{ gap: "1px", background: "var(--border)" }}
           >
-            {filtered.map((entity) => (
-              <div
-                key={entity.id}
-                className="grid grid-cols-[1fr_180px_100px_80px] items-center text-sm transition-colors cursor-default"
-                style={{ background: "var(--surface-raised)" }}
-              >
+            {filtered.map((entity) => {
+              const Icon = TYPE_ICONS[entity.type] ?? Shapes;
+              return (
                 <div
-                  className="px-4 py-3 font-medium truncate"
-                  style={{ color: "var(--ink)" }}
+                  key={entity.id}
+                  className="flex items-start gap-3 p-5 transition-colors"
+                  style={{ background: "var(--surface-raised)" }}
                 >
-                  {entity.name}
-                </div>
-                <div
-                  className="px-4 py-3 truncate text-xs"
-                  style={{ color: "var(--ink-muted)" }}
-                >
-                  {entity.name_en ?? "—"}
-                </div>
-                <div className="px-4 py-3">
-                  <span
-                    className="text-xs px-1.5 py-0.5"
+                  <div
+                    className="flex h-8 w-8 items-center justify-center shrink-0"
                     style={{
-                      color:
-                        TYPE_COLORS[entity.type] ?? "var(--ink-faint)",
-                      background: `color-mix(in srgb, ${TYPE_COLORS[entity.type] ?? "var(--ink-faint)"} 10%, transparent)`,
-                      borderRadius: "var(--radius-sm)",
+                      background: "var(--surface-sunken)",
+                      borderRadius: "var(--radius-md)",
                     }}
                   >
-                    {entity.type}
-                  </span>
+                    <Icon
+                      className="h-4 w-4"
+                      style={{ color: "var(--ink-muted)" }}
+                      strokeWidth={1.5}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className="text-sm font-medium truncate"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      {entity.name}
+                    </div>
+                    {entity.name_en && (
+                      <div
+                        className="text-xs truncate mt-0.5"
+                        style={{ color: "var(--ink-muted)" }}
+                      >
+                        {entity.name_en}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 mt-2">
+                      <span
+                        className="text-xs capitalize"
+                        style={{ color: "var(--ink-faint)" }}
+                      >
+                        {entity.type}
+                      </span>
+                      <span
+                        className="h-1 w-1 rounded-full"
+                        style={{ background: "var(--ink-ghost)" }}
+                      />
+                      <span
+                        className="flex items-center gap-1 text-xs tabular-nums"
+                        style={{ color: "var(--ink-faint)" }}
+                      >
+                        <FileText className="h-3 w-3" strokeWidth={1.5} />
+                        {entity.documentCount}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div
-                  className="px-4 py-3 text-right flex items-center justify-end gap-1 text-xs tabular-nums"
-                  style={{ color: "var(--ink-faint)" }}
-                >
-                  <FileText className="h-3 w-3" strokeWidth={1.5} />
-                  {entity.documentCount}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function HeaderCell({
-  label,
-  align,
-}: {
-  label: string;
-  align?: "right";
-}) {
-  return (
-    <div
-      className="px-4 py-2.5 text-xs font-medium"
-      style={{
-        color: "var(--ink-faint)",
-        letterSpacing: "0.04em",
-        textAlign: align ?? "left",
-      }}
-    >
-      {label.toUpperCase()}
     </div>
   );
 }
@@ -245,7 +231,7 @@ function FilterChip({
     <button
       type="button"
       onClick={onClick}
-      className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+      className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors capitalize"
       style={{
         background: active ? "var(--ink)" : "var(--surface-raised)",
         color: active ? "var(--surface-raised)" : "var(--ink-muted)",
