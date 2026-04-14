@@ -249,20 +249,26 @@ export default function DocumentsPage() {
       {/* Loading skeleton */}
       {loading && (
         <div
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-          style={{ gap: "1px", background: "var(--border)" }}
+          className="overflow-hidden"
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-xl)",
+            background: "var(--border)",
+          }}
         >
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div
-              key={i}
-              className="h-32 animate-pulse"
-              style={{ background: "var(--surface-raised)" }}
-            />
-          ))}
+          <div style={{ display: "grid", gap: "1px", background: "var(--border)" }}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div
+                key={i}
+                className="h-16 animate-pulse"
+                style={{ background: "var(--surface-raised)" }}
+              />
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Document grid with gridlines */}
+      {/* Document list with gridlines */}
       {!loading && filteredDocs.length > 0 && (
         <div
           className="overflow-hidden"
@@ -272,112 +278,109 @@ export default function DocumentsPage() {
             background: "var(--border)",
           }}
         >
-          <div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-            style={{ gap: "1px", background: "var(--border)" }}
-          >
+          <div style={{ display: "grid", gap: "1px", background: "var(--border)" }}>
             {filteredDocs.map((doc) => (
               <Link
                 key={doc.id}
                 href={`/documents/${doc.id}`}
-                className="group flex flex-col gap-3 p-5 transition-colors min-h-[140px] relative"
+                className="group flex items-center gap-4 px-5 py-4 transition-colors relative"
                 style={{ background: "var(--surface-raised)" }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--surface-sunken)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "var(--surface-raised)";
+                }}
               >
-                <div className="flex items-start gap-3">
+                <div
+                  className="flex h-9 w-9 items-center justify-center shrink-0"
+                  style={{
+                    background: "var(--surface-sunken)",
+                    borderRadius: "var(--radius-md)",
+                  }}
+                >
+                  <FileText
+                    className="h-4 w-4"
+                    style={{ color: "var(--ink-muted)" }}
+                    strokeWidth={1.5}
+                  />
+                </div>
+
+                <div className="flex-1 min-w-0">
                   <div
-                    className="flex h-9 w-9 items-center justify-center shrink-0"
-                    style={{
-                      background: "var(--surface-sunken)",
-                      borderRadius: "var(--radius-md)",
-                    }}
+                    className="text-sm font-medium truncate"
+                    dir="auto"
+                    style={{ color: "var(--ink)" }}
                   >
-                    <FileText
-                      className="h-4 w-4"
-                      style={{ color: "var(--ink-muted)" }}
-                      strokeWidth={1.5}
-                    />
+                    {doc.title}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div
-                      className="text-sm font-medium leading-tight line-clamp-2"
-                      dir="auto"
-                      style={{ color: "var(--ink)" }}
-                    >
-                      {doc.title}
-                    </div>
-                    <div
-                      className="text-xs mt-1 capitalize"
-                      style={{ color: "var(--ink-faint)" }}
-                    >
-                      {doc.type}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 mt-auto text-xs" style={{ color: "var(--ink-faint)" }}>
-                  {doc.page_count !== null && (
-                    <>
-                      <span className="tabular-nums">
-                        {doc.page_count} {doc.page_count === 1 ? "page" : "pages"}
-                      </span>
-                      <span
-                        className="h-1 w-1 rounded-full"
-                        style={{ background: "var(--ink-ghost)" }}
-                      />
-                    </>
-                  )}
-                  <span suppressHydrationWarning>
-                    {formatDate(doc.created_at)}
-                  </span>
-                  {doc.status === "processing" && (
-                    <>
-                      <span
-                        className="h-1 w-1 rounded-full ml-auto"
-                        style={{ background: "var(--warning)" }}
-                      />
-                      <span
-                        className="flex items-center gap-1"
-                        style={{ color: "var(--warning)" }}
-                      >
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        Processing
-                      </span>
-                    </>
-                  )}
-                  {doc.status === "error" && (
+                  <div
+                    className="flex items-center gap-2 mt-0.5 text-xs"
+                    style={{ color: "var(--ink-faint)" }}
+                  >
+                    <span className="capitalize">{doc.type}</span>
+                    {doc.page_count !== null && (
+                      <>
+                        <span
+                          className="h-1 w-1 rounded-full"
+                          style={{ background: "var(--ink-ghost)" }}
+                        />
+                        <span className="tabular-nums">
+                          {doc.page_count} {doc.page_count === 1 ? "page" : "pages"}
+                        </span>
+                      </>
+                    )}
                     <span
-                      className="flex items-center gap-1 ml-auto"
-                      style={{ color: "var(--danger)" }}
-                    >
-                      <AlertCircle className="h-3 w-3" />
-                      Error
+                      className="h-1 w-1 rounded-full"
+                      style={{ background: "var(--ink-ghost)" }}
+                    />
+                    <span suppressHydrationWarning>
+                      {formatDate(doc.created_at)}
                     </span>
-                  )}
+                  </div>
                 </div>
 
-                {/* Delete action - hover reveal */}
+                {doc.status === "processing" && (
+                  <span
+                    className="flex items-center gap-1 text-xs shrink-0"
+                    style={{ color: "var(--warning)" }}
+                  >
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Processing
+                  </span>
+                )}
+                {doc.status === "error" && (
+                  <span
+                    className="flex items-center gap-1 text-xs shrink-0"
+                    style={{ color: "var(--danger)" }}
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    Error
+                  </span>
+                )}
+
                 <button
                   type="button"
                   onClick={(e) => handleDelete(e, doc.id)}
                   disabled={deleting === doc.id}
-                  className="absolute top-3 right-3 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  className="p-1.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
                   style={{
                     color: "var(--ink-muted)",
-                    background: "var(--surface-sunken)",
-                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    border: "none",
                     borderRadius: "var(--radius-sm)",
                   }}
                   aria-label="Delete document"
                   onMouseEnter={(e) => {
                     e.currentTarget.style.color = "var(--danger)";
-                    e.currentTarget.style.borderColor = "var(--danger)";
+                    e.currentTarget.style.background = "var(--danger-bg)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.color = "var(--ink-muted)";
-                    e.currentTarget.style.borderColor = "var(--border)";
+                    e.currentTarget.style.background = "transparent";
                   }}
                 >
-                  <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </button>
               </Link>
             ))}
