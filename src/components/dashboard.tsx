@@ -1,361 +1,290 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   FileText,
   FolderKanban,
   Network,
   Upload,
-  ArrowRight,
-  Clock,
+  ArrowUpRight,
 } from "lucide-react";
 
-interface Stats {
-  documents: number;
-  projects: number;
-  entities: number;
+interface Props {
+  counts: {
+    documents: number;
+    projects: number;
+    entities: number;
+  };
   recentDocs: Array<{
     id: string;
     title: string;
     type: string;
     status: string;
-    created_at: string;
+    created_at: string | null;
   }>;
 }
 
-export function Dashboard() {
-  const router = useRouter();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const [docsRes, projRes, entRes, recentRes] = await Promise.all([
-          fetch("/api/documents?limit=1").then((r) => r.json()),
-          fetch("/api/projects").then((r) => r.json()),
-          fetch("/api/entities?limit=1").then((r) => r.json()),
-          fetch("/api/documents?limit=8").then((r) => r.json()),
-        ]);
-        setStats({
-          documents:
-            Array.isArray(docsRes) ? docsRes.length : docsRes?.total ?? 0,
-          projects: Array.isArray(projRes) ? projRes.length : 0,
-          entities: Array.isArray(entRes) ? entRes.length : 0,
-          recentDocs: Array.isArray(recentRes)
-            ? recentRes.slice(0, 8)
-            : [],
-        });
-      } catch {
-        setStats({
-          documents: 0,
-          projects: 0,
-          entities: 0,
-          recentDocs: [],
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  const kpis = [
-    {
-      label: "Documents",
-      value: stats?.documents ?? "—",
-      icon: FileText,
-      href: "/documents",
-      color: "var(--accent)",
-    },
-    {
-      label: "Projects",
-      value: stats?.projects ?? "—",
-      icon: FolderKanban,
-      href: "/projects",
-      color: "var(--success)",
-    },
-    {
-      label: "Entities",
-      value: stats?.entities ?? "—",
-      icon: Network,
-      href: "/entities",
-      color: "var(--warning)",
-    },
-  ];
-
+export function Dashboard({ counts, recentDocs }: Props) {
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-8 py-12">
       {/* Header */}
-      <div className="mb-8 flex items-end justify-between">
-        <div>
-          <h1
-            className="text-2xl font-semibold"
-            style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
-          >
-            DocuMind
-          </h1>
-          <p
-            className="mt-1 text-sm"
-            style={{ color: "var(--ink-muted)" }}
-          >
-            Document intelligence library
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => router.push("/upload")}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
-          style={{
-            background: "var(--accent)",
-            color: "#fff",
-            borderRadius: "var(--radius-md)",
-            border: "none",
-          }}
+      <div className="mb-10">
+        <h1
+          className="text-3xl font-semibold tracking-tight"
+          style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
         >
-          <Upload className="h-4 w-4" />
-          Upload Document
-        </button>
+          DocuMind
+        </h1>
+        <p className="mt-1.5 text-sm" style={{ color: "var(--ink-muted)" }}>
+          Your document intelligence library
+        </p>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        {kpis.map((kpi) => {
-          const Icon = kpi.icon;
-          return (
-            <button
-              key={kpi.label}
-              type="button"
-              onClick={() => router.push(kpi.href)}
-              className="group flex items-center gap-4 p-4 cursor-pointer text-left transition-all"
+      {/* Bento grid */}
+      <div className="grid grid-cols-6 gap-3 auto-rows-[140px]">
+        {/* Big: Upload (hero action) */}
+        <Link
+          href="/upload"
+          className="group col-span-6 md:col-span-3 row-span-2 p-6 flex flex-col justify-between transition-all"
+          style={{
+            background: "var(--ink)",
+            color: "var(--surface-raised)",
+            borderRadius: "var(--radius-xl)",
+          }}
+        >
+          <div className="flex items-start justify-between">
+            <Upload className="h-6 w-6" strokeWidth={1.5} />
+            <ArrowUpRight
+              className="h-5 w-5 opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all"
+              strokeWidth={1.5}
+            />
+          </div>
+          <div>
+            <div className="text-2xl font-semibold tracking-tight mb-1" style={{ letterSpacing: "-0.02em" }}>
+              Upload a document
+            </div>
+            <div className="text-sm opacity-60">
+              OCR, chunking, entity extraction, and knowledge graph — all
+              automatic
+            </div>
+          </div>
+        </Link>
+
+        {/* Documents stat */}
+        <StatTile
+          href="/documents"
+          label="Documents"
+          value={counts.documents}
+          icon={FileText}
+          span="col-span-3 md:col-span-3"
+        />
+
+        {/* Projects + Entities */}
+        <StatTile
+          href="/projects"
+          label="Projects"
+          value={counts.projects}
+          icon={FolderKanban}
+          span="col-span-3 md:col-span-3 md:row-start-2"
+        />
+
+        {/* Entities — full width below */}
+        <Link
+          href="/entities"
+          className="group col-span-6 p-5 flex items-center justify-between transition-all"
+          style={{
+            background: "var(--surface-raised)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-xl)",
+          }}
+        >
+          <div className="flex items-center gap-4">
+            <div
+              className="flex h-10 w-10 items-center justify-center"
               style={{
-                background: "var(--surface-raised)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-lg)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--border-strong)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--border)";
+                background: "var(--surface-sunken)",
+                borderRadius: "var(--radius-md)",
               }}
             >
-              <div
-                className="flex h-10 w-10 items-center justify-center shrink-0"
-                style={{
-                  background: `color-mix(in srgb, ${kpi.color} 10%, transparent)`,
-                  borderRadius: "var(--radius-md)",
-                }}
-              >
-                <Icon
-                  className="h-5 w-5"
-                  style={{ color: kpi.color }}
-                  strokeWidth={1.75}
-                />
-              </div>
-              <div>
-                <div
-                  className="text-2xl font-semibold tabular-nums"
-                  style={{ color: "var(--ink)", lineHeight: 1.2 }}
-                >
-                  {loading ? (
-                    <span
-                      className="inline-block h-7 w-12 animate-pulse"
-                      style={{
-                        background: "var(--surface-sunken)",
-                        borderRadius: "var(--radius-sm)",
-                      }}
-                    />
-                  ) : (
-                    kpi.value
-                  )}
-                </div>
-                <div
-                  className="text-xs font-medium"
-                  style={{ color: "var(--ink-muted)" }}
-                >
-                  {kpi.label}
-                </div>
-              </div>
-              <ArrowRight
-                className="ml-auto h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ color: "var(--ink-ghost)" }}
+              <Network
+                className="h-5 w-5"
+                style={{ color: "var(--ink-muted)" }}
+                strokeWidth={1.5}
               />
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <button
-          type="button"
-          onClick={() => router.push("/upload")}
-          className="flex items-center gap-3 p-4 cursor-pointer text-left transition-all"
-          style={{
-            background: "var(--surface-raised)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "var(--accent)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "var(--border)";
-          }}
-        >
-          <Upload
-            className="h-5 w-5"
-            style={{ color: "var(--accent)" }}
-            strokeWidth={1.75}
-          />
-          <div>
-            <div
-              className="text-sm font-medium"
-              style={{ color: "var(--ink)" }}
-            >
-              Upload & Process
             </div>
-            <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
-              Add documents to the intelligence library
+            <div>
+              <div
+                className="text-sm font-medium"
+                style={{ color: "var(--ink)" }}
+              >
+                Entities
+              </div>
+              <div
+                className="text-xs"
+                style={{ color: "var(--ink-muted)" }}
+              >
+                People, organizations, and authorities across all documents
+              </div>
             </div>
           </div>
-        </button>
-        <button
-          type="button"
-          onClick={() => router.push("/projects")}
-          className="flex items-center gap-3 p-4 cursor-pointer text-left transition-all"
-          style={{
-            background: "var(--surface-raised)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "var(--accent)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "var(--border)";
-          }}
-        >
-          <FolderKanban
-            className="h-5 w-5"
-            style={{ color: "var(--success)" }}
-            strokeWidth={1.75}
-          />
-          <div>
-            <div
-              className="text-sm font-medium"
+          <div className="flex items-center gap-3">
+            <span
+              className="text-2xl font-semibold tabular-nums"
               style={{ color: "var(--ink)" }}
             >
-              Manage Projects
-            </div>
-            <div className="text-xs" style={{ color: "var(--ink-muted)" }}>
-              Organize documents by deal, initiative, or matter
-            </div>
+              {counts.entities}
+            </span>
+            <ArrowUpRight
+              className="h-4 w-4 opacity-0 group-hover:opacity-60 transition-opacity"
+              style={{ color: "var(--ink)" }}
+              strokeWidth={1.5}
+            />
           </div>
-        </button>
+        </Link>
       </div>
 
-      {/* Recent Documents */}
-      <div>
+      {/* Recent documents */}
+      <div className="mt-10">
         <div className="flex items-center justify-between mb-3">
           <h2
-            className="text-sm font-semibold"
-            style={{ color: "var(--ink)" }}
+            className="text-sm font-medium"
+            style={{ color: "var(--ink-muted)" }}
           >
-            Recent Documents
+            Recently added
           </h2>
-          <button
-            type="button"
-            onClick={() => router.push("/documents")}
-            className="text-xs font-medium cursor-pointer border-0 bg-transparent"
+          <Link
+            href="/documents"
+            className="text-xs font-medium flex items-center gap-1"
             style={{ color: "var(--accent)" }}
           >
             View all
-          </button>
+            <ArrowUpRight className="h-3 w-3" strokeWidth={2} />
+          </Link>
         </div>
-        <div
-          style={{
-            background: "var(--surface-raised)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            overflow: "hidden",
-          }}
-        >
-          {loading ? (
-            <div className="p-8 text-center">
-              <div
-                className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent"
-                style={{ color: "var(--ink-ghost)" }}
-              />
-            </div>
-          ) : stats?.recentDocs && stats.recentDocs.length > 0 ? (
-            <div>
-              {stats.recentDocs.map((doc, i) => (
-                <button
-                  key={doc.id}
-                  type="button"
-                  onClick={() => router.push(`/documents/${doc.id}`)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left cursor-pointer transition-colors"
+
+        {recentDocs.length === 0 ? (
+          <div
+            className="p-8 text-center text-sm"
+            style={{
+              color: "var(--ink-muted)",
+              background: "var(--surface-raised)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+            }}
+          >
+            No documents yet. Upload your first one to get started.
+          </div>
+        ) : (
+          <div
+            style={{
+              background: "var(--surface-raised)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-lg)",
+              overflow: "hidden",
+            }}
+          >
+            {recentDocs.map((doc, i) => (
+              <Link
+                key={doc.id}
+                href={`/documents/${doc.id}`}
+                className="flex items-center gap-3 px-4 py-3 transition-colors group"
+                style={{
+                  borderBottom:
+                    i < recentDocs.length - 1
+                      ? "1px solid var(--border-light)"
+                      : "none",
+                }}
+              >
+                <FileText
+                  className="h-4 w-4 shrink-0"
+                  style={{ color: "var(--ink-ghost)" }}
+                  strokeWidth={1.5}
+                />
+                <span
+                  className="flex-1 truncate text-sm"
+                  style={{ color: "var(--ink)" }}
+                >
+                  {doc.title}
+                </span>
+                <span
+                  className="text-xs px-1.5 py-0.5 shrink-0"
                   style={{
-                    borderBottom:
-                      i < stats.recentDocs.length - 1
-                        ? "1px solid var(--border-light)"
-                        : "none",
-                    background: "transparent",
-                    border: "none",
-                    borderBottomWidth: i < stats.recentDocs.length - 1 ? 1 : 0,
-                    borderBottomStyle: "solid",
-                    borderBottomColor: "var(--border-light)",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "var(--surface-sunken)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "transparent";
+                    color: "var(--ink-faint)",
+                    background: "var(--surface-sunken)",
+                    borderRadius: "var(--radius-sm)",
                   }}
                 >
-                  <FileText
-                    className="h-4 w-4 shrink-0"
+                  {doc.type}
+                </span>
+                {doc.created_at && (
+                  <span
+                    className="text-xs shrink-0 tabular-nums w-16 text-right"
                     style={{ color: "var(--ink-ghost)" }}
-                    strokeWidth={1.5}
-                  />
-                  <span
-                    className="flex-1 truncate text-sm"
-                    style={{ color: "var(--ink)" }}
                   >
-                    {doc.title}
+                    {new Date(doc.created_at).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })}
                   </span>
-                  <span
-                    className="shrink-0 text-xs px-1.5 py-0.5"
-                    style={{
-                      color: "var(--ink-faint)",
-                      background: "var(--surface-sunken)",
-                      borderRadius: "var(--radius-sm)",
-                    }}
-                  >
-                    {doc.type}
-                  </span>
-                  <span className="flex items-center gap-1 text-xs shrink-0" style={{ color: "var(--ink-ghost)" }}>
-                    <Clock className="h-3 w-3" />
-                    {new Date(doc.created_at).toLocaleDateString()}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="p-8 text-center">
-              <p
-                className="text-sm"
-                style={{ color: "var(--ink-muted)" }}
-              >
-                No documents yet. Upload your first document to get started.
-              </p>
-            </div>
-          )}
-        </div>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function StatTile({
+  href,
+  label,
+  value,
+  icon: Icon,
+  span,
+}: {
+  href: string;
+  label: string;
+  value: number;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number; style?: React.CSSProperties }>;
+  span: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`group ${span} p-5 flex flex-col justify-between transition-all`}
+      style={{
+        background: "var(--surface-raised)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-xl)",
+      }}
+    >
+      <div className="flex items-start justify-between">
+        <Icon
+          className="h-5 w-5"
+          style={{ color: "var(--ink-muted)" }}
+          strokeWidth={1.5}
+        />
+        <ArrowUpRight
+          className="h-4 w-4 opacity-0 group-hover:opacity-60 transition-opacity"
+          style={{ color: "var(--ink)" }}
+          strokeWidth={1.5}
+        />
+      </div>
+      <div>
+        <div
+          className="text-3xl font-semibold tabular-nums leading-none"
+          style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
+        >
+          {value}
+        </div>
+        <div
+          className="mt-1 text-xs"
+          style={{ color: "var(--ink-muted)" }}
+        >
+          {label}
+        </div>
+      </div>
+    </Link>
   );
 }

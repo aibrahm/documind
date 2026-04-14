@@ -45,8 +45,15 @@ export function ProjectDashboard({ project, counts }: Props) {
           fetch(`/api/projects/${project.id}/documents`).then((r) => r.json()),
           fetch(`/api/projects/${project.id}/entities`).then((r) => r.json()),
         ]);
-        if (Array.isArray(docsRes)) setDocs(docsRes);
-        if (Array.isArray(entRes)) setEntities(entRes);
+        // APIs return { documents: [...] } and { entities: [...] }
+        const docsList = Array.isArray(docsRes)
+          ? docsRes
+          : (docsRes.documents ?? []);
+        const entList = Array.isArray(entRes)
+          ? entRes
+          : (entRes.entities ?? []);
+        setDocs(docsList);
+        setEntities(entList);
       } finally {
         setLoading(false);
       }
