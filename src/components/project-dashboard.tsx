@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, Network, Calendar, Target, BookOpen, Save } from "lucide-react";
 import type { Database } from "@/lib/database.types";
+import { PageHeader } from "@/components/page-header";
 
 type Project = Database["public"]["Tables"]["projects"]["Row"];
 
@@ -82,60 +83,59 @@ export function ProjectDashboard({ project, counts }: Props) {
     load();
   }, [project.id]);
 
-  return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
-      <div className="mb-6">
-        <h1
-          className="text-xl font-semibold"
-          style={{ color: "var(--ink)", letterSpacing: "-0.01em" }}
-        >
-          {project.name}
-        </h1>
-        {project.description && (
-          <p
-            className="mt-1 text-sm max-w-2xl"
-            style={{ color: "var(--ink-muted)" }}
-          >
-            {project.description}
-          </p>
-        )}
-        <div className="mt-3 flex items-center gap-3 text-xs">
-          {project.kind && (
-            <span
-              className="px-1.5 py-0.5"
-              style={{
-                background: "var(--surface-sunken)",
-                color: "var(--ink-muted)",
-                borderRadius: "var(--radius-sm)",
-              }}
-            >
-              {project.kind}
-            </span>
-          )}
-          {project.stage && (
-            <span
-              className="flex items-center gap-1"
-              style={{ color: "var(--ink-faint)" }}
-            >
-              <Target className="h-3 w-3" />
-              {project.stage}
-            </span>
-          )}
-          {project.target_close && (
-            <span
-              className="flex items-center gap-1"
-              style={{ color: "var(--ink-faint)" }}
-            >
-              <Calendar className="h-3 w-3" />
-              {new Date(project.target_close).toLocaleDateString()}
-            </span>
-          )}
-        </div>
-      </div>
+  const meta: React.ReactNode[] = [];
+  if (project.kind) meta.push(<span key="kind">{project.kind}</span>);
+  if (project.stage)
+    meta.push(
+      <span key="stage" className="flex items-center gap-1">
+        <Target className="h-3 w-3" strokeWidth={1.5} />
+        {project.stage}
+      </span>,
+    );
+  if (project.target_close)
+    meta.push(
+      <span key="close" className="flex items-center gap-1">
+        <Calendar className="h-3 w-3" strokeWidth={1.5} />
+        {new Date(project.target_close).toLocaleDateString()}
+      </span>,
+    );
 
+  return (
+    <>
+      <PageHeader
+        eyebrow="PROJECT"
+        title={project.name}
+        rightExtra={
+          meta.length > 0 ? (
+            <div
+              className="flex items-center gap-3 text-xs"
+              style={{ color: "var(--ink-faint)" }}
+            >
+              {meta.map((m, i) => (
+                <span key={i} className="flex items-center gap-3">
+                  {i > 0 && (
+                    <span
+                      className="h-1 w-1 rounded-full"
+                      style={{ background: "var(--ink-ghost)" }}
+                    />
+                  )}
+                  {m}
+                </span>
+              ))}
+            </div>
+          ) : undefined
+        }
+      />
+
+      {/* Tab strip — full-width gridline cells matching nav language */}
       <div
-        className="mb-4 flex items-center gap-1 border-b"
-        style={{ borderColor: "var(--border)" }}
+        className="grid"
+        style={{
+          gridTemplateColumns: "repeat(3, auto) 1fr",
+          gap: "1px",
+          background: "var(--border)",
+          borderBottom: "1px solid var(--border)",
+        }}
       >
         <TabButton
           active={tab === "context"}
@@ -157,14 +157,14 @@ export function ProjectDashboard({ project, counts }: Props) {
           label="Entities"
           count={counts.entities}
         />
+        {/* Empty filler cell so the strip extends to the right edge */}
+        <div style={{ background: "var(--surface-raised)" }} />
       </div>
 
       <div
         style={{
           background: "var(--surface-raised)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-lg)",
-          overflow: "hidden",
+          borderBottom: "1px solid var(--border)",
         }}
       >
         {tab === "context" ? (
@@ -326,7 +326,7 @@ export function ProjectDashboard({ project, counts }: Props) {
           ))
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -347,32 +347,39 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className="relative flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-0 bg-transparent"
+      className="flex items-center gap-2 px-5 py-3 text-sm cursor-pointer transition-colors whitespace-nowrap"
       style={{
-        color: active ? "var(--ink)" : "var(--ink-muted)",
+        background: active ? "var(--ink)" : "var(--surface-raised)",
+        color: active ? "var(--surface-raised)" : "var(--ink-muted)",
+        border: "none",
         fontWeight: active ? 600 : 500,
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = "var(--surface-sunken)";
+          e.currentTarget.style.color = "var(--ink)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = "var(--surface-raised)";
+          e.currentTarget.style.color = "var(--ink-muted)";
+        }
       }}
     >
       <Icon className="h-4 w-4" strokeWidth={1.5} />
       {label}
       {typeof count === "number" && (
         <span
-          className="ml-0.5 px-1.5 py-0.5 text-xs tabular-nums"
+          className="text-xs tabular-nums"
           style={{
-            color: "var(--ink-faint)",
-            background: "var(--surface-sunken)",
-            borderRadius: "var(--radius-sm)",
+            color: active
+              ? "color-mix(in srgb, var(--surface-raised) 55%, transparent)"
+              : "var(--ink-faint)",
           }}
         >
           {count}
         </span>
-      )}
-      {active && (
-        <span
-          aria-hidden
-          className="absolute inset-x-0 -bottom-px h-[2px]"
-          style={{ background: "var(--accent)" }}
-        />
       )}
     </button>
   );

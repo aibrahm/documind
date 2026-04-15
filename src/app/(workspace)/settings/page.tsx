@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { PageHeader } from "@/components/page-header";
 
 interface WorkspaceProfile {
   full_name: string;
@@ -98,22 +98,16 @@ export default function WorkspaceSettingsPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-white">
-      <div className="mx-auto max-w-4xl px-6 py-10">
-        <div className="max-w-2xl">
-          <p className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-slate-400">
-            Workspace profile
-          </p>
-          <h1 className="mt-2 text-[30px] font-semibold tracking-tight text-slate-900">
-            Operator identity
-          </h1>
-          <p className="mt-3 text-[14px] leading-7 text-slate-600">
-            This is the sender identity the assistant should use when drafting
-            emails, memos, letters, and other first-person outputs on your behalf.
-          </p>
-        </div>
+    <>
+      <PageHeader eyebrow="SETTINGS" title="Operator identity" />
+      <div className="h-full overflow-y-auto" style={{ background: "var(--surface)" }}>
+      <div className="mx-auto max-w-4xl px-6 py-8">
+        <p className="text-sm leading-relaxed mb-6" style={{ color: "var(--ink-muted)" }}>
+          The sender identity the assistant uses when drafting emails, memos,
+          letters, and other first-person outputs on your behalf.
+        </p>
 
-        <div className="mt-8 grid gap-6 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2">
           <Field label="Full name">
             <Input
               value={profile.full_name}
@@ -177,18 +171,38 @@ export default function WorkspaceSettingsPage() {
         </div>
 
         {notice && (
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <div
+            className="mt-5 px-4 py-3 text-sm"
+            style={{
+              background: "var(--surface-sunken)",
+              borderTop: "1px solid var(--border)",
+              borderBottom: "1px solid var(--border)",
+              color: "var(--ink-muted)",
+            }}
+          >
             {notice}
           </div>
         )}
 
         <div className="mt-6">
-          <Button type="button" onClick={() => void handleSave()} disabled={loading || saving}>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={loading || saving}
+            className="px-4 py-2 text-sm font-medium cursor-pointer transition-colors disabled:opacity-50"
+            style={{
+              background: "var(--ink)",
+              color: "var(--surface-raised)",
+              border: "none",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
             {saving ? "Saving..." : "Save profile"}
-          </Button>
+          </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -200,9 +214,12 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block space-y-2">
-      <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-slate-400">
-        {label}
+    <label className="block space-y-1.5">
+      <span
+        className="block text-xs font-medium"
+        style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
+      >
+        {label.toUpperCase()}
       </span>
       {children}
     </label>
