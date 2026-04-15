@@ -20,36 +20,46 @@ const LINKS = [
   { label: "Upload", href: "/upload", icon: Upload },
 ];
 
+/**
+ * Full-width gridline nav bar.
+ *
+ * One edge-to-edge row. Cells are separated by 1px gridlines (via the
+ * `gap: 1px` + colored parent background pattern used elsewhere). The
+ * brand sits in the first cell, nav links fill the middle cells, and
+ * the settings icon is the last cell.
+ */
 export function Nav() {
   const pathname = usePathname();
 
   return (
     <header
-      className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between px-6"
+      className="sticky top-0 z-40 shrink-0"
       style={{
-        background: "var(--surface)",
-        borderBottom: "1px solid var(--border-light)",
+        background: "var(--border)",
+        borderBottom: "1px solid var(--border)",
       }}
     >
-      {/* Brand */}
-      <Link
-        href="/"
-        className="transition-opacity hover:opacity-70"
-        style={{ color: "var(--ink)" }}
-      >
-        <DocuMindLogo variant="horizontal" size="md" />
-      </Link>
-
-      {/* Centered nav pill — segmented control with gridlines */}
       <div
-        className="flex items-center overflow-hidden"
+        className="grid w-full"
         style={{
-          background: "var(--border)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-md)",
+          gridTemplateColumns: `auto repeat(${LINKS.length}, minmax(0, 1fr)) auto`,
           gap: "1px",
+          background: "var(--border)",
         }}
       >
+        {/* Brand cell */}
+        <Link
+          href="/"
+          className="flex items-center px-6 h-16 transition-opacity hover:opacity-70"
+          style={{
+            color: "var(--ink)",
+            background: "var(--surface-raised)",
+          }}
+        >
+          <DocuMindLogo variant="horizontal" size="md" />
+        </Link>
+
+        {/* Nav cells */}
         {LINKS.map((l) => {
           const active =
             pathname === l.href ||
@@ -59,41 +69,54 @@ export function Nav() {
             <Link
               key={l.href}
               href={l.href}
-              className="flex items-center gap-1.5 px-3 py-1.5 transition-colors"
+              className="flex items-center justify-center gap-2 h-16 transition-colors"
               style={{
                 fontFamily: "var(--font-sans)",
-                fontSize: "0.8125rem",
+                fontSize: "0.875rem",
                 fontWeight: active ? 600 : 500,
                 color: active
                   ? "var(--surface-raised)"
                   : "var(--ink-muted)",
                 background: active ? "var(--ink)" : "var(--surface-raised)",
               }}
+              onMouseEnter={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = "var(--surface-sunken)";
+                  e.currentTarget.style.color = "var(--ink)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  e.currentTarget.style.background = "var(--surface-raised)";
+                  e.currentTarget.style.color = "var(--ink-muted)";
+                }
+              }}
             >
-              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+              <Icon className="h-4 w-4" strokeWidth={1.75} />
               {l.label}
             </Link>
           );
         })}
-      </div>
 
-      {/* Settings icon */}
-      <Link
-        href="/settings"
-        className="flex items-center justify-center h-8 w-8 transition-colors"
-        style={{
-          color:
-            pathname === "/settings" ? "var(--ink)" : "var(--ink-muted)",
-          background:
-            pathname === "/settings"
-              ? "var(--surface-sunken)"
-              : "transparent",
-          borderRadius: "var(--radius-md)",
-        }}
-        aria-label="Settings"
-      >
-        <Settings className="h-4 w-4" strokeWidth={1.75} />
-      </Link>
+        {/* Settings cell */}
+        <Link
+          href="/settings"
+          className="flex items-center justify-center px-5 h-16 transition-colors"
+          style={{
+            color:
+              pathname === "/settings"
+                ? "var(--surface-raised)"
+                : "var(--ink-muted)",
+            background:
+              pathname === "/settings"
+                ? "var(--ink)"
+                : "var(--surface-raised)",
+          }}
+          aria-label="Settings"
+        >
+          <Settings className="h-4 w-4" strokeWidth={1.75} />
+        </Link>
+      </div>
     </header>
   );
 }
