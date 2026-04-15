@@ -18,6 +18,7 @@ import {
   Upload as UploadIcon,
 } from "lucide-react";
 import { CreateProjectDialog } from "@/components/create-project-dialog";
+import { PageHeader } from "@/components/page-header";
 import {
   DOCUMENT_TYPES,
   type DocumentType,
@@ -455,22 +456,14 @@ export default function UploadPage() {
   }, []);
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-white">
+    <>
+      <PageHeader eyebrow="UPLOAD" title="Add a document" />
+      <div
+        className="flex flex-1 min-h-0 flex-col overflow-hidden"
+        style={{ background: "var(--surface)" }}
+      >
       <main className="flex-1 min-h-0 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-6 py-10">
-          <div className="mb-8 max-w-2xl">
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-slate-600">
-              <Library className="h-4 w-4" />
-              <span className="text-[14px] font-medium">Library</span>
-            </div>
-            <h1 className="text-[30px] font-semibold tracking-tight text-slate-950">
-              Add a document
-            </h1>
-            <p className="mt-2 text-[14px] leading-relaxed text-slate-500">
-              Upload a document once, keep it in the library, and optionally link it into a
-              project so project chats can use it as source context.
-            </p>
-          </div>
 
           {stage === "idle" && (
             <div className="grid gap-6 lg:grid-cols-[1.35fr_0.9fr]">
@@ -592,7 +585,8 @@ export default function UploadPage() {
           setCreateProjectOpen(false);
         }}
       />
-    </div>
+      </div>
+    </>
   );
 }
 
