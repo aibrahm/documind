@@ -8,6 +8,7 @@ import {
   Upload,
   ArrowUpRight,
 } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 interface Props {
   counts: {
@@ -25,29 +26,24 @@ interface Props {
 }
 
 export function Dashboard({ counts, recentDocs }: Props) {
+  const totalDocs = counts.documents;
   return (
-    <div className="mx-auto max-w-6xl px-8 py-12">
-      <div className="mb-8 flex items-center justify-between">
-        <div
-          className="text-xs font-medium"
-          style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
-        >
-          OVERVIEW
-        </div>
-        <Link
-          href="/upload"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors"
-          style={{
-            background: "var(--ink)",
-            color: "var(--surface-raised)",
-            borderRadius: "var(--radius-md)",
-          }}
-        >
-          <Upload className="h-3.5 w-3.5" strokeWidth={1.75} />
-          Upload
-        </Link>
-      </div>
-
+    <>
+      <PageHeader
+        eyebrow="OVERVIEW"
+        title={
+          <>
+            {totalDocs}{" "}
+            <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>
+              {totalDocs === 1 ? "document" : "documents"}
+            </span>
+          </>
+        }
+        actionHref="/upload"
+        actionLabel="Upload"
+        actionIcon={<Upload className="h-3.5 w-3.5" strokeWidth={1.75} />}
+      />
+      <div className="px-6 py-6">
       {/* The grid — outer border + inner gridlines via gap:1px on a background */}
       <div
         className="overflow-hidden"
@@ -226,7 +222,8 @@ export function Dashboard({ counts, recentDocs }: Props) {
         />
         <InfoCell label="Tools available" value="19" status="ok" />
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

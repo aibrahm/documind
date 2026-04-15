@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FolderKanban, FileText, ArrowUpRight, Plus } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 interface Project {
   id: string;
@@ -19,46 +20,19 @@ interface Project {
 
 export function ProjectList({ projects }: { projects: Project[] }) {
   return (
-    <div className="mx-auto max-w-6xl px-8 py-12">
-      {/* Header */}
-      <div className="mb-10 flex items-end justify-between">
-        <div>
-          <div
-            className="text-xs font-medium mb-2"
-            style={{
-              color: "var(--ink-faint)",
-              letterSpacing: "0.04em",
-            }}
-          >
-            PROJECTS
-          </div>
-          <h1
-            className="text-4xl font-semibold tracking-tight"
-            style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
-          >
+    <>
+      <PageHeader
+        eyebrow="PROJECTS"
+        title={
+          <>
             {projects.length}{" "}
-            <span
-              className="text-2xl font-normal"
-              style={{ color: "var(--ink-muted)" }}
-            >
+            <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>
               active
             </span>
-          </h1>
-        </div>
-        <button
-          type="button"
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
-          style={{
-            background: "var(--ink)",
-            color: "var(--surface-raised)",
-            border: "none",
-            borderRadius: "var(--radius-md)",
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
-          New project
-        </button>
-      </div>
+          </>
+        }
+      />
+      <div className="px-6 py-6">
 
       {projects.length === 0 ? (
         <div
@@ -175,6 +149,7 @@ export function ProjectList({ projects }: { projects: Project[] }) {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

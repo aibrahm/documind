@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Search, FileText, Building2, Landmark, User2, Briefcase, Shapes } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 interface Entity {
   id: string;
@@ -47,30 +48,19 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
   }, [entities, search, typeFilter]);
 
   return (
-    <div className="mx-auto max-w-6xl px-8 py-12">
-      {/* Header */}
-      <div className="mb-10 flex items-end justify-between">
-        <div>
-          <div
-            className="text-xs font-medium mb-2"
-            style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
-          >
-            ENTITIES
-          </div>
-          <h1
-            className="text-4xl font-semibold tracking-tight"
-            style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
-          >
+    <>
+      <PageHeader
+        eyebrow="ENTITIES"
+        title={
+          <>
             {entities.length}{" "}
-            <span
-              className="text-2xl font-normal"
-              style={{ color: "var(--ink-muted)" }}
-            >
-              {entities.length === 1 ? "entity" : "entities"}
+            <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>
+              extracted
             </span>
-          </h1>
-        </div>
-      </div>
+          </>
+        }
+      />
+      <div className="px-6 py-6">
 
       {/* Search + type filter row */}
       <div className="mb-4 flex items-center gap-2">
@@ -214,7 +204,8 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

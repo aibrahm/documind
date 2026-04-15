@@ -69,16 +69,16 @@
     --ink-ghost: #a1a1aa;  /* zinc-400 */
     --ink-disabled: #d4d4d8; /* zinc-300 */
 
-    /* ── Colors — surfaces ── */
-    --surface: #fafafa;        /* zinc-50 — page background */
-    --surface-raised: #ffffff; /* white — cards, dialogs */
-    --surface-sunken: #f4f4f5; /* zinc-100 — inputs, hover targets */
+    /* ── Colors — surfaces (warm off-white) ── */
+    --surface: #f7f5f0;        /* warm off-white — page background */
+    --surface-raised: #fdfbf6; /* slightly raised off-white — cards */
+    --surface-sunken: #efece5; /* slightly sunken off-white — inputs, hover targets */
     --surface-overlay: rgba(9, 9, 11, 0.5);
 
-    /* ── Colors — borders ── */
-    --border: #e4e4e7;       /* zinc-200 — default border */
-    --border-strong: #d4d4d8; /* zinc-300 — emphasized */
-    --border-light: #f4f4f5;  /* zinc-100 — subtle dividers */
+    /* ── Colors — borders (warm tone matching off-white surfaces) ── */
+    --border: #e3dfd5;       /* warm beige — default border */
+    --border-strong: #cdc9bf; /* warmer/darker for emphasis */
+    --border-light: #ece8df;  /* very subtle dividers */
 
     /* ── Accent — scan blue, used rarely ── */
     --accent: #2563eb;        /* blue-600 */
