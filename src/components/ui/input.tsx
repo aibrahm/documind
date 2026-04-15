@@ -1,20 +1,47 @@
-import * as React from "react"
-import { Input as InputPrimitive } from "@base-ui/react/input"
+import * as React from "react";
+import { Input as InputPrimitive } from "@base-ui/react/input";
+import { cn } from "@/lib/utils";
 
-import { cn } from "@/lib/utils"
-
+/**
+ * Text input matching the gridline design language.
+ *
+ * - Background: --surface-raised (off-white)
+ * - Border: 1px --border token, focus→ --ink
+ * - Radius: --radius-md (sharp but not razor)
+ * - No soft colored ring — the border darkens to ink on focus, matches
+ *   the rest of the app where active = solid ink.
+ */
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <InputPrimitive
       type={type}
       data-slot="input"
       className={cn(
-        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
-        className
+        "h-9 w-full min-w-0 px-3 py-1.5 text-sm outline-none transition-colors",
+        "placeholder:text-[color:var(--ink-ghost)]",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        className,
       )}
+      style={{
+        background: "var(--surface-raised)",
+        color: "var(--ink)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-md)",
+        fontFamily: "var(--font-sans)",
+        ...(props.style ?? {}),
+      }}
+      onFocus={(e) => {
+        (e.currentTarget as HTMLInputElement).style.borderColor = "var(--ink)";
+        props.onFocus?.(e);
+      }}
+      onBlur={(e) => {
+        (e.currentTarget as HTMLInputElement).style.borderColor =
+          "var(--border)";
+        props.onBlur?.(e);
+      }}
       {...props}
     />
-  )
+  );
 }
 
-export { Input }
+export { Input };

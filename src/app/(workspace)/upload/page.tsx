@@ -556,7 +556,7 @@ export default function UploadPage() {
               <button
                 type="button"
                 onClick={reset}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
               >
                 Try again
               </button>
@@ -600,40 +600,55 @@ function DropZone({
   onFiles: (files: File[]) => void;
 }) {
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+    <div
+      onClick={() => document.getElementById("file-input")?.click()}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        onFiles(Array.from(e.dataTransfer.files));
+      }}
+      className="cursor-pointer px-6 py-16 text-center transition-colors"
+      style={{
+        background: dragOver ? "var(--surface-sunken)" : "var(--surface-raised)",
+        border: dragOver
+          ? "2px dashed var(--ink)"
+          : "2px dashed var(--border)",
+      }}
+    >
       <div
-        onClick={() => document.getElementById("file-input")?.click()}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
+        className="mx-auto mb-4 flex h-12 w-12 items-center justify-center"
+        style={{
+          background: "var(--surface-sunken)",
+          borderRadius: "var(--radius-md)",
         }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          onFiles(Array.from(e.dataTransfer.files));
-        }}
-        className={`cursor-pointer rounded-[24px] border-2 border-dashed px-6 py-14 text-center transition-all ${
-          dragOver
-            ? "scale-[1.01] border-slate-900 bg-slate-50"
-            : "border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-slate-50"
-        }`}
       >
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <UploadIcon className="h-5 w-5 text-slate-400" />
-        </div>
-        <p className="text-[15px] font-medium text-slate-900">Drop a PDF to add it</p>
-        <p className="mt-1 text-[12px] text-slate-400">
-          OCR and document suggestions run automatically. Up to 50 MB.
-        </p>
-        <input
-          id="file-input"
-          type="file"
-          accept=".pdf"
-          className="hidden"
-          onChange={(e) => onFiles(Array.from(e.target.files || []))}
+        <UploadIcon
+          className="h-5 w-5"
+          style={{ color: "var(--ink-muted)" }}
+          strokeWidth={1.5}
         />
       </div>
+      <p className="text-sm font-medium" style={{ color: "var(--ink)" }}>
+        Drop a PDF to add it
+      </p>
+      <p
+        className="mt-1 text-xs"
+        style={{ color: "var(--ink-muted)" }}
+      >
+        OCR and document suggestions run automatically. Up to 50 MB.
+      </p>
+      <input
+        id="file-input"
+        type="file"
+        accept=".pdf"
+        className="hidden"
+        onChange={(e) => onFiles(Array.from(e.target.files || []))}
+      />
     </div>
   );
 }
@@ -658,8 +673,8 @@ function PlacementPanel({
   onCreateProject: () => void;
 }) {
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+    <div className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
         Where it should live
       </p>
 
@@ -667,17 +682,17 @@ function PlacementPanel({
         <button
           type="button"
           onClick={() => setPlacementMode("library")}
-          className={`rounded-2xl border px-4 py-3 text-left transition-all ${
+          className={`rounded-md border px-4 py-3 text-left transition-all ${
             placementMode === "library"
-              ? "border-slate-300 bg-slate-50"
-              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+              ? "border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)]"
+              : "border-[color:var(--border)] bg-white hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
           }`}
         >
           <div className="flex items-center gap-2">
-            <Library className="h-4 w-4 text-slate-500" />
-            <span className="text-[14px] font-medium text-slate-900">Library only</span>
+            <Library className="h-4 w-4 text-[color:var(--ink-muted)]" />
+            <span className="text-[14px] font-medium text-[color:var(--ink)]">Library only</span>
           </div>
-          <p className="mt-1 text-[12px] text-slate-500">
+          <p className="mt-1 text-[12px] text-[color:var(--ink-muted)]">
             Keep it available globally and decide later where to link it.
           </p>
         </button>
@@ -685,30 +700,30 @@ function PlacementPanel({
         <button
           type="button"
           onClick={() => setPlacementMode("project")}
-          className={`rounded-2xl border px-4 py-3 text-left transition-all ${
+          className={`rounded-md border px-4 py-3 text-left transition-all ${
             placementMode === "project"
-              ? "border-slate-300 bg-slate-50"
-              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+              ? "border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)]"
+              : "border-[color:var(--border)] bg-white hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
           }`}
         >
           <div className="flex items-center gap-2">
-            <FolderOpen className="h-4 w-4 text-slate-500" />
-            <span className="text-[14px] font-medium text-slate-900">Link into a project</span>
+            <FolderOpen className="h-4 w-4 text-[color:var(--ink-muted)]" />
+            <span className="text-[14px] font-medium text-[color:var(--ink)]">Link into a project</span>
           </div>
-          <p className="mt-1 text-[12px] text-slate-500">
+          <p className="mt-1 text-[12px] text-[color:var(--ink-muted)]">
             Keep it in the library and make it primary source context for one workspace.
           </p>
         </button>
       </div>
 
       {placementMode === "project" && (
-        <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className="mt-4 space-y-3 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-sunken)]/70 p-4">
           {projects.length > 0 ? (
             <select
               value={linkToProjectId || ""}
               onChange={(e) => setLinkToProjectId(e.target.value || null)}
               disabled={projectsLoading}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-400 focus:outline-none disabled:bg-slate-100"
+              className="w-full rounded-md border border-[color:var(--border)] bg-white px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none disabled:bg-[color:var(--surface-sunken)]"
             >
               <option value="">
                 {projectsLoading ? "Loading projects..." : "Choose a project"}
@@ -720,22 +735,22 @@ function PlacementPanel({
               ))}
             </select>
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-3 text-[12px] text-slate-500">
+            <div className="rounded-md border border-dashed border-[color:var(--border-strong)] bg-white px-3 py-3 text-[12px] text-[color:var(--ink-muted)]">
               No active projects yet. Create one first.
             </div>
           )}
 
           {selectedProject && (
-            <p className="text-[12px] leading-relaxed text-slate-500">
+            <p className="text-[12px] leading-relaxed text-[color:var(--ink-muted)]">
               This document will stay in the library and be linked into{" "}
-              <span className="font-medium text-slate-700">{selectedProject.name}</span>.
+              <span className="font-medium text-[color:var(--ink)]">{selectedProject.name}</span>.
             </p>
           )}
 
           <button
             type="button"
             onClick={onCreateProject}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
           >
             <Plus className="h-3.5 w-3.5" />
             Create new project
@@ -758,26 +773,26 @@ function AnalyzingCard({
   projectName: string | null;
 }) {
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="rounded-md border border-[color:var(--border)] bg-white p-6 ">
       <div className="mb-4 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-slate-800 to-slate-600">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gradient-to-br from-[color:var(--ink)] to-[color:var(--ink-muted)]">
           <Sparkles className="h-5 w-5 text-white" />
         </div>
         <div>
-          <p className="text-[14px] font-semibold text-slate-900">Preparing the document</p>
-          <p className="text-[12px] text-slate-400">
+          <p className="text-[14px] font-semibold text-[color:var(--ink)]">Preparing the document</p>
+          <p className="text-[12px] text-[color:var(--ink-ghost)]">
             OCR, title suggestions, duplicate checks, and project-fit hints are running now.
           </p>
         </div>
       </div>
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-sunken)] px-4 py-3">
         <div className="flex items-center gap-3">
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-slate-400" />
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[color:var(--ink-ghost)]" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] text-slate-800" dir="auto">
+            <p className="truncate text-[13px] text-[color:var(--ink)]" dir="auto">
               {fileName}
             </p>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-[color:var(--ink-ghost)]">
               {formatBytes(fileSize)}
               {placementMode === "project" && projectName
                 ? ` · will link to ${projectName}`
@@ -856,7 +871,7 @@ function ReviewCard({
         commit from analyzeFile.
       */}
       {recommendation.confidence === "low" && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <div className="min-w-0 flex-1">
@@ -872,16 +887,16 @@ function ReviewCard({
         </div>
       )}
 
-      <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-md border border-[color:var(--border)] bg-white p-6 ">
         <div className="mb-5 flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-800 to-slate-600">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-[color:var(--ink)] to-[color:var(--ink-muted)]">
             <RecommendationIcon className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold text-slate-900">
+            <p className="text-[15px] font-semibold text-[color:var(--ink)]">
               Ready to add this document
             </p>
-            <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+            <p className="mt-1 text-[13px] leading-relaxed text-[color:var(--ink-muted)]">
               {recommendation.reason}
             </p>
           </div>
@@ -889,14 +904,14 @@ function ReviewCard({
 
         <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-sunken)] px-4 py-3">
               <div className="flex items-center gap-3">
-                <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                <FileText className="h-4 w-4 shrink-0 text-[color:var(--ink-ghost)]" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] text-slate-800" dir="auto">
+                  <p className="truncate text-[13px] text-[color:var(--ink)]" dir="auto">
                     {file.name}
                   </p>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-[color:var(--ink-ghost)]">
                     {detected.pageCount} {detected.pageCount === 1 ? "page" : "pages"} ·{" "}
                     {formatBytes(detected.fileSize)} · {detected.language.toUpperCase()}
                   </p>
@@ -905,7 +920,7 @@ function ReviewCard({
             </div>
 
             <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
                 Title
               </label>
               <input
@@ -913,18 +928,18 @@ function ReviewCard({
                 value={chosenTitle}
                 onChange={(e) => setChosenTitle(e.target.value)}
                 dir="auto"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] text-slate-900 focus:border-slate-400 focus:outline-none"
+                className="w-full rounded-md border border-[color:var(--border)] bg-white px-3 py-2 text-[14px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
                 Document type
               </label>
               <select
                 value={chosenDocumentType}
                 onChange={(e) => setChosenDocumentType(e.target.value as DocumentTypeChoice)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-400 focus:outline-none"
+                className="w-full rounded-md border border-[color:var(--border)] bg-white px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
               >
                 <option value="auto">
                   Auto{suggestedDocType ? ` (${DOCUMENT_TYPE_COPY[suggestedDocType]})` : ""}
@@ -949,11 +964,11 @@ function ReviewCard({
             />
 
             {placementMode === "library" && suggestedProject && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-[12px] font-medium text-slate-800">
+              <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-sunken)] px-4 py-3">
+                <p className="text-[12px] font-medium text-[color:var(--ink)]">
                   Suggested project match
                 </p>
-                <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+                <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--ink-muted)]">
                   {suggestedProject.name} looks like the best existing fit. You can keep this
                   as library-only or link it there now.
                 </p>
@@ -963,7 +978,7 @@ function ReviewCard({
                     setPlacementMode("project");
                     setLinkToProjectId(suggestedProject.id);
                   }}
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
                 >
                   <FolderOpen className="h-3.5 w-3.5" />
                   Link to {suggestedProject.name}
@@ -974,11 +989,11 @@ function ReviewCard({
 
           <div className="space-y-4">
             {hasOverlap ? (
-              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="mb-1 text-[14px] font-semibold text-slate-900">
+              <div className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+                <p className="mb-1 text-[14px] font-semibold text-[color:var(--ink)]">
                   Possible overlap
                 </p>
-                <p className="mb-4 text-[12px] leading-relaxed text-slate-500">
+                <p className="mb-4 text-[12px] leading-relaxed text-[color:var(--ink-muted)]">
                   Pick the closest existing document if you want to version, skip, or link this
                   upload. Otherwise keep it as a new source.
                 </p>
@@ -993,27 +1008,27 @@ function ReviewCard({
                           chosenTargetId === item.documentId ? null : item.documentId,
                         )
                       }
-                      className={`w-full rounded-2xl border px-3 py-3 text-left transition-all ${
+                      className={`w-full rounded-md border px-3 py-3 text-left transition-all ${
                         chosenTargetId === item.documentId
-                          ? "border-slate-300 bg-slate-50"
-                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                          ? "border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)]"
+                          : "border-[color:var(--border)] bg-white hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--ink-ghost)]" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-medium text-slate-800" dir="auto">
+                          <p className="truncate text-[13px] font-medium text-[color:var(--ink)]" dir="auto">
                             {item.title}
                           </p>
-                          <p className="mt-0.5 text-[11px] text-slate-400">
+                          <p className="mt-0.5 text-[11px] text-[color:var(--ink-ghost)]">
                             {item.type} · {displayClassification(item.classification)} · v{item.versionNumber} ·{" "}
                             {formatRelative(item.createdAt)}
                           </p>
-                          <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                          <p className="mt-1 text-[11px] leading-relaxed text-[color:var(--ink-muted)]">
                             {item.reason}
                           </p>
                         </div>
-                        <span className="text-[11px] font-medium text-slate-400">
+                        <span className="text-[11px] font-medium text-[color:var(--ink-ghost)]">
                           {(item.similarity * 100).toFixed(0)}%
                         </span>
                       </div>
@@ -1034,28 +1049,28 @@ function ReviewCard({
                         type="button"
                         disabled={disabled}
                         onClick={() => !disabled && setChosenAction(action)}
-                        className={`w-full rounded-2xl border px-3 py-3 text-left transition-all ${
+                        className={`w-full rounded-md border px-3 py-3 text-left transition-all ${
                           active
-                            ? "border-slate-300 bg-slate-50"
+                            ? "border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)]"
                             : disabled
-                              ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
-                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                              ? "cursor-not-allowed border-[color:var(--border-light)] bg-[color:var(--surface-sunken)] text-[color:var(--ink-ghost)]"
+                              : "border-[color:var(--border)] bg-white hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
                         }`}
                       >
                         <div className="flex items-start gap-3">
-                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--ink-muted)]" />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="text-[13px] font-medium text-slate-800">
+                              <p className="text-[13px] font-medium text-[color:var(--ink)]">
                                 {meta.label}
                               </p>
                               {action === recommendation.action && (
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                <span className="rounded-sm bg-[color:var(--surface-sunken)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[color:var(--ink-muted)]">
                                   Recommended
                                 </span>
                               )}
                             </div>
-                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                            <p className="mt-1 text-[11px] leading-relaxed text-[color:var(--ink-muted)]">
                               {meta.description}
                             </p>
                           </div>
@@ -1066,22 +1081,22 @@ function ReviewCard({
                 </div>
               </div>
             ) : (
-              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-[14px] font-semibold text-slate-900">No strong overlap found</p>
-                <p className="mt-1 text-[12px] leading-relaxed text-slate-500">
+              <div className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+                <p className="text-[14px] font-semibold text-[color:var(--ink)]">No strong overlap found</p>
+                <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--ink-muted)]">
                   This looks like a distinct document, so you can usually keep the default and
                   continue.
                 </p>
               </div>
             )}
 
-            <details className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <summary className="cursor-pointer list-none text-[13px] font-medium text-slate-800">
+            <details className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+              <summary className="cursor-pointer list-none text-[13px] font-medium text-[color:var(--ink)]">
                 Advanced review
               </summary>
-              <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+              <div className="mt-4 space-y-4 border-t border-[color:var(--border-light)] pt-4">
                 <div>
-                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
                     Classification
                   </label>
                   <select
@@ -1089,7 +1104,7 @@ function ReviewCard({
                     onChange={(e) =>
                       setChosenClassification(e.target.value as Classification)
                     }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-slate-400 focus:outline-none"
+                    className="w-full rounded-md border border-[color:var(--border)] bg-white px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
                   >
                     {(Object.keys(CLASSIFICATION_LABELS) as Classification[]).map((value) => (
                       <option key={value} value={value}>
@@ -1097,21 +1112,21 @@ function ReviewCard({
                       </option>
                     ))}
                   </select>
-                  <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                  <p className="mt-1 text-[11px] leading-relaxed text-[color:var(--ink-muted)]">
                     {detected.classificationReason}
                   </p>
                 </div>
 
                 {detected.entities.length > 0 && (
                   <div>
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
                       Detected entities
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {detected.entities.map((entity, index) => (
                         <span
                           key={`${entity.name}-${index}`}
-                          className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600"
+                          className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-sunken)] px-2 py-1 text-[11px] text-[color:var(--ink-muted)]"
                           dir="auto"
                         >
                           {entity.name}
@@ -1123,10 +1138,10 @@ function ReviewCard({
 
                 {detected.firstPagePreview && (
                   <div>
-                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
                       First-page preview
                     </p>
-                    <div className="max-h-48 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-[12px] leading-relaxed text-slate-600">
+                    <div className="max-h-48 overflow-y-auto rounded-md border border-[color:var(--border)] bg-[color:var(--surface-sunken)] px-3 py-3 text-[12px] leading-relaxed text-[color:var(--ink-muted)]">
                       <p dir="auto">{detected.firstPagePreview}</p>
                     </div>
                   </div>
@@ -1141,7 +1156,7 @@ function ReviewCard({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-lg border border-[color:var(--border)] bg-white px-4 py-2 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
         >
           Cancel
         </button>
@@ -1160,7 +1175,7 @@ function ReviewCard({
             type="button"
             onClick={onConfirm}
             disabled={chosenAction !== "new" && !chosenTargetId}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[color:var(--ink)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color:var(--ink-strong)] disabled:opacity-50"
           >
             Confirm and process
             <ArrowRight className="h-3.5 w-3.5" />
@@ -1181,15 +1196,15 @@ function UploadingCard({
   projectName: string | null;
 }) {
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="rounded-md border border-[color:var(--border)] bg-white p-6 ">
       <div className="mb-3 flex items-center gap-3">
-        <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-        <p className="text-[14px] font-medium text-slate-900">Processing</p>
+        <Loader2 className="h-4 w-4 animate-spin text-[color:var(--ink-ghost)]" />
+        <p className="text-[14px] font-medium text-[color:var(--ink)]">Processing</p>
       </div>
-      <p className="mb-1 text-[13px] text-slate-700" dir="auto">
+      <p className="mb-1 text-[13px] text-[color:var(--ink)]" dir="auto">
         {fileName}
       </p>
-      <p className="text-[12px] leading-relaxed text-slate-500">
+      <p className="text-[12px] leading-relaxed text-[color:var(--ink-muted)]">
         Running OCR and deterministic parsing. This usually takes 30-90 seconds.
         {placementMode === "project" && projectName ? ` It will also link into ${projectName}.` : ""}
       </p>
@@ -1211,15 +1226,15 @@ function DoneCard({
   onUploadMore: () => void;
 }) {
   return (
-    <div className="rounded-[28px] border border-emerald-200 bg-emerald-50/40 p-5">
+    <div className="rounded-md border border-emerald-200 bg-emerald-50/40 p-5">
       <div className="mb-4 flex items-start gap-3">
         <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
         <div className="flex-1">
-          <p className="text-[14px] font-semibold text-slate-900">Document added</p>
-          <p className="mt-0.5 text-[13px] text-slate-700" dir="auto">
+          <p className="text-[14px] font-semibold text-[color:var(--ink)]">Document added</p>
+          <p className="mt-0.5 text-[13px] text-[color:var(--ink)]" dir="auto">
             {title}
           </p>
-          <p className="mt-1 text-[12px] text-slate-500">
+          <p className="mt-1 text-[12px] text-[color:var(--ink-muted)]">
             {projectName
               ? `Stored in the library and linked into ${projectName}.`
               : "Stored in the library and ready to use."}
@@ -1230,7 +1245,7 @@ function DoneCard({
         <button
           type="button"
           onClick={onAskAbout}
-          className="flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-slate-800"
+          className="flex items-center gap-1.5 rounded-lg bg-[color:var(--ink)] px-3 py-1.5 text-[13px] font-medium text-white hover:bg-[color:var(--ink-strong)]"
         >
           Ask about it
           <ArrowRight className="h-3.5 w-3.5" />
@@ -1238,14 +1253,14 @@ function DoneCard({
         <button
           type="button"
           onClick={onViewAll}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
         >
           View library
         </button>
         <button
           type="button"
           onClick={onUploadMore}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
+          className="rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
         >
           Upload another
         </button>
@@ -1271,12 +1286,12 @@ function RecentSidebar({
   onClick: (id: string) => void;
 }) {
   return (
-    <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+    <div className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
         Recent library documents
       </p>
       {docs.length === 0 ? (
-        <p className="text-[12px] leading-relaxed text-slate-500">
+        <p className="text-[12px] leading-relaxed text-[color:var(--ink-muted)]">
           Your latest ready documents will appear here.
         </p>
       ) : (
@@ -1286,14 +1301,14 @@ function RecentSidebar({
               key={doc.id}
               type="button"
               onClick={() => onClick(doc.id)}
-              className="flex w-full items-center gap-2.5 rounded-lg border border-transparent bg-transparent px-2.5 py-2 text-left transition-all hover:border-slate-200 hover:bg-slate-50"
+              className="flex w-full items-center gap-2.5 rounded-lg border border-transparent bg-transparent px-2.5 py-2 text-left transition-all hover:border-[color:var(--border)] hover:bg-[color:var(--surface-sunken)]"
             >
-              <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <FileText className="h-3.5 w-3.5 shrink-0 text-[color:var(--ink-ghost)]" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[12px] text-slate-700" dir="auto">
+                <p className="truncate text-[12px] text-[color:var(--ink)]" dir="auto">
                   {doc.title}
                 </p>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-[color:var(--ink-ghost)]">
                   {displayClassification(doc.classification)} · {formatRelative(doc.created_at)}
                 </p>
               </div>
