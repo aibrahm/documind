@@ -206,7 +206,7 @@ const PdfViewer = memo(function PdfViewer({ url }: { url: string | null }) {
 
   return (
     <>
-      <div ref={placeholderRef} className="flex-1 bg-slate-100" />
+      <div ref={placeholderRef} className="flex-1 bg-[color:var(--surface-sunken)]" />
       {mounted &&
         rect &&
         createPortal(
@@ -223,7 +223,7 @@ const PdfViewer = memo(function PdfViewer({ url }: { url: string | null }) {
           >
             {!url && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[13px] text-slate-500">Loading preview...</span>
+                <span className="text-[13px] text-[color:var(--ink-muted)]">Loading preview...</span>
               </div>
             )}
             <iframe
@@ -416,17 +416,17 @@ export default function DocPage({
   /* 404 state */
   if (notFound) {
     return (
-      <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
+      <div className="flex flex-1 flex-col bg-[color:var(--surface-raised)] overflow-hidden min-h-0">
         <div className="flex-1 flex items-center justify-center flex-col gap-2">
-          <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-2">
-            <FileText className="w-5 h-5 text-slate-300" />
+          <div className="w-12 h-12 rounded-md bg-[color:var(--surface-sunken)] border border-[color:var(--border-light)] flex items-center justify-center mb-2">
+            <FileText className="w-5 h-5 text-[color:var(--ink-ghost)]" />
           </div>
-          <p className="text-[15px] font-semibold text-slate-900">Document not found</p>
-          <p className="text-[13px] text-slate-500">It may have been deleted.</p>
+          <p className="text-[15px] font-semibold text-[color:var(--ink)]">Document not found</p>
+          <p className="text-[13px] text-[color:var(--ink-muted)]">It may have been deleted.</p>
           <button
             type="button"
             onClick={() => router.push("/documents")}
-            className="mt-3 text-[12px] font-medium text-white bg-slate-900 hover:bg-slate-800 border-none rounded-md px-3 py-1.5 cursor-pointer"
+            className="mt-3 text-[12px] font-medium text-white bg-[color:var(--ink)] hover:bg-[color:var(--ink-strong)] border-none rounded-md px-3 py-1.5 cursor-pointer"
           >
             Back to documents
           </button>
@@ -438,9 +438,9 @@ export default function DocPage({
   /* Loading state */
   if (!doc) {
     return (
-      <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
+      <div className="flex flex-1 flex-col bg-[color:var(--surface-raised)] overflow-hidden min-h-0">
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-[13px] text-slate-400">Loading document...</p>
+          <p className="text-[13px] text-[color:var(--ink-ghost)]">Loading document...</p>
         </div>
       </div>
     );
@@ -484,26 +484,26 @@ export default function DocPage({
   const displayBlocks = buildDisplayBlocks(payload, chunks);
 
   return (
-    <div className="flex flex-1 flex-col bg-white overflow-hidden min-h-0">
+    <div className="flex flex-1 flex-col bg-[color:var(--surface-raised)] overflow-hidden min-h-0">
       <main className="flex overflow-hidden flex-1 min-h-0">
         {/* Left panel — metadata / extraction */}
-        <div className="w-[360px] shrink-0 overflow-auto bg-white border-r border-slate-200 flex flex-col">
+        <div className="w-[360px] shrink-0 overflow-auto bg-[color:var(--surface-raised)] border-r border-[color:var(--border)] flex flex-col">
           {/* Back button + Tab bar */}
-          <div className="flex items-center border-b border-slate-200 px-5 pt-3 gap-4">
+          <div className="flex items-center border-b border-[color:var(--border)] px-5 pt-3 gap-4">
             <button
               onClick={() => router.push("/documents")}
-              className="flex items-center gap-1 text-[12px] text-slate-500 hover:text-slate-900 transition-colors mr-2 shrink-0"
+              className="flex items-center gap-1 text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] transition-colors mr-2 shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               Back
             </button>
-            <div className="w-px h-4 bg-slate-200" />
+            <div className="w-px h-4 bg-[color:var(--border)]" />
             <button
               onClick={() => handleTabClick("details")}
               className={`font-['JetBrains_Mono'] text-[11px] tracking-wider pb-2 ${
                 leftTab === "details"
-                  ? "border-b-2 border-slate-900 text-slate-900"
-                  : "text-slate-400 hover:text-slate-600"
+                  ? "border-b-2 border-slate-900 text-[color:var(--ink)]"
+                  : "text-[color:var(--ink-ghost)] hover:text-[color:var(--ink-muted)]"
               }`}
             >
               DETAILS
@@ -512,8 +512,8 @@ export default function DocPage({
               onClick={() => handleTabClick("extraction")}
               className={`font-['JetBrains_Mono'] text-[11px] tracking-wider pb-2 ${
                 leftTab === "extraction"
-                  ? "border-b-2 border-slate-900 text-slate-900"
-                  : "text-slate-400 hover:text-slate-600"
+                  ? "border-b-2 border-slate-900 text-[color:var(--ink)]"
+                  : "text-[color:var(--ink-ghost)] hover:text-[color:var(--ink-muted)]"
               }`}
             >
               EXTRACTION
@@ -548,7 +548,7 @@ export default function DocPage({
                 {/* Title */}
                 <h1
                   dir="auto"
-                  className="font-['IBM_Plex_Sans_Arabic'] text-lg font-bold leading-snug text-slate-900 mt-3 mb-6"
+                  className="font-['IBM_Plex_Sans_Arabic'] text-lg font-bold leading-snug text-[color:var(--ink)] mt-3 mb-6"
                 >
                   {doc.title}
                 </h1>
@@ -570,14 +570,14 @@ export default function DocPage({
                   onClick={() =>
                     router.push(`/?pinned_document=${doc.id}`)
                   }
-                  className="mb-6 w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[13px] rounded-xl py-3 border-none cursor-pointer transition-colors"
+                  className="mb-6 w-full flex items-center justify-center gap-2 bg-[color:var(--ink)] hover:bg-[color:var(--ink-strong)] text-white font-semibold text-[13px] rounded-md py-3 border-none cursor-pointer transition-colors"
                 >
                   Ask about this document →
                 </button>
 
                 {/* Extraction warnings surface quietly only if present. */}
                 {doc.processing_error && (
-                  <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                  <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
                     <p className="text-[12px] font-semibold uppercase tracking-wider text-amber-900">
                       Extraction warning
                     </p>
@@ -589,16 +589,16 @@ export default function DocPage({
 
                 {/* Details section */}
                 <div className="mb-6">
-                  <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                  <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)] mb-2">
                     DETAILS
                   </p>
                   {details.map(([k, v], i) => (
                     <div
                       key={i}
-                      className="flex justify-between py-1.5 border-b border-slate-100"
+                      className="flex justify-between py-1.5 border-b border-[color:var(--border-light)]"
                     >
-                      <span className="text-xs text-slate-500">{k}</span>
-                      <span className="font-['JetBrains_Mono'] text-xs text-slate-700">
+                      <span className="text-xs text-[color:var(--ink-muted)]">{k}</span>
+                      <span className="font-['JetBrains_Mono'] text-xs text-[color:var(--ink)]">
                         {v}
                       </span>
                     </div>
@@ -612,13 +612,13 @@ export default function DocPage({
                     onClick={() => setEntitiesExpanded((v) => !v)}
                     className="flex w-full items-center justify-between gap-2 bg-transparent border-none cursor-pointer p-0 mb-2"
                   >
-                    <span className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    <span className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
                       Entities{doc.entities?.length ? ` · ${doc.entities.length}` : ""}
                     </span>
                     {entitiesExpanded ? (
-                      <ChevronUp className="h-3 w-3 text-slate-400" />
+                      <ChevronUp className="h-3 w-3 text-[color:var(--ink-ghost)]" />
                     ) : (
-                      <ChevronDown className="h-3 w-3 text-slate-400" />
+                      <ChevronDown className="h-3 w-3 text-[color:var(--ink-ghost)]" />
                     )}
                   </button>
                   {entitiesExpanded && <EntityEditor documentId={doc.id} />}
@@ -627,21 +627,21 @@ export default function DocPage({
                 {/* References section */}
                 {refs.length > 0 && (
                   <div>
-                    <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                    <p className="font-['JetBrains_Mono'] text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)] mb-2">
                       REFERENCES &middot; {refs.length}
                     </p>
                     {refs.map((r) => (
                       <div
                         key={r.id}
-                        className="flex items-center gap-2 py-1.5 border-b border-slate-100"
+                        className="flex items-center gap-2 py-1.5 border-b border-[color:var(--border-light)]"
                       >
                         <span
                           dir="auto"
-                          className="font-['IBM_Plex_Sans_Arabic'] text-xs text-slate-700 flex-1"
+                          className="font-['IBM_Plex_Sans_Arabic'] text-xs text-[color:var(--ink)] flex-1"
                         >
                           {r.reference_text}
                         </span>
-                        <span className="font-['JetBrains_Mono'] text-[9px] uppercase text-slate-400">
+                        <span className="font-['JetBrains_Mono'] text-[9px] uppercase text-[color:var(--ink-ghost)]">
                           {r.reference_type}
                         </span>
                         {r.resolved && <Tag variant="green">LINKED</Tag>}
@@ -660,8 +660,8 @@ export default function DocPage({
                     onClick={() => setExtractionView("formatted")}
                     className={`font-['JetBrains_Mono'] text-[11px] tracking-wider px-2 py-1 rounded ${
                       extractionView === "formatted"
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-500 hover:text-slate-700"
+                        ? "bg-[color:var(--ink)] text-white"
+                        : "bg-[color:var(--surface-sunken)] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
                     }`}
                   >
                     Formatted
@@ -670,8 +670,8 @@ export default function DocPage({
                     onClick={() => setExtractionView("raw")}
                     className={`font-['JetBrains_Mono'] text-[11px] tracking-wider px-2 py-1 rounded ${
                       extractionView === "raw"
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-500 hover:text-slate-700"
+                        ? "bg-[color:var(--ink)] text-white"
+                        : "bg-[color:var(--surface-sunken)] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)]"
                     }`}
                   >
                     Raw JSON
@@ -679,7 +679,7 @@ export default function DocPage({
                   {extractionView === "raw" && (
                     <button
                       onClick={copyJson}
-                      className="font-['JetBrains_Mono'] text-[11px] tracking-wider px-2 py-1 rounded bg-slate-100 text-slate-500 hover:text-slate-700 ml-auto"
+                      className="font-['JetBrains_Mono'] text-[11px] tracking-wider px-2 py-1 rounded bg-[color:var(--surface-sunken)] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] ml-auto"
                     >
                       {copied ? "Copied!" : "Copy JSON"}
                     </button>
@@ -687,7 +687,7 @@ export default function DocPage({
                 </div>
 
                 {payload && (
-                  <p className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-slate-400 mb-4">
+                  <p className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-[color:var(--ink-ghost)] mb-4">
                     {payload.source === "artifact"
                       ? "Source: stored extraction artifact"
                       : "Source: reconstructed from stored chunks"}
@@ -696,7 +696,7 @@ export default function DocPage({
 
                 {/* Loading state */}
                 {chunksLoading && (
-                  <p className="text-[13px] text-slate-500">
+                  <p className="text-[13px] text-[color:var(--ink-muted)]">
                     Loading extraction data...
                   </p>
                 )}
@@ -704,7 +704,7 @@ export default function DocPage({
                 {!chunksLoading &&
                   doc.status === "processing" &&
                   chunks === null && (
-                    <p className="text-[13px] text-slate-500">
+                    <p className="text-[13px] text-[color:var(--ink-muted)]">
                       This document is still processing. Extraction will appear automatically when it is ready.
                     </p>
                   )}
@@ -714,7 +714,7 @@ export default function DocPage({
                   doc.status !== "processing" &&
                   chunks !== null &&
                   displayBlocks.length === 0 && (
-                  <p className="text-[13px] text-slate-500">
+                  <p className="text-[13px] text-[color:var(--ink-muted)]">
                     No extraction content is available for this document.
                   </p>
                 )}
@@ -731,20 +731,20 @@ export default function DocPage({
                         return (
                           <div
                             key={block.key}
-                            className="pb-3 mb-3 border-b border-slate-100"
+                            className="pb-3 mb-3 border-b border-[color:var(--border-light)]"
                           >
                             {/* Chunk header */}
                             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                              <span className="font-['JetBrains_Mono'] text-[10px] font-semibold text-slate-400">
+                              <span className="font-['JetBrains_Mono'] text-[10px] font-semibold text-[color:var(--ink-ghost)]">
                                 P.{block.pageNumber}
                               </span>
                               {block.sectionTitle && (
-                                <span className="font-['JetBrains_Mono'] text-[10px] text-slate-600">
+                                <span className="font-['JetBrains_Mono'] text-[10px] text-[color:var(--ink-muted)]">
                                   {block.sectionTitle}
                                 </span>
                               )}
                               {block.clauseNumber && (
-                                <span className="font-['JetBrains_Mono'] text-[10px] text-slate-500">
+                                <span className="font-['JetBrains_Mono'] text-[10px] text-[color:var(--ink-muted)]">
                                   Cl. {block.clauseNumber}
                                 </span>
                               )}
@@ -759,18 +759,18 @@ export default function DocPage({
                             {table && table.rows && table.rows.length > 0 ? (
                               <div className="overflow-x-auto">
                                 {table.caption && (
-                                  <p className="text-[11px] font-semibold text-slate-700 mb-1">
+                                  <p className="text-[11px] font-semibold text-[color:var(--ink)] mb-1">
                                     {table.caption}
                                   </p>
                                 )}
-                                <table className="w-full text-[11px] border-collapse border border-slate-200">
+                                <table className="w-full text-[11px] border-collapse border border-[color:var(--border)]">
                                   {table.headers.length > 0 && (
                                     <thead>
                                       <tr>
                                         {table.headers.map((h, hi) => (
                                           <th
                                             key={hi}
-                                            className="border border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold text-slate-700"
+                                            className="border border-[color:var(--border)] bg-[color:var(--surface-sunken)] px-2 py-1 text-left font-semibold text-[color:var(--ink)]"
                                           >
                                             {h}
                                           </th>
@@ -784,7 +784,7 @@ export default function DocPage({
                                         {row.map((cell, ci) => (
                                           <td
                                             key={ci}
-                                            className="border border-slate-200 px-2 py-1 text-slate-700"
+                                            className="border border-[color:var(--border)] px-2 py-1 text-[color:var(--ink)]"
                                             dir="auto"
                                           >
                                             {cell}
@@ -798,7 +798,7 @@ export default function DocPage({
                             ) : (
                               <p
                                 dir="auto"
-                                className="font-['IBM_Plex_Sans_Arabic'] text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap"
+                                className="font-['IBM_Plex_Sans_Arabic'] text-[13px] leading-relaxed text-[color:var(--ink)] whitespace-pre-wrap"
                               >
                                 {block.content}
                               </p>
@@ -813,7 +813,7 @@ export default function DocPage({
                 {!chunksLoading &&
                   payload !== null &&
                   extractionView === "raw" && (
-                    <pre className="font-['JetBrains_Mono'] text-[11px] bg-slate-50 p-4 rounded-lg overflow-auto max-h-[calc(100vh-200px)] text-slate-700 whitespace-pre-wrap">
+                    <pre className="font-['JetBrains_Mono'] text-[11px] bg-[color:var(--surface-sunken)] p-4 rounded-lg overflow-auto max-h-[calc(100vh-200px)] text-[color:var(--ink)] whitespace-pre-wrap">
                       {JSON.stringify(payload, null, 2)}
                     </pre>
                   )}
@@ -822,7 +822,7 @@ export default function DocPage({
                   doc.status !== "processing" &&
                   payload === null &&
                   extractionView === "raw" && (
-                    <p className="text-[13px] text-slate-500">
+                    <p className="text-[13px] text-[color:var(--ink-muted)]">
                       No extraction payload is available for this document yet.
                     </p>
                   )}

@@ -4,7 +4,7 @@ export default function Loading() {
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
       {/* Header skeleton */}
-      <div className="border-b border-slate-200 px-6 py-4 space-y-3">
+      <div className="border-b border-[color:var(--border)] px-6 py-4 space-y-3">
         <Skeleton className="h-7 w-64" />
         <div className="flex gap-2">
           <Skeleton className="h-6 w-20" />
@@ -19,7 +19,7 @@ export default function Loading() {
         </div>
       </div>
       {/* Tab bar skeleton */}
-      <div className="border-b border-slate-200 px-6 py-2 flex gap-4">
+      <div className="border-b border-[color:var(--border)] px-6 py-2 flex gap-4">
         <Skeleton className="h-6 w-20" />
         <Skeleton className="h-6 w-24" />
         <Skeleton className="h-6 w-24" />

@@ -556,7 +556,7 @@ export default function UploadPage() {
               <button
                 type="button"
                 onClick={reset}
-                className="rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
+                className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
               >
                 Try again
               </button>
@@ -673,7 +673,7 @@ function PlacementPanel({
   onCreateProject: () => void;
 }) {
   return (
-    <div className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+    <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] p-5 ">
       <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
         Where it should live
       </p>
@@ -685,7 +685,7 @@ function PlacementPanel({
           className={`rounded-md border px-4 py-3 text-left transition-all ${
             placementMode === "library"
               ? "border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)]"
-              : "border-[color:var(--border)] bg-white hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
+              : "border-[color:var(--border)] bg-[color:var(--surface-raised)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
           }`}
         >
           <div className="flex items-center gap-2">
@@ -703,7 +703,7 @@ function PlacementPanel({
           className={`rounded-md border px-4 py-3 text-left transition-all ${
             placementMode === "project"
               ? "border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)]"
-              : "border-[color:var(--border)] bg-white hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
+              : "border-[color:var(--border)] bg-[color:var(--surface-raised)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
           }`}
         >
           <div className="flex items-center gap-2">
@@ -723,7 +723,7 @@ function PlacementPanel({
               value={linkToProjectId || ""}
               onChange={(e) => setLinkToProjectId(e.target.value || null)}
               disabled={projectsLoading}
-              className="w-full rounded-md border border-[color:var(--border)] bg-white px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none disabled:bg-[color:var(--surface-sunken)]"
+              className="w-full rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none disabled:bg-[color:var(--surface-sunken)]"
             >
               <option value="">
                 {projectsLoading ? "Loading projects..." : "Choose a project"}
@@ -735,7 +735,7 @@ function PlacementPanel({
               ))}
             </select>
           ) : (
-            <div className="rounded-md border border-dashed border-[color:var(--border-strong)] bg-white px-3 py-3 text-[12px] text-[color:var(--ink-muted)]">
+            <div className="rounded-md border border-dashed border-[color:var(--border-strong)] bg-[color:var(--surface-raised)] px-3 py-3 text-[12px] text-[color:var(--ink-muted)]">
               No active projects yet. Create one first.
             </div>
           )}
@@ -750,7 +750,7 @@ function PlacementPanel({
           <button
             type="button"
             onClick={onCreateProject}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
           >
             <Plus className="h-3.5 w-3.5" />
             Create new project
@@ -773,7 +773,7 @@ function AnalyzingCard({
   projectName: string | null;
 }) {
   return (
-    <div className="rounded-md border border-[color:var(--border)] bg-white p-6 ">
+    <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] p-6 ">
       <div className="mb-4 flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gradient-to-br from-[color:var(--ink)] to-[color:var(--ink-muted)]">
           <Sparkles className="h-5 w-5 text-white" />
@@ -887,7 +887,7 @@ function ReviewCard({
         </div>
       )}
 
-      <div className="rounded-md border border-[color:var(--border)] bg-white p-6 ">
+      <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] p-6 ">
         <div className="mb-5 flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-[color:var(--ink)] to-[color:var(--ink-muted)]">
             <RecommendationIcon className="h-5 w-5 text-white" />
@@ -928,7 +928,7 @@ function ReviewCard({
                 value={chosenTitle}
                 onChange={(e) => setChosenTitle(e.target.value)}
                 dir="auto"
-                className="w-full rounded-md border border-[color:var(--border)] bg-white px-3 py-2 text-[14px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
+                className="w-full rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-2 text-[14px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
               />
             </div>
 
@@ -939,7 +939,7 @@ function ReviewCard({
               <select
                 value={chosenDocumentType}
                 onChange={(e) => setChosenDocumentType(e.target.value as DocumentTypeChoice)}
-                className="w-full rounded-md border border-[color:var(--border)] bg-white px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
+                className="w-full rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
               >
                 <option value="auto">
                   Auto{suggestedDocType ? ` (${DOCUMENT_TYPE_COPY[suggestedDocType]})` : ""}
@@ -978,7 +978,7 @@ function ReviewCard({
                     setPlacementMode("project");
                     setLinkToProjectId(suggestedProject.id);
                   }}
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
                 >
                   <FolderOpen className="h-3.5 w-3.5" />
                   Link to {suggestedProject.name}
@@ -989,7 +989,7 @@ function ReviewCard({
 
           <div className="space-y-4">
             {hasOverlap ? (
-              <div className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+              <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] p-5 ">
                 <p className="mb-1 text-[14px] font-semibold text-[color:var(--ink)]">
                   Possible overlap
                 </p>
@@ -1011,7 +1011,7 @@ function ReviewCard({
                       className={`w-full rounded-md border px-3 py-3 text-left transition-all ${
                         chosenTargetId === item.documentId
                           ? "border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)]"
-                          : "border-[color:var(--border)] bg-white hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
+                          : "border-[color:var(--border)] bg-[color:var(--surface-raised)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
                       }`}
                     >
                       <div className="flex items-start gap-3">
@@ -1054,7 +1054,7 @@ function ReviewCard({
                             ? "border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)]"
                             : disabled
                               ? "cursor-not-allowed border-[color:var(--border-light)] bg-[color:var(--surface-sunken)] text-[color:var(--ink-ghost)]"
-                              : "border-[color:var(--border)] bg-white hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
+                              : "border-[color:var(--border)] bg-[color:var(--surface-raised)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--surface-sunken)]"
                         }`}
                       >
                         <div className="flex items-start gap-3">
@@ -1081,7 +1081,7 @@ function ReviewCard({
                 </div>
               </div>
             ) : (
-              <div className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+              <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] p-5 ">
                 <p className="text-[14px] font-semibold text-[color:var(--ink)]">No strong overlap found</p>
                 <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--ink-muted)]">
                   This looks like a distinct document, so you can usually keep the default and
@@ -1090,7 +1090,7 @@ function ReviewCard({
               </div>
             )}
 
-            <details className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+            <details className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] p-5 ">
               <summary className="cursor-pointer list-none text-[13px] font-medium text-[color:var(--ink)]">
                 Advanced review
               </summary>
@@ -1104,7 +1104,7 @@ function ReviewCard({
                     onChange={(e) =>
                       setChosenClassification(e.target.value as Classification)
                     }
-                    className="w-full rounded-md border border-[color:var(--border)] bg-white px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
+                    className="w-full rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-2 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--ink)] focus:outline-none"
                   >
                     {(Object.keys(CLASSIFICATION_LABELS) as Classification[]).map((value) => (
                       <option key={value} value={value}>
@@ -1156,7 +1156,7 @@ function ReviewCard({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-[color:var(--border)] bg-white px-4 py-2 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
+          className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-4 py-2 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
         >
           Cancel
         </button>
@@ -1196,7 +1196,7 @@ function UploadingCard({
   projectName: string | null;
 }) {
   return (
-    <div className="rounded-md border border-[color:var(--border)] bg-white p-6 ">
+    <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] p-6 ">
       <div className="mb-3 flex items-center gap-3">
         <Loader2 className="h-4 w-4 animate-spin text-[color:var(--ink-ghost)]" />
         <p className="text-[14px] font-medium text-[color:var(--ink)]">Processing</p>
@@ -1253,14 +1253,14 @@ function DoneCard({
         <button
           type="button"
           onClick={onViewAll}
-          className="rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
+          className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-1.5 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
         >
           View library
         </button>
         <button
           type="button"
           onClick={onUploadMore}
-          className="rounded-lg border border-[color:var(--border)] bg-white px-3 py-1.5 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
+          className="rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-1.5 text-[13px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--surface-sunken)]"
         >
           Upload another
         </button>
@@ -1286,7 +1286,7 @@ function RecentSidebar({
   onClick: (id: string) => void;
 }) {
   return (
-    <div className="rounded-md border border-[color:var(--border)] bg-white p-5 ">
+    <div className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] p-5 ">
       <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
         Recent library documents
       </p>

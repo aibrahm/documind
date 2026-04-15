@@ -52,8 +52,8 @@ const TYPE_COLORS: Record<string, string> = {
   person: "bg-amber-50 text-amber-700 border-amber-200",
   place: "bg-rose-50 text-rose-700 border-rose-200",
   location: "bg-rose-50 text-rose-700 border-rose-200",
-  law: "bg-slate-100 text-slate-700 border-slate-300",
-  other: "bg-slate-50 text-slate-600 border-slate-200",
+  law: "bg-[color:var(--surface-sunken)] text-[color:var(--ink)] border-[color:var(--border-strong)]",
+  other: "bg-[color:var(--surface-sunken)] text-[color:var(--ink-muted)] border-[color:var(--border)]",
 };
 
 export function EntityEditor({ documentId }: EntityEditorProps) {
@@ -203,7 +203,7 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-3 text-[12px] text-slate-400">
+      <div className="flex items-center gap-2 py-3 text-[12px] text-[color:var(--ink-ghost)]">
         <Loader2 className="h-3 w-3 animate-spin" />
         Loading entities…
       </div>
@@ -212,7 +212,7 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
 
   if (entities.length === 0) {
     return (
-      <div className="py-3 text-[12px] text-slate-400">
+      <div className="py-3 text-[12px] text-[color:var(--ink-ghost)]">
         No entities extracted from this document.
       </div>
     );
@@ -249,15 +249,15 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
                   key={`${pair.aId}-${pair.bId}-${i}`}
                   className="flex items-center justify-between gap-2 text-[12px]"
                 >
-                  <span className="flex-1 text-slate-700" dir="auto">
+                  <span className="flex-1 text-[color:var(--ink)]" dir="auto">
                     <span className="font-medium">{a.name}</span>
-                    <span className="mx-1 text-slate-400">↔</span>
+                    <span className="mx-1 text-[color:var(--ink-ghost)]">↔</span>
                     <span className="font-medium">{b.name}</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => void mergeEntities(pair.aId, pair.bId)}
-                    className="flex items-center gap-1 rounded border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 cursor-pointer"
+                    className="flex items-center gap-1 rounded border border-amber-300 bg-[color:var(--surface-raised)] px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 cursor-pointer"
                   >
                     <GitMerge className="h-3 w-3" />
                     Merge
@@ -279,10 +279,10 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
             return (
               <div
                 key={entity.id}
-                className="rounded-md border border-slate-300 bg-slate-50 p-3 space-y-2"
+                className="rounded-md border border-[color:var(--border-strong)] bg-[color:var(--surface-sunken)] p-3 space-y-2"
               >
                 <div className="space-y-1">
-                  <label className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-slate-400">
+                  <label className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-[color:var(--ink-ghost)]">
                     Name (Arabic / primary)
                   </label>
                   <input
@@ -292,11 +292,11 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
                       setDraft({ ...draft, name: e.target.value })
                     }
                     dir="auto"
-                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[13px] outline-none focus:border-slate-400"
+                    className="w-full rounded border border-[color:var(--border-strong)] bg-[color:var(--surface-raised)] px-2 py-1 text-[13px] outline-none focus:border-[color:var(--ink)]"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-slate-400">
+                  <label className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-[color:var(--ink-ghost)]">
                     Name (English)
                   </label>
                   <input
@@ -306,11 +306,11 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
                       setDraft({ ...draft, name_en: e.target.value })
                     }
                     placeholder="(optional)"
-                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[13px] outline-none focus:border-slate-400"
+                    className="w-full rounded border border-[color:var(--border-strong)] bg-[color:var(--surface-raised)] px-2 py-1 text-[13px] outline-none focus:border-[color:var(--ink)]"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-slate-400">
+                  <label className="font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider text-[color:var(--ink-ghost)]">
                     Type
                   </label>
                   <select
@@ -318,7 +318,7 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
                     onChange={(e) =>
                       setDraft({ ...draft, type: e.target.value })
                     }
-                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-[13px] outline-none focus:border-slate-400"
+                    className="w-full rounded border border-[color:var(--border-strong)] bg-[color:var(--surface-raised)] px-2 py-1 text-[13px] outline-none focus:border-[color:var(--ink)]"
                   >
                     {TYPE_OPTIONS.map((t) => (
                       <option key={t} value={t}>
@@ -363,7 +363,7 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
           return (
             <div
               key={entity.id}
-              className="group flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 hover:border-slate-300 transition-colors"
+              className="group flex items-center gap-2 rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-2.5 py-1.5 hover:border-[color:var(--border-strong)] transition-colors"
             >
               <span
                 className={`shrink-0 rounded border px-1.5 py-0.5 font-['JetBrains_Mono'] text-[9px] uppercase tracking-wider ${typeClass}`}
@@ -372,13 +372,13 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
               </span>
               <div className="min-w-0 flex-1">
                 <p
-                  className="truncate text-[13px] font-medium text-slate-800"
+                  className="truncate text-[13px] font-medium text-[color:var(--ink)]"
                   dir="auto"
                 >
                   {entity.name}
                 </p>
                 {entity.name_en && entity.name_en !== entity.name && (
-                  <p className="truncate text-[11px] text-slate-500">
+                  <p className="truncate text-[11px] text-[color:var(--ink-muted)]">
                     {entity.name_en}
                   </p>
                 )}
@@ -387,7 +387,7 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
                 <button
                   type="button"
                   onClick={() => startEdit(entity)}
-                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer border-none bg-transparent"
+                  className="rounded p-1 text-[color:var(--ink-ghost)] hover:bg-[color:var(--surface-sunken)] hover:text-[color:var(--ink)] cursor-pointer border-none bg-transparent"
                   title="Edit entity"
                 >
                   <Pencil className="h-3 w-3" />
@@ -395,7 +395,7 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
                 <button
                   type="button"
                   onClick={() => void unlinkFromDocument(entity.id)}
-                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer border-none bg-transparent"
+                  className="rounded p-1 text-[color:var(--ink-ghost)] hover:bg-[color:var(--surface-sunken)] hover:text-[color:var(--ink)] cursor-pointer border-none bg-transparent"
                   title="Remove from this document"
                 >
                   <X className="h-3 w-3" />
@@ -403,7 +403,7 @@ export function EntityEditor({ documentId }: EntityEditorProps) {
                 <button
                   type="button"
                   onClick={() => void deleteEntityEntirely(entity.id)}
-                  className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 cursor-pointer border-none bg-transparent"
+                  className="rounded p-1 text-[color:var(--ink-ghost)] hover:bg-red-50 hover:text-red-600 cursor-pointer border-none bg-transparent"
                   title="Delete entity entirely (from every document)"
                 >
                   <Trash2 className="h-3 w-3" />

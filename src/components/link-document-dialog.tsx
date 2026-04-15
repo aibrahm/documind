@@ -130,13 +130,13 @@ export function LinkDocumentDialog({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <div className="border border-slate-200 rounded-lg max-h-72 overflow-y-auto">
+          <div className="border border-[color:var(--border)] rounded-lg max-h-72 overflow-y-auto">
             {loading && results.length === 0 ? (
-              <p className="text-sm text-slate-400 px-4 py-6 text-center">
+              <p className="text-sm text-[color:var(--ink-ghost)] px-4 py-6 text-center">
                 Loading…
               </p>
             ) : results.length === 0 ? (
-              <p className="text-sm text-slate-400 px-4 py-6 text-center">
+              <p className="text-sm text-[color:var(--ink-ghost)] px-4 py-6 text-center">
                 No documents found.
               </p>
             ) : (
@@ -147,27 +147,27 @@ export function LinkDocumentDialog({
                     key={d.id}
                     type="button"
                     onClick={() => toggle(d.id)}
-                    className={`w-full flex items-start gap-3 px-3 py-2 text-left border-b border-slate-100 last:border-b-0 transition-colors cursor-pointer ${
+                    className={`w-full flex items-start gap-3 px-3 py-2 text-left border-b border-[color:var(--border-light)] last:border-b-0 transition-colors cursor-pointer ${
                       isSelected
                         ? "bg-blue-50/60"
-                        : "bg-white hover:bg-slate-50"
+                        : "bg-[color:var(--surface-raised)] hover:bg-[color:var(--surface-sunken)]"
                     }`}
                   >
                     <div className="mt-0.5 w-4 h-4 shrink-0 flex items-center justify-center">
                       {isSelected ? (
                         <Check className="w-4 h-4 text-blue-600" />
                       ) : (
-                        <FileText className="w-4 h-4 text-slate-400" />
+                        <FileText className="w-4 h-4 text-[color:var(--ink-ghost)]" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p
-                        className="text-[13px] font-medium text-slate-900 truncate font-['IBM_Plex_Sans_Arabic']"
+                        className="text-[13px] font-medium text-[color:var(--ink)] truncate font-['IBM_Plex_Sans_Arabic']"
                         dir="auto"
                       >
                         {d.title}
                       </p>
-                      <p className="text-[10px] text-slate-400 font-['JetBrains_Mono'] uppercase tracking-wider">
+                      <p className="text-[10px] text-[color:var(--ink-ghost)] font-['JetBrains_Mono'] uppercase tracking-wider">
                         {d.type} · {d.classification}
                       </p>
                     </div>
@@ -179,7 +179,7 @@ export function LinkDocumentDialog({
 
           {/* Role selector */}
           <div>
-            <label className="block text-[11px] font-['JetBrains_Mono'] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-['JetBrains_Mono'] font-semibold uppercase tracking-wider text-[color:var(--ink-muted)] mb-1.5">
               Role
             </label>
             <div className="flex gap-2">
@@ -190,8 +190,8 @@ export function LinkDocumentDialog({
                   onClick={() => setRole(r)}
                   className={`text-[12px] px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${
                     role === r
-                      ? "bg-slate-900 text-white border-slate-900"
-                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                      ? "bg-[color:var(--ink)] text-white border-slate-900"
+                      : "bg-[color:var(--surface-raised)] text-[color:var(--ink-muted)] border-[color:var(--border)] hover:border-[color:var(--border-strong)]"
                   }`}
                 >
                   {r}

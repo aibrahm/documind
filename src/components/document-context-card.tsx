@@ -78,7 +78,7 @@ function ChipList({ items }: { items: string[] }) {
         <span
           key={item}
           dir="auto"
-          className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600"
+          className="rounded-full border border-[color:var(--border)] bg-[color:var(--surface-sunken)] px-2 py-0.5 text-[11px] text-[color:var(--ink-muted)]"
         >
           {item}
         </span>
@@ -98,10 +98,10 @@ function DetailBlock({
 
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
         {label}
       </p>
-      <p dir="auto" className="mt-1 text-[12px] leading-relaxed text-slate-700">
+      <p dir="auto" className="mt-1 text-[12px] leading-relaxed text-[color:var(--ink)]">
         {value}
       </p>
     </div>
@@ -129,7 +129,7 @@ export function DocumentContextCard({
         {summary && (
           <p
             dir="auto"
-            className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-slate-500"
+            className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-[color:var(--ink-muted)]"
           >
             {summary}
           </p>
@@ -143,13 +143,13 @@ export function DocumentContextCard({
 
   return (
     <div
-      className={`${bordered ? "rounded-2xl border border-slate-200 bg-slate-50/70 p-4" : ""} ${className}`.trim()}
+      className={`${bordered ? "rounded-md border border-[color:var(--border)] bg-[color:var(--surface-sunken)]/70 p-4" : ""} ${className}`.trim()}
     >
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
         Context
       </p>
       {summary && (
-        <p dir="auto" className="mt-2 text-[13px] leading-relaxed text-slate-700">
+        <p dir="auto" className="mt-2 text-[13px] leading-relaxed text-[color:var(--ink)]">
           {summary}
         </p>
       )}
@@ -160,7 +160,7 @@ export function DocumentContextCard({
 
         {parsed.key_parties.length > 0 && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
               Key parties
             </p>
             <ChipList items={parsed.key_parties.slice(0, 6)} />
@@ -169,7 +169,7 @@ export function DocumentContextCard({
 
         {parsed.key_dates.length > 0 && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
               Key dates
             </p>
             <ChipList items={parsed.key_dates.slice(0, 6)} />
@@ -178,7 +178,7 @@ export function DocumentContextCard({
 
         {parsed.key_obligations.length > 0 && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
               Key obligations
             </p>
             <div className="mt-2 space-y-1.5">
@@ -186,7 +186,7 @@ export function DocumentContextCard({
                 <p
                   key={item}
                   dir="auto"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] leading-relaxed text-slate-600"
+                  className="rounded-md border border-[color:var(--border)] bg-[color:var(--surface-raised)] px-3 py-2 text-[12px] leading-relaxed text-[color:var(--ink-muted)]"
                 >
                   {item}
                 </p>
@@ -197,7 +197,7 @@ export function DocumentContextCard({
 
         {parsed.topics.length > 0 && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ink-ghost)]">
               Topics
             </p>
             <ChipList items={parsed.topics.slice(0, 8)} />

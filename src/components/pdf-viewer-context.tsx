@@ -71,25 +71,25 @@ export function PdfViewerProvider({ children }: { children: ReactNode }) {
           {children}
         </div>
         {pdf && (
-          <div className="w-[480px] shrink-0 border-l border-slate-200 bg-white flex flex-col">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 shrink-0">
+          <div className="w-[480px] shrink-0 border-l border-[color:var(--border)] bg-[color:var(--surface-raised)] flex flex-col">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-[color:var(--border)] shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                <FileText className="w-4 h-4 text-[color:var(--ink-ghost)] shrink-0" />
                 <span
-                  className="text-sm text-slate-700 truncate"
+                  className="text-sm text-[color:var(--ink)] truncate"
                   dir="auto"
                   title={pdf.title}
                 >
                   {pdf.title}
                 </span>
-                <span className="font-['JetBrains_Mono'] text-[10px] text-slate-400 shrink-0">
+                <span className="font-['JetBrains_Mono'] text-[10px] text-[color:var(--ink-ghost)] shrink-0">
                   p.{pdf.page}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={closePdf}
-                className="text-slate-400 hover:text-slate-700 bg-transparent border-none cursor-pointer p-1"
+                className="text-[color:var(--ink-ghost)] hover:text-[color:var(--ink)] bg-transparent border-none cursor-pointer p-1"
                 title="Close PDF viewer"
               >
                 <X className="w-4 h-4" />
