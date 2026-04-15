@@ -39,17 +39,13 @@ export function Dashboard({ counts, recentDocs }: Props) {
             </span>
           </>
         }
-        actionHref="/upload"
-        actionLabel="Upload"
-        actionIcon={<Upload className="h-3.5 w-3.5" strokeWidth={1.75} />}
       />
-      <div className="px-6 py-6">
+      <div>
       {/* The grid — outer border + inner gridlines via gap:1px on a background */}
       <div
-        className="overflow-hidden"
         style={{
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-xl)",
+          borderTop: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
           background: "var(--border)",
         }}
       >
@@ -206,12 +202,11 @@ export function Dashboard({ counts, recentDocs }: Props) {
 
       {/* Secondary grid — status / info */}
       <div
-        className="mt-4 overflow-hidden grid grid-cols-3"
+        className="grid grid-cols-3"
         style={{
           gap: "1px",
           background: "var(--border)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-lg)",
+          borderBottom: "1px solid var(--border)",
         }}
       >
         <InfoCell label="MCP server" value="Connected" status="ok" />

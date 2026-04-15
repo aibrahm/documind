@@ -161,11 +161,8 @@ export default function DocumentsPage() {
             </span>
           </>
         }
-        actionHref="/upload"
-        actionLabel="Upload"
-        actionIcon={<UploadIcon className="h-3.5 w-3.5" strokeWidth={1.75} />}
       />
-      <div className="px-6 py-6">
+      <div>
 
       {/* Search + filter */}
       <div className="mb-4 flex items-center gap-2">
@@ -253,8 +250,8 @@ export default function DocumentsPage() {
         <div
           className="overflow-hidden"
           style={{
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-xl)",
+            borderTop: "1px solid var(--border)",
+            borderBottom: "1px solid var(--border)",
             background: "var(--border)",
           }}
         >
@@ -275,8 +272,8 @@ export default function DocumentsPage() {
         <div
           className="overflow-hidden"
           style={{
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-xl)",
+            borderTop: "1px solid var(--border)",
+            borderBottom: "1px solid var(--border)",
             background: "var(--border)",
           }}
         >
@@ -423,8 +420,8 @@ export default function DocumentsPage() {
           className="p-16 text-center"
           style={{
             background: "var(--surface-raised)",
-            border: "1px dashed var(--border)",
-            borderRadius: "var(--radius-xl)",
+            borderTop: "1px solid var(--border)",
+            borderBottom: "1px solid var(--border)",
           }}
         >
           <div

@@ -60,7 +60,7 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
           </>
         }
       />
-      <div className="px-6 py-6">
+      <div>
 
       {/* Search + type filter row */}
       <div className="mb-4 flex items-center gap-2">
@@ -114,8 +114,8 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
           className="p-16 text-center"
           style={{
             background: "var(--surface-raised)",
-            border: "1px dashed var(--border)",
-            borderRadius: "var(--radius-xl)",
+            borderTop: "1px solid var(--border)",
+            borderBottom: "1px solid var(--border)",
           }}
         >
           <Shapes
@@ -131,10 +131,9 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
         </div>
       ) : (
         <div
-          className="overflow-hidden"
           style={{
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-xl)",
+            borderTop: "1px solid var(--border)",
+            borderBottom: "1px solid var(--border)",
             background: "var(--border)",
           }}
         >

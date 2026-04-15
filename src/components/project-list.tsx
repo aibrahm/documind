@@ -32,15 +32,15 @@ export function ProjectList({ projects }: { projects: Project[] }) {
           </>
         }
       />
-      <div className="px-6 py-6">
+      <div>
 
       {projects.length === 0 ? (
         <div
           className="p-16 text-center"
           style={{
             background: "var(--surface-raised)",
-            border: "1px dashed var(--border)",
-            borderRadius: "var(--radius-xl)",
+            borderTop: "1px solid var(--border)",
+            borderBottom: "1px solid var(--border)",
           }}
         >
           <FolderKanban
@@ -54,10 +54,9 @@ export function ProjectList({ projects }: { projects: Project[] }) {
         </div>
       ) : (
         <div
-          className="overflow-hidden"
           style={{
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-xl)",
+            borderTop: "1px solid var(--border)",
+            borderBottom: "1px solid var(--border)",
             background: "var(--border)",
           }}
         >
