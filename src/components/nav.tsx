@@ -10,6 +10,7 @@ import {
   Upload,
   Settings,
 } from "lucide-react";
+import { DocuMindLogo } from "@/components/logo";
 
 const LINKS = [
   { label: "Home", href: "/", icon: LayoutDashboard },
@@ -24,7 +25,7 @@ export function Nav() {
 
   return (
     <header
-      className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between px-6"
+      className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between px-6"
       style={{
         background: "var(--surface)",
         borderBottom: "1px solid var(--border-light)",
@@ -33,34 +34,10 @@ export function Nav() {
       {/* Brand */}
       <Link
         href="/"
-        className="flex items-center gap-2 transition-opacity hover:opacity-70"
+        className="transition-opacity hover:opacity-70"
+        style={{ color: "var(--ink)" }}
       >
-        <span
-          aria-hidden
-          className="flex h-6 w-6 items-center justify-center"
-          style={{
-            background: "var(--ink)",
-            borderRadius: "var(--radius-sm)",
-            color: "var(--surface-raised)",
-            fontSize: "0.75rem",
-            fontWeight: 700,
-            lineHeight: 1,
-            letterSpacing: "-0.03em",
-          }}
-        >
-          D
-        </span>
-        <span
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: "0.9375rem",
-            fontWeight: 600,
-            letterSpacing: "-0.015em",
-            color: "var(--ink)",
-          }}
-        >
-          DocuMind
-        </span>
+        <DocuMindLogo variant="horizontal" size="sm" />
       </Link>
 
       {/* Centered nav pill — segmented control with gridlines */}

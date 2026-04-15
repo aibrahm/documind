@@ -5,6 +5,11 @@ export const metadata: Metadata = {
   title: "DocuMind",
   description:
     "Bilingual document intelligence — contracts, memos, laws, and briefings synthesized on demand.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

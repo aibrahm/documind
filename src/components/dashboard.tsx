@@ -27,21 +27,12 @@ interface Props {
 export function Dashboard({ counts, recentDocs }: Props) {
   return (
     <div className="mx-auto max-w-6xl px-8 py-12">
-      {/* Header */}
-      <div className="mb-10 flex items-end justify-between">
-        <div>
-          <div
-            className="text-xs font-medium mb-2 tabular-nums"
-            style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
-          >
-            OVERVIEW
-          </div>
-          <h1
-            className="text-4xl font-semibold tracking-tight"
-            style={{ color: "var(--ink)", letterSpacing: "-0.02em" }}
-          >
-            DocuMind
-          </h1>
+      <div className="mb-8 flex items-center justify-between">
+        <div
+          className="text-xs font-medium"
+          style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
+        >
+          OVERVIEW
         </div>
         <Link
           href="/upload"
