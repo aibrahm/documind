@@ -164,15 +164,21 @@ export default function DocumentsPage() {
       />
       <div>
 
-      {/* Search + filter */}
-      <div className="mb-4 flex items-center gap-2">
+      {/* Toolbar — edge-to-edge gridline strip: search cell + filter cells */}
+      <div
+        className="grid"
+        style={{
+          gridTemplateColumns: `1fr repeat(${SCOPES.length}, auto)`,
+          gap: "1px",
+          background: "var(--border)",
+          borderTop: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        {/* Search cell */}
         <div
-          className="flex items-center gap-2 flex-1 max-w-sm px-3 py-2"
-          style={{
-            background: "var(--surface-raised)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-md)",
-          }}
+          className="flex items-center gap-2 px-5"
+          style={{ background: "var(--surface-raised)" }}
         >
           <Search
             className="h-3.5 w-3.5 shrink-0"
@@ -184,49 +190,59 @@ export default function DocumentsPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search documents..."
-            className="flex-1 bg-transparent border-0 outline-none text-sm"
+            className="flex-1 bg-transparent border-0 outline-none text-sm py-3"
             style={{
               color: "var(--ink)",
               fontFamily: "var(--font-sans)",
             }}
           />
         </div>
-        <div className="flex items-center gap-1 ml-auto">
-          {SCOPES.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setScope(s)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors"
+
+        {/* Scope filter cells */}
+        {SCOPES.map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setScope(s)}
+            className="flex items-center gap-2 px-5 py-3 text-sm font-medium cursor-pointer transition-colors whitespace-nowrap"
+            style={{
+              background:
+                scope === s ? "var(--ink)" : "var(--surface-raised)",
+              color:
+                scope === s
+                  ? "var(--surface-raised)"
+                  : "var(--ink-muted)",
+              border: "none",
+            }}
+            onMouseEnter={(e) => {
+              if (scope !== s) {
+                e.currentTarget.style.background =
+                  "var(--surface-sunken)";
+                e.currentTarget.style.color = "var(--ink)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (scope !== s) {
+                e.currentTarget.style.background =
+                  "var(--surface-raised)";
+                e.currentTarget.style.color = "var(--ink-muted)";
+              }
+            }}
+          >
+            {SCOPE_LABEL[s] ?? s}
+            <span
+              className="tabular-nums text-xs"
               style={{
-                background:
-                  scope === s ? "var(--ink)" : "var(--surface-raised)",
                 color:
                   scope === s
-                    ? "var(--surface-raised)"
-                    : "var(--ink-muted)",
-                border:
-                  scope === s
-                    ? "1px solid var(--ink)"
-                    : "1px solid var(--border)",
-                borderRadius: "var(--radius-md)",
+                    ? "color-mix(in srgb, var(--surface-raised) 55%, transparent)"
+                    : "var(--ink-faint)",
               }}
             >
-              {SCOPE_LABEL[s] ?? s}
-              <span
-                className="tabular-nums text-[10px]"
-                style={{
-                  color:
-                    scope === s
-                      ? "color-mix(in srgb, var(--surface-raised) 60%, transparent)"
-                      : "var(--ink-faint)",
-                }}
-              >
-                {scopeCounts[s] ?? 0}
-              </span>
-            </button>
-          ))}
-        </div>
+              {scopeCounts[s] ?? 0}
+            </span>
+          </button>
+        ))}
       </div>
 
       {/* Error */}

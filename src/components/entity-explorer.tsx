@@ -62,15 +62,20 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
       />
       <div>
 
-      {/* Search + type filter row */}
-      <div className="mb-4 flex items-center gap-2">
+      {/* Toolbar — edge-to-edge gridline strip */}
+      <div
+        className="grid"
+        style={{
+          gridTemplateColumns: `1fr repeat(${types.length + 1}, auto)`,
+          gap: "1px",
+          background: "var(--border)",
+          borderTop: "1px solid var(--border)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
         <div
-          className="flex items-center gap-2 flex-1 max-w-sm px-3 py-2"
-          style={{
-            background: "var(--surface-raised)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-md)",
-          }}
+          className="flex items-center gap-2 px-5"
+          style={{ background: "var(--surface-raised)" }}
         >
           <Search
             className="h-3.5 w-3.5 shrink-0"
@@ -81,31 +86,29 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="flex-1 bg-transparent border-0 outline-none text-sm"
+            placeholder="Search entities..."
+            className="flex-1 bg-transparent border-0 outline-none text-sm py-3"
             style={{
               color: "var(--ink)",
               fontFamily: "var(--font-sans)",
             }}
           />
         </div>
-        <div className="flex items-center gap-1 ml-auto">
-          <FilterChip
-            active={!typeFilter}
-            onClick={() => setTypeFilter(null)}
+        <FilterCell
+          active={!typeFilter}
+          onClick={() => setTypeFilter(null)}
+        >
+          All
+        </FilterCell>
+        {types.map((t) => (
+          <FilterCell
+            key={t}
+            active={typeFilter === t}
+            onClick={() => setTypeFilter(typeFilter === t ? null : t)}
           >
-            All
-          </FilterChip>
-          {types.map((t) => (
-            <FilterChip
-              key={t}
-              active={typeFilter === t}
-              onClick={() => setTypeFilter(typeFilter === t ? null : t)}
-            >
-              {t}
-            </FilterChip>
-          ))}
-        </div>
+            {t}
+          </FilterCell>
+        ))}
       </div>
 
       {/* Grid */}
@@ -208,7 +211,7 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
   );
 }
 
-function FilterChip({
+function FilterCell({
   active,
   onClick,
   children,
@@ -221,12 +224,23 @@ function FilterChip({
     <button
       type="button"
       onClick={onClick}
-      className="px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors capitalize"
+      className="px-5 py-3 text-sm font-medium cursor-pointer transition-colors capitalize whitespace-nowrap"
       style={{
         background: active ? "var(--ink)" : "var(--surface-raised)",
         color: active ? "var(--surface-raised)" : "var(--ink-muted)",
-        border: active ? "1px solid var(--ink)" : "1px solid var(--border)",
-        borderRadius: "var(--radius-md)",
+        border: "none",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = "var(--surface-sunken)";
+          e.currentTarget.style.color = "var(--ink)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = "var(--surface-raised)";
+          e.currentTarget.style.color = "var(--ink-muted)";
+        }
       }}
     >
       {children}
