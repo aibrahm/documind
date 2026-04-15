@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { FolderKanban, FileText, ArrowUpRight, Plus } from "lucide-react";
+import { FolderKanban, FileText, ArrowUpRight, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { CreateProjectDialog } from "@/components/create-project-dialog";
 
 interface Project {
   id: string;
@@ -19,6 +22,26 @@ interface Project {
 }
 
 export function ProjectList({ projects }: { projects: Project[] }) {
+  const router = useRouter();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (e: React.MouseEvent, projectId: string, name: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm(`Delete "${name}"? Linked documents stay in the library, but the project itself is gone.`)) return;
+    setDeletingId(projectId);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      router.refresh();
+    } catch (err) {
+      window.alert(`Failed to delete: ${(err as Error).message}`);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -31,6 +54,31 @@ export function ProjectList({ projects }: { projects: Project[] }) {
             </span>
           </>
         }
+        rightExtra={
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium cursor-pointer transition-colors"
+            style={{
+              background: "var(--ink)",
+              color: "var(--surface-raised)",
+              border: "none",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />
+            New project
+          </button>
+        }
+      />
+
+      <CreateProjectDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(slug) => {
+          setCreateOpen(false);
+          router.push(`/projects/${slug}`);
+        }}
       />
       <div>
 
@@ -103,11 +151,36 @@ export function ProjectList({ projects }: { projects: Project[] }) {
                       )}
                     </div>
                   </div>
-                  <ArrowUpRight
-                    className="h-4 w-4 opacity-0 group-hover:opacity-60 transition-opacity shrink-0"
-                    style={{ color: "var(--ink)" }}
-                    strokeWidth={1.5}
-                  />
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => handleDelete(e, p.id, p.name)}
+                      disabled={deletingId === p.id}
+                      className="p-1.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      style={{
+                        color: "var(--ink-muted)",
+                        background: "transparent",
+                        border: "none",
+                        borderRadius: "var(--radius-sm)",
+                      }}
+                      aria-label="Delete project"
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = "var(--danger)";
+                        e.currentTarget.style.background = "var(--danger-bg)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = "var(--ink-muted)";
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                    <ArrowUpRight
+                      className="h-4 w-4 opacity-0 group-hover:opacity-60 transition-opacity"
+                      style={{ color: "var(--ink)" }}
+                      strokeWidth={1.5}
+                    />
+                  </div>
                 </div>
 
                 {p.description && (
