@@ -25,7 +25,7 @@ export function Nav() {
 
   return (
     <header
-      className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between px-6"
+      className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between px-6"
       style={{
         background: "var(--surface)",
         borderBottom: "1px solid var(--border-light)",
@@ -37,7 +37,7 @@ export function Nav() {
         className="transition-opacity hover:opacity-70"
         style={{ color: "var(--ink)" }}
       >
-        <DocuMindLogo variant="horizontal" size="sm" />
+        <DocuMindLogo variant="horizontal" size="md" />
       </Link>
 
       {/* Centered nav pill — segmented control with gridlines */}
