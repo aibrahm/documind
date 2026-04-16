@@ -157,7 +157,7 @@ export function CreateProjectDialog({
             className="mt-1 text-sm"
             style={{ color: "var(--ink-muted)" }}
           >
-            Describe the work. We'll generate a name from it.
+            Describe the work. We&apos;ll generate a name from it.
           </DialogDescription>
         </DialogHeader>
 

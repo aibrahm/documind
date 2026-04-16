@@ -185,4 +185,12 @@ export interface ExtractionV2Result extends ExtractionResult {
   };
   rawOcr: RawOcrArtifact;
   normalized: NormalizedDocumentArtifact;
+  /**
+   * The full Azure Document Intelligence `analyzeResult` payload as it
+   * came back from the API. Persisted end-to-end (instead of the previous
+   * five-integer summary) so future features that need word polygons,
+   * styles, figures, or per-word confidence don't have to call Azure a
+   * second time.
+   */
+  azureRaw: AzureDocumentIntelligenceAnalyzeResult | null;
 }

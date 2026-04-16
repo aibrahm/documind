@@ -1,6 +1,6 @@
-import { supabaseAdmin } from "@/lib/supabase";
 import type { Json } from "@/lib/database.types";
 import type { ExtractionArtifact } from "@/lib/extraction-schema";
+import { supabaseAdmin } from "@/lib/supabase";
 
 const EXTRACTION_ARTIFACT_VERSION = 1;
 const LEGACY_BUCKET = "documents";

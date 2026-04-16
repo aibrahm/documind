@@ -1,16 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { AlertCircle, FileText, Loader2, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Upload as UploadIcon,
-  FileText,
-  Search,
-  AlertCircle,
-  Loader2,
-  Trash2,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 
 interface Doc {
@@ -85,8 +78,13 @@ export default function DocumentsPage() {
   }, [fetchDocs]);
 
   useEffect(() => {
-    const hasProcessing = docs.some((d) => d.status === "processing");
-    if (!hasProcessing) return;
+    // Poll while any doc is mid-pipeline. `queued` covers the brief window
+    // between /api/upload returning and the after() handler flipping the
+    // row to `processing` — we want the pill to update without a refresh.
+    const inFlight = docs.some(
+      (d) => d.status === "processing" || d.status === "queued",
+    );
+    if (!inFlight) return;
     const interval = setInterval(fetchDocs, 5000);
     return () => clearInterval(interval);
   }, [docs, fetchDocs]);
@@ -113,7 +111,9 @@ export default function DocumentsPage() {
   }, [docs, scope, query]);
 
   const scopeCounts = useMemo(() => {
-    const inProject = docs.filter((d) => (d.project_ids?.length ?? 0) > 0).length;
+    const inProject = docs.filter(
+      (d) => (d.project_ids?.length ?? 0) > 0,
+    ).length;
     return {
       ALL: docs.length,
       IN_PROJECT: inProject,
@@ -122,7 +122,12 @@ export default function DocumentsPage() {
   }, [docs]);
 
   const stats = useMemo(() => {
-    const processing = docs.filter((d) => d.status === "processing").length;
+    // Both `queued` and `processing` count as "in flight" for the title bar
+    // counter. The user sees `… N processing` regardless of whether the
+    // background worker has started yet.
+    const processing = docs.filter(
+      (d) => d.status === "processing" || d.status === "queued",
+    ).length;
     return { total: docs.length, processing };
   }, [docs]);
 
@@ -156,343 +161,349 @@ export default function DocumentsPage() {
           <>
             {stats.total}{" "}
             <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>
-              {stats.total === 1 ? "document" : "documents"}
+              indexed
               {stats.processing > 0 ? ` · ${stats.processing} processing` : ""}
             </span>
           </>
         }
       />
       <div>
-
-      {/* Toolbar — edge-to-edge gridline strip: search cell + filter cells */}
-      <div
-        className="grid"
-        style={{
-          gridTemplateColumns: `1fr repeat(${SCOPES.length}, auto)`,
-          gap: "1px",
-          background: "var(--border)",
-          borderTop: "1px solid var(--border)",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        {/* Search cell */}
+        {/* Toolbar — edge-to-edge gridline strip: search cell + filter cells */}
         <div
-          className="flex items-center gap-2 px-5"
-          style={{ background: "var(--surface-raised)" }}
-        >
-          <Search
-            className="h-3.5 w-3.5 shrink-0"
-            style={{ color: "var(--ink-ghost)" }}
-            strokeWidth={1.5}
-          />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search documents..."
-            className="flex-1 bg-transparent border-0 outline-none text-sm py-3"
-            style={{
-              color: "var(--ink)",
-              fontFamily: "var(--font-sans)",
-            }}
-          />
-        </div>
-
-        {/* Scope filter cells */}
-        {SCOPES.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setScope(s)}
-            className="flex items-center gap-2 px-5 py-3 text-sm font-medium cursor-pointer transition-colors whitespace-nowrap"
-            style={{
-              background:
-                scope === s ? "var(--ink)" : "var(--surface-raised)",
-              color:
-                scope === s
-                  ? "var(--surface-raised)"
-                  : "var(--ink-muted)",
-              border: "none",
-            }}
-            onMouseEnter={(e) => {
-              if (scope !== s) {
-                e.currentTarget.style.background =
-                  "var(--surface-sunken)";
-                e.currentTarget.style.color = "var(--ink)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (scope !== s) {
-                e.currentTarget.style.background =
-                  "var(--surface-raised)";
-                e.currentTarget.style.color = "var(--ink-muted)";
-              }
-            }}
-          >
-            {SCOPE_LABEL[s] ?? s}
-            <span
-              className="tabular-nums text-xs"
-              style={{
-                color:
-                  scope === s
-                    ? "color-mix(in srgb, var(--surface-raised) 55%, transparent)"
-                    : "var(--ink-faint)",
-              }}
-            >
-              {scopeCounts[s] ?? 0}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div
-          className="flex items-center gap-2 text-sm px-3 py-2 mb-3"
+          className="grid"
           style={{
-            color: "var(--danger)",
-            background: "var(--danger-bg)",
-            border: "1px solid var(--danger)",
-            borderRadius: "var(--radius-md)",
-          }}
-        >
-          <AlertCircle className="w-4 h-4" />
-          Failed to load documents: {error}
-        </div>
-      )}
-
-      {/* Loading skeleton */}
-      {loading && (
-        <div
-          className="overflow-hidden"
-          style={{
-            borderTop: "1px solid var(--border)",
-            borderBottom: "1px solid var(--border)",
+            gridTemplateColumns: `1fr repeat(${SCOPES.length}, auto)`,
+            gap: "1px",
             background: "var(--border)",
-          }}
-        >
-          <div style={{ display: "grid", gap: "1px", background: "var(--border)" }}>
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div
-                key={i}
-                className="h-16 animate-pulse"
-                style={{ background: "var(--surface-raised)" }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Document list with gridlines */}
-      {!loading && filteredDocs.length > 0 && (
-        <div
-          className="overflow-hidden"
-          style={{
-            borderTop: "1px solid var(--border)",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--border)",
-          }}
-        >
-          <div style={{ display: "grid", gap: "1px", background: "var(--border)" }}>
-            {filteredDocs.map((doc) => (
-              <Link
-                key={doc.id}
-                href={`/documents/${doc.id}`}
-                className="group flex items-center gap-4 px-5 py-4 transition-colors relative"
-                style={{ background: "var(--surface-raised)" }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--surface-sunken)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--surface-raised)";
-                }}
-              >
-                <div
-                  className="flex h-9 w-9 items-center justify-center shrink-0"
-                  style={{
-                    background: "var(--surface-sunken)",
-                    borderRadius: "var(--radius-md)",
-                  }}
-                >
-                  <FileText
-                    className="h-4 w-4"
-                    style={{ color: "var(--ink-muted)" }}
-                    strokeWidth={1.5}
-                  />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div
-                    className="text-sm font-medium truncate"
-                    dir="auto"
-                    style={{ color: "var(--ink)" }}
-                  >
-                    {doc.title}
-                  </div>
-                  <div
-                    className="flex items-center gap-2 mt-0.5 text-xs"
-                    style={{ color: "var(--ink-faint)" }}
-                  >
-                    <span className="capitalize">{doc.type}</span>
-                    {doc.page_count !== null && (
-                      <>
-                        <span
-                          className="h-1 w-1 rounded-full"
-                          style={{ background: "var(--ink-ghost)" }}
-                        />
-                        <span className="tabular-nums">
-                          {doc.page_count} {doc.page_count === 1 ? "page" : "pages"}
-                        </span>
-                      </>
-                    )}
-                    <span
-                      className="h-1 w-1 rounded-full"
-                      style={{ background: "var(--ink-ghost)" }}
-                    />
-                    <span suppressHydrationWarning>
-                      {formatDate(doc.created_at)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Project / reference badge */}
-                {doc.project_names && doc.project_names.length > 0 ? (
-                  <span
-                    className="text-xs shrink-0 px-2 py-0.5"
-                    style={{
-                      color: "var(--accent)",
-                      background: "var(--accent-bg)",
-                      borderRadius: "var(--radius-sm)",
-                    }}
-                  >
-                    {doc.project_names[0]}
-                    {doc.project_names.length > 1 &&
-                      ` +${doc.project_names.length - 1}`}
-                  </span>
-                ) : (
-                  <span
-                    className="text-xs shrink-0 px-2 py-0.5"
-                    style={{
-                      color: "var(--ink-muted)",
-                      background: "var(--surface-sunken)",
-                      borderRadius: "var(--radius-sm)",
-                    }}
-                  >
-                    Reference
-                  </span>
-                )}
-
-                {doc.status === "processing" && (
-                  <span
-                    className="flex items-center gap-1 text-xs shrink-0"
-                    style={{ color: "var(--warning)" }}
-                  >
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Processing
-                  </span>
-                )}
-                {doc.status === "error" && (
-                  <span
-                    className="flex items-center gap-1 text-xs shrink-0"
-                    style={{ color: "var(--danger)" }}
-                  >
-                    <AlertCircle className="h-3 w-3" />
-                    Error
-                  </span>
-                )}
-
-                <button
-                  type="button"
-                  onClick={(e) => handleDelete(e, doc.id)}
-                  disabled={deleting === doc.id}
-                  className="p-1.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                  style={{
-                    color: "var(--ink-muted)",
-                    background: "transparent",
-                    border: "none",
-                    borderRadius: "var(--radius-sm)",
-                  }}
-                  aria-label="Delete document"
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = "var(--danger)";
-                    e.currentTarget.style.background = "var(--danger-bg)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = "var(--ink-muted)";
-                    e.currentTarget.style.background = "transparent";
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                </button>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && filteredDocs.length === 0 && !error && (
-        <div
-          className="p-16 text-center"
-          style={{
-            background: "var(--surface-raised)",
             borderTop: "1px solid var(--border)",
             borderBottom: "1px solid var(--border)",
           }}
         >
+          {/* Search cell */}
           <div
-            className="w-12 h-12 mx-auto mb-4 flex items-center justify-center"
-            style={{
-              background: "var(--surface-sunken)",
-              borderRadius: "var(--radius-md)",
-            }}
+            className="flex items-center gap-2 px-5"
+            style={{ background: "var(--surface-raised)" }}
           >
-            <FileText
-              className="w-5 h-5"
+            <Search
+              className="h-3.5 w-3.5 shrink-0"
               style={{ color: "var(--ink-ghost)" }}
               strokeWidth={1.5}
             />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search titles, types, projects…"
+              className="flex-1 bg-transparent border-0 outline-none text-sm py-3"
+              style={{
+                color: "var(--ink)",
+                fontFamily: "var(--font-sans)",
+              }}
+            />
           </div>
-          {docs.length === 0 ? (
-            <>
-              <p
-                className="text-sm font-medium mb-1"
-                style={{ color: "var(--ink)" }}
-              >
-                Your library is empty
-              </p>
-              <p className="text-sm mb-5" style={{ color: "var(--ink-muted)" }}>
-                Upload your first document to get started.
-              </p>
-              <button
-                type="button"
-                onClick={() => router.push("/upload")}
-                className="text-sm font-medium px-4 py-2 cursor-pointer transition-colors"
+
+          {/* Scope filter cells */}
+          {SCOPES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setScope(s)}
+              className="flex items-center gap-2 px-5 py-3 text-sm font-medium cursor-pointer transition-colors whitespace-nowrap"
+              style={{
+                background:
+                  scope === s ? "var(--ink)" : "var(--surface-raised)",
+                color:
+                  scope === s ? "var(--surface-raised)" : "var(--ink-muted)",
+                border: "none",
+              }}
+              onMouseEnter={(e) => {
+                if (scope !== s) {
+                  e.currentTarget.style.background = "var(--surface-sunken)";
+                  e.currentTarget.style.color = "var(--ink)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (scope !== s) {
+                  e.currentTarget.style.background = "var(--surface-raised)";
+                  e.currentTarget.style.color = "var(--ink-muted)";
+                }
+              }}
+            >
+              {SCOPE_LABEL[s] ?? s}
+              <span
+                className="tabular-nums text-xs"
                 style={{
-                  background: "var(--ink)",
-                  color: "var(--surface-raised)",
-                  border: "none",
-                  borderRadius: "var(--radius-md)",
+                  color:
+                    scope === s
+                      ? "color-mix(in srgb, var(--surface-raised) 55%, transparent)"
+                      : "var(--ink-faint)",
                 }}
               >
-                Upload document
-              </button>
-            </>
-          ) : (
-            <>
-              <p
-                className="text-sm font-medium mb-1"
-                style={{ color: "var(--ink)" }}
-              >
-                No matches
-              </p>
-              <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
-                Try a different search or filter.
-              </p>
-            </>
-          )}
+                {scopeCounts[s] ?? 0}
+              </span>
+            </button>
+          ))}
         </div>
-      )}
+
+        {/* Error */}
+        {error && (
+          <div
+            className="flex items-center gap-2 text-sm px-3 py-2 mb-3"
+            style={{
+              color: "var(--danger)",
+              background: "var(--danger-bg)",
+              border: "1px solid var(--danger)",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
+            <AlertCircle className="w-4 h-4" />
+            Failed to load documents: {error}
+          </div>
+        )}
+
+        {/* Loading skeleton */}
+        {loading && (
+          <div
+            className="overflow-hidden"
+            style={{
+              borderTop: "1px solid var(--border)",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--border)",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gap: "1px",
+                background: "var(--border)",
+              }}
+            >
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className="h-16 animate-pulse"
+                  style={{ background: "var(--surface-raised)" }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Document list with gridlines */}
+        {!loading && filteredDocs.length > 0 && (
+          <div
+            className="overflow-hidden"
+            style={{
+              borderTop: "1px solid var(--border)",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--border)",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gap: "1px",
+                background: "var(--border)",
+              }}
+            >
+              {filteredDocs.map((doc) => (
+                <Link
+                  key={doc.id}
+                  href={`/documents/${doc.id}`}
+                  className="group flex items-center gap-4 px-5 py-4 transition-colors relative"
+                  style={{ background: "var(--surface-raised)" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--surface-sunken)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "var(--surface-raised)";
+                  }}
+                >
+                  <div
+                    className="flex h-9 w-9 items-center justify-center shrink-0"
+                    style={{
+                      background: "var(--surface-sunken)",
+                      borderRadius: "var(--radius-md)",
+                    }}
+                  >
+                    <FileText
+                      className="h-4 w-4"
+                      style={{ color: "var(--ink-muted)" }}
+                      strokeWidth={1.5}
+                    />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className="text-sm font-medium truncate"
+                      dir="auto"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      {doc.title}
+                    </div>
+                    <div
+                      className="flex items-center gap-2 mt-0.5 text-xs"
+                      style={{ color: "var(--ink-faint)" }}
+                    >
+                      <span className="capitalize">{doc.type}</span>
+                      {doc.page_count !== null && (
+                        <>
+                          <span
+                            className="h-1 w-1 rounded-full"
+                            style={{ background: "var(--ink-ghost)" }}
+                          />
+                          <span className="tabular-nums">
+                            {doc.page_count}{" "}
+                            {doc.page_count === 1 ? "page" : "pages"}
+                          </span>
+                        </>
+                      )}
+                      <span
+                        className="h-1 w-1 rounded-full"
+                        style={{ background: "var(--ink-ghost)" }}
+                      />
+                      <span suppressHydrationWarning>
+                        {formatDate(doc.created_at)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Project / reference badge */}
+                  {doc.project_names && doc.project_names.length > 0 ? (
+                    <span
+                      className="text-xs shrink-0 px-2 py-0.5"
+                      style={{
+                        color: "var(--accent)",
+                        background: "var(--accent-bg)",
+                        borderRadius: "var(--radius-sm)",
+                      }}
+                    >
+                      {doc.project_names[0]}
+                      {doc.project_names.length > 1 &&
+                        ` +${doc.project_names.length - 1}`}
+                    </span>
+                  ) : (
+                    <span
+                      className="text-xs shrink-0 px-2 py-0.5"
+                      style={{
+                        color: "var(--ink-muted)",
+                        background: "var(--surface-sunken)",
+                        borderRadius: "var(--radius-sm)",
+                      }}
+                    >
+                      Reference
+                    </span>
+                  )}
+
+                  {doc.status === "queued" && (
+                    <span
+                      className="flex items-center gap-1 text-xs shrink-0"
+                      style={{ color: "var(--ink-muted)" }}
+                    >
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Queued
+                    </span>
+                  )}
+                  {doc.status === "processing" && (
+                    <span
+                      className="flex items-center gap-1 text-xs shrink-0"
+                      style={{ color: "var(--warning)" }}
+                    >
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Processing
+                    </span>
+                  )}
+                  {doc.status === "error" && (
+                    <span
+                      className="flex items-center gap-1 text-xs shrink-0"
+                      style={{ color: "var(--danger)" }}
+                    >
+                      <AlertCircle className="h-3 w-3" />
+                      Error
+                    </span>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(e, doc.id)}
+                    disabled={deleting === doc.id}
+                    className="p-1.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                    style={{
+                      color: "var(--ink-muted)",
+                      background: "transparent",
+                      border: "none",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                    aria-label="Delete document"
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = "var(--danger)";
+                      e.currentTarget.style.background = "var(--danger-bg)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "var(--ink-muted)";
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loading && filteredDocs.length === 0 && !error && (
+          <div
+            className="p-16 text-center"
+            style={{
+              background: "var(--surface-raised)",
+              borderTop: "1px solid var(--border)",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            <div
+              className="w-12 h-12 mx-auto mb-4 flex items-center justify-center"
+              style={{
+                background: "var(--surface-sunken)",
+                borderRadius: "var(--radius-md)",
+              }}
+            >
+              <FileText
+                className="w-5 h-5"
+                style={{ color: "var(--ink-ghost)" }}
+                strokeWidth={1.5}
+              />
+            </div>
+            {docs.length === 0 ? (
+              <>
+                <p
+                  className="text-sm mb-5"
+                  style={{ color: "var(--ink-muted)" }}
+                >
+                  Nothing here yet.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push("/upload")}
+                  className="text-sm font-medium px-4 py-2 cursor-pointer transition-colors"
+                  style={{
+                    background: "var(--ink)",
+                    color: "var(--surface-raised)",
+                    border: "none",
+                    borderRadius: "var(--radius-md)",
+                  }}
+                >
+                  Upload
+                </button>
+              </>
+            ) : (
+              <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
+                No matches. Try a different search or filter.
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </>
   );

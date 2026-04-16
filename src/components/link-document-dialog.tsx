@@ -8,7 +8,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { FileText, Check } from "lucide-react";
 
 interface PickerDocument {
@@ -119,25 +118,59 @@ export function LinkDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Link documents to this project</DialogTitle>
+      <DialogContent
+        className="sm:max-w-lg p-0 gap-0"
+        style={{
+          background: "var(--surface-raised)",
+          border: "1px solid var(--border)",
+          borderRadius: 0,
+        }}
+      >
+        <DialogHeader
+          className="px-6 py-4 text-left space-y-0"
+          style={{ borderBottom: "1px solid var(--border)" }}
+        >
+          <div
+            className="text-xs font-medium mb-1"
+            style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
+          >
+            LINK
+          </div>
+          <DialogTitle
+            className="text-xl font-semibold tracking-tight"
+            style={{ color: "var(--ink)", letterSpacing: "-0.015em" }}
+          >
+            Add documents to this project
+          </DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+
+        <div className="px-6 py-5 space-y-4">
           <Input
             autoFocus
-            placeholder="Search documents..."
+            placeholder="Search titles, types…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--ink)",
+            }}
           />
-          <div className="border border-[color:var(--border)] rounded-lg max-h-72 overflow-y-auto">
+          <div
+            className="max-h-72 overflow-y-auto"
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
             {loading && results.length === 0 ? (
               <p className="text-sm text-[color:var(--ink-ghost)] px-4 py-6 text-center">
                 Loading…
               </p>
             ) : results.length === 0 ? (
               <p className="text-sm text-[color:var(--ink-ghost)] px-4 py-6 text-center">
-                No documents found.
+                Nothing matches.
               </p>
             ) : (
               results.map((d) => {
@@ -147,27 +180,47 @@ export function LinkDocumentDialog({
                     key={d.id}
                     type="button"
                     onClick={() => toggle(d.id)}
-                    className={`w-full flex items-start gap-3 px-3 py-2 text-left border-b border-[color:var(--border-light)] last:border-b-0 transition-colors cursor-pointer ${
-                      isSelected
-                        ? "bg-blue-50/60"
-                        : "bg-[color:var(--surface-raised)] hover:bg-[color:var(--surface-sunken)]"
-                    }`}
+                    className="w-full flex items-start gap-3 px-3 py-2 text-left border-b border-[color:var(--border-light)] last:border-b-0 transition-colors cursor-pointer"
+                    style={{
+                      background: isSelected
+                        ? "var(--accent-bg)"
+                        : "var(--surface-raised)",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background =
+                          "var(--surface-sunken)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background =
+                          "var(--surface-raised)";
+                      }
+                    }}
                   >
                     <div className="mt-0.5 w-4 h-4 shrink-0 flex items-center justify-center">
                       {isSelected ? (
-                        <Check className="w-4 h-4 text-blue-600" />
+                        <Check
+                          className="w-4 h-4"
+                          style={{ color: "var(--accent)" }}
+                        />
                       ) : (
                         <FileText className="w-4 h-4 text-[color:var(--ink-ghost)]" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p
-                        className="text-[13px] font-medium text-[color:var(--ink)] truncate font-['IBM_Plex_Sans_Arabic']"
+                        className="text-[13px] font-medium text-[color:var(--ink)] truncate"
+                        style={{ fontFamily: "var(--font-arabic)" }}
                         dir="auto"
                       >
                         {d.title}
                       </p>
-                      <p className="text-[10px] text-[color:var(--ink-ghost)] font-['JetBrains_Mono'] uppercase tracking-wider">
+                      <p
+                        className="text-[10px] text-[color:var(--ink-ghost)] uppercase tracking-wider"
+                        style={{ fontFamily: "var(--font-mono)" }}
+                      >
                         {d.type} · {d.classification}
                       </p>
                     </div>
@@ -179,8 +232,11 @@ export function LinkDocumentDialog({
 
           {/* Role selector */}
           <div>
-            <label className="block text-[11px] font-['JetBrains_Mono'] font-semibold uppercase tracking-wider text-[color:var(--ink-muted)] mb-1.5">
-              Role
+            <label
+              className="block text-xs font-medium mb-1.5"
+              style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
+            >
+              ROLE
             </label>
             <div className="flex gap-2">
               {["primary", "reference", "supporting"].map((r) => (
@@ -188,11 +244,20 @@ export function LinkDocumentDialog({
                   key={r}
                   type="button"
                   onClick={() => setRole(r)}
-                  className={`text-[12px] px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${
-                    role === r
-                      ? "bg-[color:var(--ink)] text-white border-slate-900"
-                      : "bg-[color:var(--surface-raised)] text-[color:var(--ink-muted)] border-[color:var(--border)] hover:border-[color:var(--border-strong)]"
-                  }`}
+                  className="text-xs px-3 py-1.5 cursor-pointer transition-colors capitalize"
+                  style={{
+                    background:
+                      role === r ? "var(--ink)" : "var(--surface-raised)",
+                    color:
+                      role === r
+                        ? "var(--surface-raised)"
+                        : "var(--ink-muted)",
+                    border:
+                      role === r
+                        ? "1px solid var(--ink)"
+                        : "1px solid var(--border)",
+                    borderRadius: "var(--radius-md)",
+                  }}
                 >
                   {r}
                 </button>
@@ -201,30 +266,60 @@ export function LinkDocumentDialog({
           </div>
 
           {error && (
-            <p className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-md">
+            <p
+              className="text-sm px-3 py-2"
+              style={{
+                color: "var(--danger)",
+                background: "var(--danger-bg)",
+                border: "1px solid var(--danger)",
+                borderRadius: "var(--radius-sm)",
+              }}
+            >
               {error}
             </p>
           )}
+        </div>
 
-          <div className="flex justify-end gap-2 pt-1">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={submitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSubmit}
-              disabled={submitting || selected.size === 0}
-            >
-              {submitting
-                ? "Linking…"
-                : `Link ${selected.size > 0 ? selected.size : ""} document${selected.size === 1 ? "" : "s"}`}
-            </Button>
-          </div>
+        {/* Footer strip — flush bottom, ink primary action */}
+        <div
+          className="flex justify-end gap-2 px-6 py-4"
+          style={{
+            background: "var(--surface)",
+            borderTop: "1px solid var(--border)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+            className="px-4 py-2 text-sm font-medium cursor-pointer transition-colors disabled:opacity-50"
+            style={{
+              background: "var(--surface-raised)",
+              color: "var(--ink-muted)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting || selected.size === 0}
+            className="px-4 py-2 text-sm font-medium cursor-pointer transition-colors disabled:opacity-50"
+            style={{
+              background: "var(--ink)",
+              color: "var(--surface-raised)",
+              border: "none",
+              borderRadius: "var(--radius-md)",
+            }}
+          >
+            {submitting
+              ? "Linking…"
+              : selected.size > 0
+                ? `Link ${selected.size}`
+                : "Link"}
+          </button>
         </div>
       </DialogContent>
     </Dialog>

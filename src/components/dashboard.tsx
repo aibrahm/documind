@@ -35,7 +35,7 @@ export function Dashboard({ counts, recentDocs }: Props) {
           <>
             {totalDocs}{" "}
             <span style={{ color: "var(--ink-muted)", fontWeight: 400 }}>
-              {totalDocs === 1 ? "document" : "documents"}
+              indexed
             </span>
           </>
         }
@@ -112,7 +112,7 @@ export function Dashboard({ counts, recentDocs }: Props) {
                 className="py-8 text-sm text-center"
                 style={{ color: "var(--ink-muted)" }}
               >
-                No documents yet. Upload one to get started.
+                Nothing here yet.
               </div>
             ) : (
               <div className="space-y-0">
@@ -202,7 +202,7 @@ export function Dashboard({ counts, recentDocs }: Props) {
 
       {/* Secondary grid — status / info */}
       <div
-        className="grid grid-cols-3"
+        className="grid grid-cols-2"
         style={{
           gap: "1px",
           background: "var(--border)",
@@ -215,7 +215,6 @@ export function Dashboard({ counts, recentDocs }: Props) {
           value="Auto-extracting"
           status="ok"
         />
-        <InfoCell label="Tools available" value="19" status="ok" />
       </div>
       </div>
     </>

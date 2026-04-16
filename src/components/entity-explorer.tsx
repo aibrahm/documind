@@ -86,7 +86,7 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search entities..."
+            placeholder="Search names, places, types…"
             className="flex-1 bg-transparent border-0 outline-none text-sm py-3"
             style={{
               color: "var(--ink)",
@@ -127,9 +127,7 @@ export function EntityExplorer({ entities }: { entities: Entity[] }) {
             strokeWidth={1.25}
           />
           <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
-            {search || typeFilter
-              ? "No matches."
-              : "No entities extracted yet."}
+            {search || typeFilter ? "No matches." : "Nothing extracted yet."}
           </p>
         </div>
       ) : (

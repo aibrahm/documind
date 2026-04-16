@@ -26,12 +26,7 @@ import type { NextRequest } from "next/server";
 
 // Paths we explicitly don't gate. Next.js internals + static assets need
 // to load without auth or the login dialog never finishes rendering.
-const PUBLIC_PATHS = [
-  "/_next",
-  "/favicon.ico",
-  "/robots.txt",
-  "/sitemap.xml",
-];
+const PUBLIC_PATHS = ["/_next", "/favicon.ico", "/robots.txt", "/sitemap.xml"];
 
 // ── In-memory token bucket ──
 //
@@ -52,11 +47,13 @@ interface Bucket {
 // a single user on a single instance; for a real multi-user rollout,
 // revisit everything.
 const RATE_RULES: Array<{ prefix: string; rule: RateRule }> = [
-  { prefix: "/api/chat", rule: { capacity: 30, refillPerSecond: 0.5 } },        // ~30/min after burst
-  { prefix: "/api/upload", rule: { capacity: 10, refillPerSecond: 0.1 } },      // ~6/min after burst
-  { prefix: "/api/storage/signed-upload", rule: { capacity: 20, refillPerSecond: 0.2 } },
-  { prefix: "/api/intake/analyze", rule: { capacity: 20, refillPerSecond: 0.2 } },
-  { prefix: "/api/", rule: { capacity: 120, refillPerSecond: 2 } },              // generic fallback
+  { prefix: "/api/chat", rule: { capacity: 30, refillPerSecond: 0.5 } }, // ~30/min after burst
+  { prefix: "/api/upload", rule: { capacity: 10, refillPerSecond: 0.1 } }, // ~6/min after burst
+  {
+    prefix: "/api/storage/signed-upload",
+    rule: { capacity: 20, refillPerSecond: 0.2 },
+  },
+  { prefix: "/api/", rule: { capacity: 120, refillPerSecond: 2 } }, // generic fallback
 ];
 
 const buckets = new Map<string, Bucket>();
@@ -73,7 +70,9 @@ function getClientIp(request: NextRequest): string {
   return "unknown";
 }
 
-function matchRule(pathname: string): { prefix: string; rule: RateRule } | null {
+function matchRule(
+  pathname: string,
+): { prefix: string; rule: RateRule } | null {
   for (const entry of RATE_RULES) {
     if (pathname.startsWith(entry.prefix)) return entry;
   }
@@ -199,7 +198,7 @@ function unauthorized() {
   return new NextResponse("Authentication required", {
     status: 401,
     headers: {
-      "WWW-Authenticate": 'Basic realm="DocuMind", charset="UTF-8"',
+      "WWW-Authenticate": 'Basic realm="documind", charset="UTF-8"',
     },
   });
 }

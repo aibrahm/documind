@@ -19,8 +19,10 @@ import { MAX_UPLOAD_BYTES } from "@/lib/upload-validation";
  *   1. browser → POST /api/storage/signed-upload with { fileName, size }
  *   2. this endpoint → Supabase `createSignedUploadUrl()` → { signedUrl, token, path }
  *   3. browser → PUT file directly to signedUrl (or supabase.storage.uploadToSignedUrl)
- *   4. browser → POST /api/intake/analyze with { storagePath }
- *   5. browser → POST /api/upload with { storagePath, ...preferences }
+ *   4. browser → POST /api/upload with { storagePath, ...preferences }
+ *
+ *   The intermediate /api/intake/analyze step was removed — the full Azure
+ *   pipeline now runs once, in the background, after /api/upload returns.
  */
 
 // Align the pre-upload cap with the downstream /api/upload hard limit.

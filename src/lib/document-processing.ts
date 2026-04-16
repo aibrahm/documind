@@ -1,18 +1,24 @@
 import { createHash } from "node:crypto";
-import { supabaseAdmin } from "@/lib/supabase";
-import { extractDocumentV2 } from "@/lib/extraction-v2";
-import type { ExtractionArtifact, ExtractionPreferences } from "@/lib/extraction-schema";
-import { chunkDocument } from "@/lib/chunking";
-import { generateEmbeddings } from "@/lib/embeddings";
-import { withRetry } from "@/lib/retry";
-import { generateCanonicalTitle } from "@/lib/title-convention";
-import { encrypt } from "@/lib/encryption";
-import { writeExtractionArtifact } from "@/lib/extraction-artifacts";
-import { detectReferences, storeAndResolveReferences } from "@/lib/references";
-import { canonicalizeEntities } from "@/lib/entities";
 import { logAudit } from "@/lib/audit";
+import { chunkDocument } from "@/lib/chunking";
 import { generateContextCard, loadProjectHints } from "@/lib/context-card";
+import { generateEmbeddings } from "@/lib/embeddings";
+import { encrypt } from "@/lib/encryption";
+import { canonicalizeEntities } from "@/lib/entities";
+import { extractEntitiesFromDocument } from "@/lib/entity-extraction-llm";
+import { writeExtractionArtifact } from "@/lib/extraction-artifacts";
+import type {
+  ExtractionArtifact,
+  ExtractionPreferences,
+} from "@/lib/extraction-schema";
+import { extractDocumentV2 } from "@/lib/extraction-v2";
 import { extractKnowledgeGraph } from "@/lib/knowledge-graph";
+import { costForLlmUsage, withMetric } from "@/lib/metrics";
+import { UTILITY_MODEL } from "@/lib/models";
+import { detectReferences, storeAndResolveReferences } from "@/lib/references";
+import { withRetry } from "@/lib/retry";
+import { supabaseAdmin } from "@/lib/supabase";
+import { generateCanonicalTitle } from "@/lib/title-convention";
 
 interface ProcessDocumentInput {
   docId: string;
@@ -42,7 +48,9 @@ function buildRelatedReference(targetId: string) {
   };
 }
 
-async function loadPreservedRelatedReferences(docId: string): Promise<PreservedReference[]> {
+async function loadPreservedRelatedReferences(
+  docId: string,
+): Promise<PreservedReference[]> {
   const { data, error } = await supabaseAdmin
     .from("document_references")
     .select("target_id, reference_text, reference_type, resolved")
@@ -64,11 +72,20 @@ async function loadPreservedRelatedReferences(docId: string): Promise<PreservedR
 
 async function clearDerivedDocumentData(docId: string) {
   await supabaseAdmin.from("chunks").delete().eq("document_id", docId);
-  await supabaseAdmin.from("document_entities").delete().eq("document_id", docId);
-  await supabaseAdmin.from("document_references").delete().eq("source_id", docId);
+  await supabaseAdmin
+    .from("document_entities")
+    .delete()
+    .eq("document_id", docId);
+  await supabaseAdmin
+    .from("document_references")
+    .delete()
+    .eq("source_id", docId);
 }
 
-async function restoreRelatedReferences(docId: string, references: PreservedReference[]) {
+async function restoreRelatedReferences(
+  docId: string,
+  references: PreservedReference[],
+) {
   if (references.length === 0) return;
 
   await supabaseAdmin.from("document_references").upsert(
@@ -93,11 +110,41 @@ export async function processDocumentContent({
   relatedTo = null,
   titleOverride = null,
   replaceExistingDerivedData = false,
-}: ProcessDocumentInput): Promise<{ title: string; warningText: string | null }> {
+}: ProcessDocumentInput): Promise<{
+  title: string;
+  warningText: string | null;
+}> {
+  const totalStart = Date.now();
+  const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
+
+  // ── Per-doc idempotency ──
+  // Background workers + manual reprocess can race. If the doc already
+  // landed in `ready`, skip everything unless the caller explicitly asked
+  // to replace derived data (the `replaceExistingDerivedData` flag is set
+  // by /api/documents/[id]/extraction's POST handler).
+  if (!replaceExistingDerivedData) {
+    const { data: existingDoc } = await supabaseAdmin
+      .from("documents")
+      .select("status, title")
+      .eq("id", docId)
+      .maybeSingle();
+    if (existingDoc?.status === "ready") {
+      console.warn(
+        `processDocument(${docId}): already ready, skipping. Pass replaceExistingDerivedData=true to force re-extract.`,
+      );
+      return { title: existingDoc.title, warningText: null };
+    }
+  }
+
+  // ── OCR + normalize ──
+  // The withMetric wrappers inside extractDocumentV2 itself record the
+  // ocr + normalize stages so we get real per-stage timing in
+  // extraction_runs. We just pass docId through.
   const extraction = await extractDocumentV2(
     fileBuffer,
     fileName,
     extractionPreferences || undefined,
+    docId,
   );
 
   await logAudit("extraction", {
@@ -106,54 +153,117 @@ export async function processDocumentContent({
     documentType: extraction.classification.documentType,
     validationIssues: extraction.validation.issues.length,
     corrections: extraction.validation.corrections.length,
-    costs: extraction.costs,
   });
 
-  const chunks = chunkDocument(extraction.pages);
+  // ── Chunk ──
+  const chunks = await withMetric(
+    { stage: "chunk", documentId: docId },
+    async () => chunkDocument(extraction.pages),
+  );
   const chunkTexts = chunks.map((c) => c.content);
-  const embeddings = await generateEmbeddings(chunkTexts, "search_document");
+
+  // ── Embed ──
+  // generateEmbeddings is itself wrapped in Cohere retry; we add the
+  // metric row here so the dashboard gets one row per embed batch
+  // grouped under one stage.
+  const embeddings = await withMetric(
+    {
+      stage: "embed",
+      documentId: docId,
+      modelVersion: "embed-multilingual-v3.0",
+      // Embeddings are ~$0.0001/1K tokens. We approximate by chunk count
+      // (typical chunk ~500 tokens) since Cohere's API doesn't return
+      // per-call usage in the same shape as OpenAI.
+      extractUsage: () => ({
+        usdCost: chunks.length * 0.5 * 0.0001,
+      }),
+    },
+    async () => generateEmbeddings(chunkTexts, "search_document"),
+  );
 
   // Default to PRIVATE for any new upload unless the caller overrode it.
-  // The old code had a "policy → DOCTRINE" branch that is removed: policy
-  // documents now get PRIVATE by default and are bumped to PUBLIC by the
-  // librarian heuristics in src/lib/intake.ts when appropriate.
   const classification = classificationOverride ?? "PRIVATE";
-  const fullText = extraction.pages.flatMap((p) => p.sections.map((s) => s.content)).join("\n\n");
-  const encryptedContent = classification === "PRIVATE" ? encrypt(fullText) : null;
+  const fullText = extraction.pages
+    .flatMap((p) => p.sections.map((s) => s.content))
+    .join("\n\n");
+  const encryptedContent =
+    classification === "PRIVATE" ? encrypt(fullText) : null;
 
-  // Title precedence:
-  //   1. Explicit override from the caller (user typed one / librarian passed
-  //      one from the intake flow) — trust it verbatim.
-  //   2. Canonical LLM-generated title following the archive convention
-  //      "{Type}: {subject}". Reads the first ~3000 chars and produces
-  //      a clean bilingual title. See src/lib/title-convention.ts.
-  //   3. Whatever the OCR pipeline put in classification.title as a last
-  //      resort (almost always a letterhead, so this is a fallback only).
+  // ── Title (LLM, optional) ──
   let finalTitle = titleOverride?.trim() || "";
   if (!finalTitle) {
     try {
-      finalTitle = await generateCanonicalTitle({
-        fullText:
-          extraction.pages
-            .flatMap((p) => p.sections.map((s) => s.content))
-            .join("\n\n")
-            .slice(0, 6000) ||
-          extraction.classification.title,
-        documentType: extraction.classification.documentType,
-        language: extraction.classification.language,
-        fileName,
-      });
+      finalTitle = await withMetric(
+        {
+          stage: "llm_title",
+          documentId: docId,
+          modelVersion: UTILITY_MODEL,
+        },
+        async () =>
+          generateCanonicalTitle({
+            fullText:
+              extraction.pages
+                .flatMap((p) => p.sections.map((s) => s.content))
+                .join("\n\n")
+                .slice(0, 6000) || extraction.classification.title,
+            documentType: extraction.classification.documentType,
+            language: extraction.classification.language,
+            fileName,
+          }),
+      );
     } catch (err) {
       console.error("title-convention generation failed:", err);
       finalTitle = extraction.classification.title || fileName;
     }
   }
-  const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
+
+  // ── LLM entity extraction (replaces the old regex pipeline) ──
+  // Failure here doesn't kill the document — entities just stay empty
+  // until the user reprocesses. Logged loud per CLAUDE.md fail-loud rule.
+  let llmEntities: Awaited<
+    ReturnType<typeof extractEntitiesFromDocument>
+  >["entities"] = [];
+  let entityExtractionFailed = false;
+  try {
+    const result = await extractEntitiesFromDocument({
+      fullText,
+      language: extraction.classification.language,
+      documentId: docId,
+    });
+    llmEntities = result.entities;
+  } catch (err) {
+    entityExtractionFailed = true;
+    console.error(
+      `processDocument(${docId}): LLM entity extraction failed:`,
+      (err as Error).message,
+    );
+  }
+
+  // ── Canonicalize against existing entities (embedding-based) ──
+  let canonicalEntityIds: string[] = [];
+  if (llmEntities.length > 0) {
+    try {
+      const candidates = llmEntities.map((e) => ({
+        name: e.name,
+        type: e.type,
+        nameEn: e.nameEn,
+        aliases: e.aliases,
+      }));
+      canonicalEntityIds = await canonicalizeEntities(candidates, docId);
+    } catch (err) {
+      console.error(
+        `processDocument(${docId}): entity canonicalization failed:`,
+        (err as Error).message,
+      );
+    }
+  }
+
   const w = extraction.warnings;
   const validationErrorCount = extraction.validation.issues.filter(
     (issue) => issue.severity === "error",
   ).length;
 
+  // ── Build the artifact (now includes the full Azure analyzeResult) ──
   const artifact: ExtractionArtifact = {
     version: 1,
     storedAt: new Date().toISOString(),
@@ -161,13 +271,24 @@ export async function processDocumentContent({
     pages: extraction.pages,
     referencedLaws: extraction.referencedLaws,
     validation: extraction.validation,
-    metadata: extraction.metadata,
+    metadata: {
+      ...extraction.metadata,
+      // Surface the LLM entities (with confidence + aliases) into the
+      // artifact metadata so the reconstructed payload path keeps them
+      // available even if the chunks table is wiped.
+      entities: llmEntities.map((e) => ({
+        name: e.name,
+        type: e.type,
+        nameEn: e.nameEn || undefined,
+      })),
+    },
     warnings: extraction.warnings,
     verifier: extraction.verifier,
     costs: extraction.costs,
     pipeline: extraction.pipeline,
     rawOcr: extraction.rawOcr as unknown as Record<string, unknown>,
     normalized: extraction.normalized as unknown as Record<string, unknown>,
+    raw: extraction.azureRaw as unknown as Record<string, unknown> | null,
   };
 
   const preservedRelatedReferences = replaceExistingDerivedData
@@ -177,6 +298,7 @@ export async function processDocumentContent({
     await clearDerivedDocumentData(docId);
   }
 
+  // ── Persist chunks ──
   const chunkRecords = chunks.map((chunk, i) => ({
     document_id: docId,
     content: chunk.content,
@@ -188,47 +310,37 @@ export async function processDocumentContent({
     metadata: chunk.metadata,
   }));
 
-  // Wrap each batch in exponential backoff so a transient Supabase error
-  // doesn't silently lose part of the corpus. On final failure we throw
-  // — the outer handler in /api/upload/route.ts catches the throw and
-  // marks the document status as "error" so the user sees a loud failure
-  // instead of a document that looks ready but returns partial search
-  // hits forever. See CONCERNS.md B1.
-  for (let i = 0; i < chunkRecords.length; i += 50) {
-    const batch = chunkRecords.slice(i, i + 50);
-    await withRetry(
-      async () => {
-        const { error } = await supabaseAdmin.from("chunks").insert(batch);
-        if (error) throw new Error(error.message);
-      },
-      {
-        maxAttempts: 4,
-        initialDelayMs: 250,
-        label: `chunk batch insert[${i}..${i + batch.length}]`,
-      },
-    );
-  }
-
-  const entities = extraction.metadata.entities || [];
-  if (entities.length > 0) {
-    const candidates = entities.map((e) => ({
-      name: e.name,
-      type: e.type,
-      nameEn: e.nameEn || null,
-    }));
-    const entityIds = await canonicalizeEntities(candidates);
-    const uniqueIds = [...new Set(entityIds)];
-    if (uniqueIds.length > 0) {
-      const links = uniqueIds.map((eid) => ({
-        document_id: docId,
-        entity_id: eid,
-      }));
-      await supabaseAdmin
-        .from("document_entities")
-        .upsert(links, { onConflict: "document_id,entity_id" });
+  await withMetric({ stage: "persist", documentId: docId }, async () => {
+    for (let i = 0; i < chunkRecords.length; i += 50) {
+      const batch = chunkRecords.slice(i, i + 50);
+      await withRetry(
+        async () => {
+          const { error } = await supabaseAdmin.from("chunks").insert(batch);
+          if (error) throw new Error(error.message);
+        },
+        {
+          maxAttempts: 4,
+          initialDelayMs: 250,
+          label: `chunk batch insert[${i}..${i + batch.length}]`,
+        },
+      );
     }
+    return null;
+  });
+
+  // ── Link canonical entities to this document ──
+  const uniqueEntityIds = [...new Set(canonicalEntityIds)];
+  if (uniqueEntityIds.length > 0) {
+    const links = uniqueEntityIds.map((eid) => ({
+      document_id: docId,
+      entity_id: eid,
+    }));
+    await supabaseAdmin
+      .from("document_entities")
+      .upsert(links, { onConflict: "document_id,entity_id" });
   }
 
+  // ── References (regex from full text + structured from extraction) ──
   const references = detectReferences(fullText);
   if (extraction.metadata.references) {
     for (const ref of extraction.metadata.references) {
@@ -244,28 +356,59 @@ export async function processDocumentContent({
     await restoreRelatedReferences(docId, [buildRelatedReference(relatedTo)]);
   }
 
-  const { error: extractionArtifactError } = await writeExtractionArtifact(docId, artifact);
+  const { error: extractionArtifactError } = await writeExtractionArtifact(
+    docId,
+    artifact,
+  );
   if (extractionArtifactError) {
-    console.error("Failed to persist extraction artifact:", extractionArtifactError);
+    console.error(
+      "Failed to persist extraction artifact:",
+      extractionArtifactError,
+    );
   }
 
   // ── Context card (semantic contextualizer pass) ──
-  // One gpt-4o-mini call that reads a sample of the document + the user's
-  // project landscape and produces a structured "where does this fit" card.
-  // Stored on documents.context_card and later injected into chat system
-  // prompts when the document is in scope. Fails loud — if generation
-  // fails we log and continue; the document is still usable without a card.
+  // Wrapped in withMetric so the dashboard sees the cost + duration.
+  // Failure → null card + warning, document still goes to ready (per
+  // existing behavior — the audit flagged this as a silent fallback,
+  // and Phase 4 surfaces a banner; for Phase 1 we just keep the existing
+  // semantics so the migration doesn't regress).
   const projectHints = await loadProjectHints();
-  const entityNames = (extraction.metadata.entities || []).map((e) => e.name);
-  const contextCard = await generateContextCard({
-    title: finalTitle,
-    documentType: extraction.classification.documentType,
-    classification: classificationOverride || classification,
-    language: extraction.classification.language,
-    fullText,
-    entities: entityNames,
-    knownProjects: projectHints,
-  });
+  const entityNames = llmEntities.map((e) => e.name);
+  let contextCard: Awaited<ReturnType<typeof generateContextCard>> = null;
+  try {
+    contextCard = await withMetric(
+      {
+        stage: "llm_context",
+        documentId: docId,
+        modelVersion: UTILITY_MODEL,
+        // generateContextCard internally calculates a cost via
+        // calculateCost(); we approximate here by passing a fixed cost
+        // estimate based on the ~3K input + ~600 output token typical.
+        extractUsage: () => ({
+          usdCost: costForLlmUsage(UTILITY_MODEL, {
+            prompt_tokens: 3000,
+            completion_tokens: 600,
+          }),
+        }),
+      },
+      async () =>
+        generateContextCard({
+          title: finalTitle,
+          documentType: extraction.classification.documentType,
+          classification: classificationOverride || classification,
+          language: extraction.classification.language,
+          fullText,
+          entities: entityNames,
+          knownProjects: projectHints,
+        }),
+    );
+  } catch (err) {
+    console.error(
+      `processDocument(${docId}): context card stage failed:`,
+      (err as Error).message,
+    );
+  }
   const contextCardMissing = contextCard === null;
 
   const hasWarnings =
@@ -276,7 +419,8 @@ export async function processDocumentContent({
     w.verifierMismatches.length > 0 ||
     w.schemaWarnings.length > 0 ||
     validationErrorCount > 0 ||
-    Boolean(extractionArtifactError);
+    Boolean(extractionArtifactError) ||
+    entityExtractionFailed;
   const warningText = hasWarnings
     ? [
         w.failedPages.length > 0
@@ -296,7 +440,12 @@ export async function processDocumentContent({
         validationErrorCount > 0
           ? `${validationErrorCount} validation error${validationErrorCount === 1 ? "" : "s"} detected in extracted content`
           : null,
-        extractionArtifactError ? "Full extraction artifact could not be persisted" : null,
+        extractionArtifactError
+          ? "Full extraction artifact could not be persisted"
+          : null,
+        entityExtractionFailed
+          ? "Entity extraction (LLM) failed — entities will be empty"
+          : null,
       ]
         .filter(Boolean)
         .join(" · ")
@@ -311,7 +460,8 @@ export async function processDocumentContent({
             documentTypeHint: extractionPreferences.documentTypeHint || null,
             languageHint: extractionPreferences.languageHint || null,
             titleHint: extractionPreferences.titleHint || null,
-            skipClassification: extractionPreferences.skipClassification === true,
+            skipClassification:
+              extractionPreferences.skipClassification === true,
           },
         }
       : {}),
@@ -320,6 +470,7 @@ export async function processDocumentContent({
           extractionWarnings: {
             ...w,
             artifactPersistFailed: Boolean(extractionArtifactError),
+            entityExtractionFailed,
           },
         }
       : {}),
@@ -334,12 +485,14 @@ export async function processDocumentContent({
       language: extraction.classification.language,
       page_count: extraction.pages.length,
       metadata: mergedMetadata,
-      entities: (extraction.metadata.entities || []).map((e: { name: string }) => e.name),
+      // The string[] entities column on `documents` is the quick-filter
+      // index used by the library list; it mirrors the canonical
+      // entity names emitted by the LLM extractor (deduped client-side).
+      entities: [...new Set(llmEntities.map((e) => e.name))],
       encrypted_content: encryptedContent,
       // Cast through `unknown` — supabase-js treats JSONB as its generated
       // Json recursive type which doesn't match our structured card type.
-      // The DB accepts any JSON-serializable object here.
-      context_card: (contextCard as unknown) as never,
+      context_card: contextCard as unknown as never,
       status: "ready",
       processing_error: warningText,
     })
@@ -352,7 +505,9 @@ export async function processDocumentContent({
   }
 
   if (hasWarnings) {
-    console.error(`processDocument(${docId}): partial extraction. ${warningText}`);
+    console.error(
+      `processDocument(${docId}): partial extraction. ${warningText}`,
+    );
   }
 
   if (versionOf) {
@@ -379,11 +534,39 @@ export async function processDocumentContent({
 
   // Knowledge graph extraction — relationships, obligations, fact versions.
   // Fire-and-forget so a failure doesn't block the document from being ready.
-  void extractKnowledgeGraph(docId).catch((err) => {
+  // Wrapped in withMetric so the cost still hits the dashboard even though
+  // we don't await success.
+  void withMetric(
+    {
+      stage: "llm_graph",
+      documentId: docId,
+      modelVersion: UTILITY_MODEL,
+      extractUsage: () => ({
+        usdCost: costForLlmUsage(UTILITY_MODEL, {
+          prompt_tokens: 4000,
+          completion_tokens: 1000,
+        }),
+      }),
+    },
+    async () => extractKnowledgeGraph(docId),
+  ).catch((err) => {
     console.error(
       `processDocument(${docId}): knowledge graph extraction failed:`,
       (err as Error).message,
     );
+  });
+
+  // Final aggregate metric — total wall time end-to-end, no per-stage cost.
+  // Lets the dashboard answer "how long did this document take?" without
+  // summing all stage rows.
+  await supabaseAdmin.from("extraction_runs").insert({
+    document_id: docId,
+    stage: "total",
+    duration_ms: Date.now() - totalStart,
+    ok: !hasWarnings,
+    error_message: warningText,
+    model_version: null,
+    usd_cost: 0,
   });
 
   return {

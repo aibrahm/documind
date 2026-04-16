@@ -2,7 +2,7 @@
 set -e
 
 # ─────────────────────────────────────────────────────────────────
-# DocuMind — One-Click Installer
+# documind — One-Click Installer
 #
 # Instructions for the VC:
 #   1. Download the "setup-for-vc" folder to your Downloads
@@ -20,7 +20,7 @@ CLAUDE_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.js
 
 echo ""
 echo "╔══════════════════════════════════════╗"
-echo "║     DocuMind — Installing...         ║"
+echo "║     documind — Installing...         ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
 
@@ -83,11 +83,11 @@ fi
 # ── Clone or update the repo ──
 
 if [ -d "$INSTALL_DIR/.git" ]; then
-  echo "📂 Updating DocuMind..."
+  echo "📂 Updating documind..."
   cd "$INSTALL_DIR"
   git pull --ff-only 2>/dev/null || git pull --rebase
 else
-  echo "📂 Downloading DocuMind..."
+  echo "📂 Downloading documind..."
   rm -rf "$INSTALL_DIR"
   git clone https://github.com/aibrahm/documind.git "$INSTALL_DIR"
   cd "$INSTALL_DIR"
@@ -117,7 +117,7 @@ chmod +x "$INSTALL_DIR/run-mcp.sh"
 # ── Quick test ──
 
 echo ""
-echo "🧪 Testing DocuMind server..."
+echo "🧪 Testing documind server..."
 RESULT=$(printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}\n' | timeout 20 "$INSTALL_DIR/run-mcp.sh" 2>/dev/null | head -1)
 
 if echo "$RESULT" | grep -q '"serverInfo"'; then
@@ -172,7 +172,7 @@ print('✅ Claude Desktop configured')
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
 echo "║                                                  ║"
-echo "║   ✅ DocuMind installed successfully!             ║"
+echo "║   ✅ documind installed successfully!             ║"
 echo "║                                                  ║"
 echo "║   Next:                                          ║"
 echo "║   1. Quit Claude Desktop (Cmd+Q)                 ║"

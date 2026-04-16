@@ -14,7 +14,7 @@ export default async function ProjectsPage() {
 
   const projectIds = (projects ?? []).map((p) => p.id);
 
-  let docCounts: Record<string, number> = {};
+  const docCounts: Record<string, number> = {};
   if (projectIds.length > 0) {
     const { data } = await supabaseAdmin
       .from("project_documents")

@@ -97,7 +97,7 @@ export function ProjectList({ projects }: { projects: Project[] }) {
             strokeWidth={1.25}
           />
           <p className="text-sm" style={{ color: "var(--ink-muted)" }}>
-            No projects yet. Create one to organize your documents.
+            Nothing here yet.
           </p>
         </div>
       ) : (

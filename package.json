@@ -15,7 +15,8 @@
     "biome:write": "biome check --write .",
     "format": "biome format --write .",
     "mcp": "tsx src/mcp-server.ts",
-    "backfill": "tsx scripts/backfill-all.ts"
+    "backfill": "tsx scripts/backfill-all.ts",
+    "migrate:library": "tsx scripts/migrate-library.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
@@ -33,6 +34,7 @@
     "pptxgenjs": "^4.0.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-force-graph-2d": "^1.29.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "shadcn": "^4.1.1",

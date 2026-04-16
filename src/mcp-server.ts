@@ -10,7 +10,11 @@
 import "./mcp-env";
 
 import { readFileSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -108,19 +112,14 @@ server.tool(
       .string()
       .optional()
       .describe("Restrict results to documents in this project"),
-    limit: z
-      .number()
-      .optional()
-      .describe("Max results to return (default 8)"),
+    limit: z.number().optional().describe("Max results to return (default 8)"),
     classification: z
       .enum(["PRIVATE", "PUBLIC"])
       .optional()
       .describe("Filter by document classification"),
   },
   async ({ query, project_id, limit, classification }) => {
-    const docIds = project_id
-      ? await getProjectDocIds(project_id)
-      : undefined;
+    const docIds = project_id ? await getProjectDocIds(project_id) : undefined;
 
     const results = await hybridSearch({
       query,
@@ -179,7 +178,9 @@ server.tool(
     if (doc.context_card) {
       try {
         contextCardText = formatContextCardForPrompt(
-          doc.context_card as unknown as Parameters<typeof formatContextCardForPrompt>[0],
+          doc.context_card as unknown as Parameters<
+            typeof formatContextCardForPrompt
+          >[0],
           doc.title,
         );
       } catch {
@@ -384,7 +385,8 @@ server.tool(
         stage: project.stage,
         objective: project.objective,
         context_summary: project.context_summary,
-        context_md: (project as { context_md?: string | null }).context_md ?? null,
+        context_md:
+          (project as { context_md?: string | null }).context_md ?? null,
         brief: project.brief,
         next_actions: project.next_actions,
         start_date: project.start_date,
@@ -410,7 +412,9 @@ server.tool(
     project_id: z.string().describe("UUID of the project"),
     mode: z
       .enum(["replace", "append"])
-      .describe("replace: overwrite context_md. append: add a timestamped line at the end."),
+      .describe(
+        "replace: overwrite context_md. append: add a timestamped line at the end.",
+      ),
     content: z.string().describe("New content (if replace) or line to append"),
   },
   async ({ project_id, mode, content }) => {
@@ -640,7 +644,9 @@ server.tool(
     const next_steps = normalizeStringArray(input.next_steps ?? []);
 
     if (sections.length === 0) {
-      return textResult("Error: sections array must contain at least one section with a heading and paragraphs.");
+      return textResult(
+        "Error: sections array must contain at least one section with a heading and paragraphs.",
+      );
     }
 
     const content: ReportContent = {
@@ -834,9 +840,7 @@ server.tool(
     try {
       fileBuffer = readFileSync(file_path);
     } catch (err) {
-      return textResult(
-        `Cannot read file: ${(err as Error).message}`,
-      );
+      return textResult(`Cannot read file: ${(err as Error).message}`);
     }
 
     const fileName = file_path.split("/").pop() ?? "document";
@@ -859,23 +863,23 @@ server.tool(
 
     // Create document row
     const docId = randomUUID();
-    const { error: insertErr } = await supabaseAdmin
-      .from("documents")
-      .insert({
-        id: docId,
-        title: title ?? fileName,
-        type: "unknown",
-        classification: classification ?? "PRIVATE",
-        language: "unknown",
-        file_url: storagePath,
-        file_size: fileBuffer.length,
-        status: "processing",
-        is_current: true,
-        version_number: 1,
-      });
+    const { error: insertErr } = await supabaseAdmin.from("documents").insert({
+      id: docId,
+      title: title ?? fileName,
+      type: "unknown",
+      classification: classification ?? "PRIVATE",
+      language: "unknown",
+      file_url: storagePath,
+      file_size: fileBuffer.length,
+      status: "processing",
+      is_current: true,
+      version_number: 1,
+    });
 
     if (insertErr) {
-      return textResult(`Failed to create document record: ${insertErr.message}`);
+      return textResult(
+        `Failed to create document record: ${insertErr.message}`,
+      );
     }
 
     // Run the full processing pipeline
@@ -985,9 +989,7 @@ server.tool(
     const { data: entities } = await supabaseAdmin
       .from("entities")
       .select("id, name, name_en, type")
-      .or(
-        `name.ilike.%${entity_name}%,name_en.ilike.%${entity_name}%`,
-      )
+      .or(`name.ilike.%${entity_name}%,name_en.ilike.%${entity_name}%`)
       .limit(1);
 
     if (!entities || entities.length === 0) {
@@ -1015,10 +1017,9 @@ server.tool(
 
       const nextFrontier: string[] = [];
       for (const rel of rels ?? []) {
-        const otherId =
-          frontier.includes(rel.entity_a_id)
-            ? rel.entity_b_id
-            : rel.entity_a_id;
+        const otherId = frontier.includes(rel.entity_a_id)
+          ? rel.entity_b_id
+          : rel.entity_a_id;
 
         connections.push({
           from: rel.entity_a_id,
@@ -1064,9 +1065,7 @@ server.tool(
       .string()
       .optional()
       .describe("Filter by responsible or counterparty name"),
-    status: z
-      .enum(["pending", "completed", "overdue", "cancelled"])
-      .optional(),
+    status: z.enum(["pending", "completed", "overdue", "cancelled"]).optional(),
     due_before: z
       .string()
       .optional()
@@ -1096,9 +1095,7 @@ server.tool(
         .select("id")
         .or(`name.ilike.%${party}%,name_en.ilike.%${party}%`);
 
-      const entityIds = new Set(
-        (matchingEntities ?? []).map((e) => e.id),
-      );
+      const entityIds = new Set((matchingEntities ?? []).map((e) => e.id));
       results = results.filter(
         (o: Record<string, unknown>) =>
           (o.responsible_entity_id &&
@@ -1135,10 +1132,12 @@ server.tool(
         status: o.status,
         note: o.note,
         responsible: o.responsible_entity_id
-          ? entityMap[o.responsible_entity_id as string] ?? o.responsible_entity_id
+          ? (entityMap[o.responsible_entity_id as string] ??
+            o.responsible_entity_id)
           : null,
         counterparty: o.counterparty_entity_id
-          ? entityMap[o.counterparty_entity_id as string] ?? o.counterparty_entity_id
+          ? (entityMap[o.counterparty_entity_id as string] ??
+            o.counterparty_entity_id)
           : null,
         source_document_id: o.source_document_id,
         project_id: o.project_id,
@@ -1160,7 +1159,9 @@ server.tool(
   async ({ document_id }) => {
     const { data: doc } = await supabaseAdmin
       .from("documents")
-      .select("id, title, type, version_of, supersedes, version_number, created_at")
+      .select(
+        "id, title, type, version_of, supersedes, version_number, created_at",
+      )
       .eq("id", document_id)
       .single();
 
@@ -1177,7 +1178,9 @@ server.tool(
     // Get references
     const { data: refs } = await supabaseAdmin
       .from("document_references")
-      .select("id, source_id, target_id, reference_type, reference_text, resolved")
+      .select(
+        "id, source_id, target_id, reference_type, reference_text, resolved",
+      )
       .or(`source_id.eq.${document_id},target_id.eq.${document_id}`);
 
     return jsonResult({
@@ -1220,7 +1223,9 @@ server.tool(
       return jsonResult({
         claim_key,
         history: data ?? [],
-        changes: (data ?? []).filter((f: Record<string, unknown>) => f.previous_value !== null).length,
+        changes: (data ?? []).filter(
+          (f: Record<string, unknown>) => f.previous_value !== null,
+        ).length,
       });
     }
 
@@ -1246,7 +1251,10 @@ server.tool(
         const { data: docLinks } = await supabaseAdmin
           .from("document_entities")
           .select("document_id")
-          .in("entity_id", entities.map((e) => e.id));
+          .in(
+            "entity_id",
+            entities.map((e) => e.id),
+          );
 
         if (docLinks && docLinks.length > 0) {
           query = query.in(
@@ -1375,9 +1383,7 @@ server.tool(
   "Update the status of an obligation — mark it complete, cancelled, or add a note. Claude can use this when the user confirms an action was taken.",
   {
     obligation_id: z.string().describe("UUID of the obligation"),
-    status: z
-      .enum(["pending", "completed", "overdue", "cancelled"])
-      .optional(),
+    status: z.enum(["pending", "completed", "overdue", "cancelled"]).optional(),
     note: z.string().optional().describe("Add a note about the update"),
   },
   async ({ obligation_id, status, note }) => {
@@ -1425,8 +1431,7 @@ server.tool(
 
     if (!cur) return textResult(`Project not found: ${project_id}`);
 
-    const existing =
-      (cur as { context_md?: string | null }).context_md ?? "";
+    const existing = (cur as { context_md?: string | null }).context_md ?? "";
     const stamp = new Date().toISOString().slice(0, 10);
     const line = `${stamp}  ${content.trim()}`;
     const newContent = existing
@@ -1463,7 +1468,7 @@ server.tool(
 async function startStdio() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("DocuMind MCP server running (stdio)");
+  console.error("documind MCP server running (stdio)");
 }
 
 async function startHttp() {
@@ -1487,8 +1492,14 @@ async function startHttp() {
     async (req: IncomingMessage, res: ServerResponse) => {
       // CORS for Claude clients
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id");
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "POST, GET, DELETE, OPTIONS",
+      );
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, Mcp-Session-Id",
+      );
       res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
       if (req.method === "OPTIONS") {
@@ -1546,9 +1557,7 @@ async function startHttp() {
   );
 
   httpServer.listen(port, () => {
-    console.error(
-      `DocuMind MCP server running (HTTP) on port ${port}`,
-    );
+    console.error(`documind MCP server running (HTTP) on port ${port}`);
     console.error(`  Endpoint: http://localhost:${port}/mcp`);
     console.error(`  Health:   http://localhost:${port}/health`);
     console.error(`  Auth:     ${authToken ? "enabled" : "DISABLED"}`);

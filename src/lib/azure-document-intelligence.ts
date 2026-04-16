@@ -1,4 +1,5 @@
 import type { AzureDocumentIntelligenceResponse } from "@/lib/extraction-v2-schema";
+import { withRetry } from "@/lib/retry";
 
 const DEFAULT_API_VERSION = "2024-11-30";
 
@@ -18,7 +19,9 @@ const MAX_POLL_ATTEMPTS = parseInt(
   process.env.AZURE_DOCINTEL_MAX_POLL_ATTEMPTS ?? "120",
   10,
 );
-const TOTAL_TIMEOUT_SECONDS = Math.round((POLL_INTERVAL_MS * MAX_POLL_ATTEMPTS) / 1000);
+const TOTAL_TIMEOUT_SECONDS = Math.round(
+  (POLL_INTERVAL_MS * MAX_POLL_ATTEMPTS) / 1000,
+);
 
 function normalizeEndpoint(endpoint: string): string {
   return endpoint.replace(/\/+$/, "");
@@ -61,7 +64,9 @@ function buildAnalyzeUrl(endpoint: string, apiVersion: string): string {
 function getRequiredHeader(headers: Headers, name: string): string {
   const value = headers.get(name);
   if (!value) {
-    throw new Error(`Azure Document Intelligence response missing ${name} header`);
+    throw new Error(
+      `Azure Document Intelligence response missing ${name} header`,
+    );
   }
   return value;
 }
@@ -70,7 +75,30 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Public entry point — wraps the single-shot Azure call in withRetry so a
+ * transient 429/5xx doesn't waste a whole pipeline run. We don't retry
+ * 4xx (other than 429) because those mean the request is malformed; no
+ * amount of retrying will fix that and we'd rather fail loud.
+ */
 export async function analyzeDocumentWithAzureLayout(
+  fileBuffer: Buffer,
+): Promise<AzureDocumentIntelligenceResponse> {
+  return withRetry(() => analyzeOnce(fileBuffer), {
+    maxAttempts: 2,
+    initialDelayMs: 2000,
+    label: "azure prebuilt-layout",
+    shouldRetry: (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Don't retry 4xx (other than 429) — that's bad input, not flakiness.
+      const m = msg.match(/\((4\d\d)\)/);
+      if (m && m[1] !== "429") return false;
+      return true;
+    },
+  });
+}
+
+async function analyzeOnce(
   fileBuffer: Buffer,
 ): Promise<AzureDocumentIntelligenceResponse> {
   const { endpoint, key, apiVersion } = getAzureConfig();
@@ -113,14 +141,17 @@ export async function analyzeDocumentWithAzureLayout(
       );
     }
 
-    const json = (await pollResponse.json()) as AzureDocumentIntelligenceResponse;
+    const json =
+      (await pollResponse.json()) as AzureDocumentIntelligenceResponse;
     const status = (json.status || "").toLowerCase();
 
     if (status === "succeeded") {
       return json;
     }
     if (status === "failed") {
-      throw new Error(`Azure analyze operation failed: ${JSON.stringify(json).slice(0, 1000)}`);
+      throw new Error(
+        `Azure analyze operation failed: ${JSON.stringify(json).slice(0, 1000)}`,
+      );
     }
 
     await sleep(POLL_INTERVAL_MS);

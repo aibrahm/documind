@@ -102,7 +102,15 @@ export interface ExtractedSection {
   content: string;
   type: SectionType;
   subItems: string[];
-  confidence: number;
+  /**
+   * Real per-section confidence aggregated from Azure word-level confidence
+   * scores. `null` when no word-level signal is available (table cells,
+   * synthetic header blocks, reconstructed-from-chunks payloads). Display
+   * layer should hide the HIGH/MED/LOW tag when this is null instead of
+   * showing a fake green pill — see `confidenceLabel` in the doc detail
+   * page which already returns null for null inputs.
+   */
+  confidence: number | null;
   table?: ExtractedTable;
 }
 
@@ -303,6 +311,14 @@ export interface ExtractionArtifact {
   };
   rawOcr?: Record<string, unknown>;
   normalized?: Record<string, unknown>;
+  /**
+   * Full Azure Document Intelligence `analyzeResult` payload as returned
+   * by the API. Persisting this end-to-end (instead of the previous
+   * five-integer summary) is what unlocks future PDF-region highlighting,
+   * vision reconciliation, and re-extraction under newer models without
+   * paying Azure twice. ~50–200 KB per typical doc; storage is cheap.
+   */
+  raw?: Record<string, unknown> | null;
 }
 
 export interface NormalizedExtractionPayload {
@@ -334,7 +350,8 @@ function asRecord(value: unknown): JsonRecord | null {
 
 function coerceString(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
   return fallback;
 }
 
@@ -354,11 +371,26 @@ function clampConfidence(value: unknown, fallback = 0): number {
   return fallback;
 }
 
+/**
+ * Like `clampConfidence` but returns null instead of a fallback. Used for
+ * `ExtractedSection.confidence` so that sections with no real Azure
+ * word-level signal stay null rather than getting silently coerced to 1
+ * (the bug that made every chunk render with a green HIGH tag).
+ */
+function clampConfidenceOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(1, value));
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
+  }
+  return null;
+}
+
 function coerceStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => coerceString(item, "").trim())
-    .filter(Boolean);
+  return value.map((item) => coerceString(item, "").trim()).filter(Boolean);
 }
 
 function coerceEnum<T extends readonly string[]>(
@@ -384,17 +416,23 @@ function coerceJsonContent(type: string, value: unknown): string {
       return "";
     }
   }
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
   return "";
 }
 
-function parseSection(section: unknown, index: number): ParsedPayload<ExtractedSection | null> {
+function parseSection(
+  section: unknown,
+  index: number,
+): ParsedPayload<ExtractedSection | null> {
   const obj = asRecord(section);
   if (!obj) {
     return {
       value: null,
       failed: true,
-      warnings: [`section ${index}: expected object, received ${typeof section}`],
+      warnings: [
+        `section ${index}: expected object, received ${typeof section}`,
+      ],
     };
   }
 
@@ -402,12 +440,16 @@ function parseSection(section: unknown, index: number): ParsedPayload<ExtractedS
   const rawType = obj.type;
   const type = coerceEnum(rawType, SECTION_TYPES, "body");
   if (rawType !== undefined && rawType !== type) {
-    warnings.push(`section ${index}: unknown section type "${coerceString(rawType, "")}" -> body`);
+    warnings.push(
+      `section ${index}: unknown section type "${coerceString(rawType, "")}" -> body`,
+    );
   }
 
   const subItems =
     Array.isArray(obj.subItems) && obj.subItems.length > 0
-      ? obj.subItems.map((item) => coerceString(item, "").trim()).filter(Boolean)
+      ? obj.subItems
+          .map((item) => coerceString(item, "").trim())
+          .filter(Boolean)
       : [];
 
   return {
@@ -417,7 +459,7 @@ function parseSection(section: unknown, index: number): ParsedPayload<ExtractedS
       content: coerceJsonContent(type, obj.content),
       type,
       subItems,
-      confidence: clampConfidence(obj.confidence, 1),
+      confidence: clampConfidenceOrNull(obj.confidence),
     },
     failed: false,
     warnings,
@@ -448,10 +490,14 @@ export function parseClassificationPayload(
   const documentType = coerceEnum(rawDocumentType, DOCUMENT_TYPES, "other");
   const language = coerceEnum(rawLanguage, LANGUAGE_CODES, "ar");
   if (rawDocumentType !== undefined && rawDocumentType !== documentType) {
-    warnings.push(`classification: unknown documentType "${coerceString(rawDocumentType, "")}" -> other`);
+    warnings.push(
+      `classification: unknown documentType "${coerceString(rawDocumentType, "")}" -> other`,
+    );
   }
   if (rawLanguage !== undefined && rawLanguage !== language) {
-    warnings.push(`classification: unknown language "${coerceString(rawLanguage, "")}" -> ar`);
+    warnings.push(
+      `classification: unknown language "${coerceString(rawLanguage, "")}" -> ar`,
+    );
   }
 
   return {
@@ -492,10 +538,14 @@ export function parseExtractedPagePayload(
   const pageType = coerceEnum(rawPageType, PAGE_TYPES, "body");
   const language = coerceEnum(rawLanguage, LANGUAGE_CODES, "ar");
   if (rawPageType !== undefined && rawPageType !== pageType) {
-    warnings.push(`page ${pageNumber}: unknown pageType "${coerceString(rawPageType, "")}" -> body`);
+    warnings.push(
+      `page ${pageNumber}: unknown pageType "${coerceString(rawPageType, "")}" -> body`,
+    );
   }
   if (rawLanguage !== undefined && rawLanguage !== language) {
-    warnings.push(`page ${pageNumber}: unknown language "${coerceString(rawLanguage, "")}" -> ar`);
+    warnings.push(
+      `page ${pageNumber}: unknown language "${coerceString(rawLanguage, "")}" -> ar`,
+    );
   }
 
   const sectionsInput = obj.sections;
@@ -504,7 +554,9 @@ export function parseExtractedPagePayload(
   if (Array.isArray(sectionsInput)) {
     for (let i = 0; i < sectionsInput.length; i++) {
       const parsedSection = parseSection(sectionsInput[i], i);
-      warnings.push(...parsedSection.warnings.map((msg) => `page ${pageNumber}: ${msg}`));
+      warnings.push(
+        ...parsedSection.warnings.map((msg) => `page ${pageNumber}: ${msg}`),
+      );
       if (parsedSection.failed) {
         failed = true;
       }
@@ -732,7 +784,9 @@ export function parseCorrectionPayload(
   };
 }
 
-export function parseMetadataPayload(value: unknown): ParsedPayload<ExtractionMetadata> {
+export function parseMetadataPayload(
+  value: unknown,
+): ParsedPayload<ExtractionMetadata> {
   const obj = asRecord(value);
   if (!obj) {
     return {

@@ -2,7 +2,7 @@
 set -e
 
 # ─────────────────────────────────────────────────────────────────
-# DocuMind MCP Server — One-Click Installer
+# documind MCP Server — One-Click Installer
 #
 # Run this on the VC's Mac:
 #   curl -sSL <your-hosted-url>/install-documind.sh | bash
@@ -16,7 +16,7 @@ CLAUDE_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.js
 
 echo ""
 echo "╔══════════════════════════════════════╗"
-echo "║   DocuMind MCP Server — Installer    ║"
+echo "║   documind MCP Server — Installer    ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
 
@@ -63,7 +63,7 @@ if [ -d "$INSTALL_DIR" ]; then
   cd "$INSTALL_DIR"
   git pull --ff-only
 else
-  echo "📂 Cloning DocuMind..."
+  echo "📂 Cloning documind..."
   git clone "$REPO" "$INSTALL_DIR"
   cd "$INSTALL_DIR"
 fi
@@ -139,7 +139,7 @@ mkdir -p "$CLAUDE_DIR"
 if [ -f "$CLAUDE_CONFIG" ]; then
   # Check if documind is already configured
   if grep -q '"documind"' "$CLAUDE_CONFIG" 2>/dev/null; then
-    echo "✅ Claude Desktop already configured for DocuMind"
+    echo "✅ Claude Desktop already configured for documind"
   else
     # Add documind to existing config using python (available on all Macs)
     python3 -c "
@@ -154,7 +154,7 @@ config['mcpServers']['documind'] = {
 }
 with open('$CLAUDE_CONFIG', 'w') as f:
     json.dump(config, f, indent=2)
-print('✅ Added DocuMind to Claude Desktop config')
+print('✅ Added documind to Claude Desktop config')
 "
   fi
 else
@@ -176,7 +176,7 @@ fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║   ✅ DocuMind installed successfully!            ║"
+echo "║   ✅ documind installed successfully!            ║"
 echo "║                                                  ║"
 echo "║   Next steps:                                    ║"
 echo "║   1. Quit Claude Desktop (Cmd+Q)                 ║"

@@ -1,4 +1,4 @@
-// DocuMind logo — geometric icon (rotated square + circle) + wordmark.
+// documind logo — geometric icon (rotated square + circle) + wordmark.
 // Concept: square = document, circle = mind.
 // Typography: "docu" light (300) + "mind" bold (700).
 
@@ -9,11 +9,14 @@ interface LogoProps {
   variant?: Variant;
   size?: Size;
   className?: string;
-  /** Accessible label — defaults to "DocuMind". */
+  /** Accessible label — defaults to "documind". */
   label?: string;
 }
 
-const ICON_SPECS: Record<Size, { container: number; square: number; circle: number; stroke: number }> = {
+const ICON_SPECS: Record<
+  Size,
+  { container: number; square: number; circle: number; stroke: number }
+> = {
   sm: { container: 32, square: 22, circle: 11, stroke: 2 },
   md: { container: 48, square: 34, circle: 17, stroke: 2.5 },
   lg: { container: 64, square: 46, circle: 24, stroke: 3 },
@@ -38,7 +41,7 @@ export function DocuMindLogo({
   variant = "horizontal",
   size = "md",
   className = "",
-  label = "DocuMind",
+  label = "documind",
 }: LogoProps) {
   const icon = ICON_SPECS[size];
   const fontSize = FONT_SIZES[size];

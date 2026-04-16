@@ -1,21 +1,23 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import Link from "next/link";
 import {
-  LayoutDashboard,
   FileText,
   FolderKanban,
+  LayoutDashboard,
   Network,
-  Upload,
   Settings,
+  Share2,
+  Upload,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { DocuMindLogo } from "@/components/logo";
 
 const LINKS = [
   { label: "Home", href: "/", icon: LayoutDashboard },
   { label: "Documents", href: "/documents", icon: FileText },
   { label: "Projects", href: "/projects", icon: FolderKanban },
+  { label: "Graph", href: "/graph", icon: Share2 },
   { label: "Entities", href: "/entities", icon: Network },
   { label: "Upload", href: "/upload", icon: Upload },
 ];
@@ -74,9 +76,7 @@ export function Nav() {
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
                 fontWeight: active ? 600 : 500,
-                color: active
-                  ? "var(--surface-raised)"
-                  : "var(--ink-muted)",
+                color: active ? "var(--surface-raised)" : "var(--ink-muted)",
                 background: active ? "var(--ink)" : "var(--surface-raised)",
               }}
               onMouseEnter={(e) => {
@@ -108,9 +108,7 @@ export function Nav() {
                 ? "var(--surface-raised)"
                 : "var(--ink-muted)",
             background:
-              pathname === "/settings"
-                ? "var(--ink)"
-                : "var(--surface-raised)",
+              pathname === "/settings" ? "var(--ink)" : "var(--surface-raised)",
           }}
           aria-label="Settings"
         >

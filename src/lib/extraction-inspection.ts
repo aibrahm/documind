@@ -1,8 +1,5 @@
 import {
   DOCUMENT_TYPES,
-  LANGUAGE_CODES,
-  SECTION_TYPES,
-  parseMetadataPayload,
   type DocumentClassification,
   type DocumentType,
   type ExtractedPage,
@@ -11,8 +8,11 @@ import {
   type ExtractionArtifact,
   type ExtractionMetadata,
   type ExtractionWarnings,
+  LANGUAGE_CODES,
   type LanguageCode,
   type NormalizedExtractionPayload,
+  parseMetadataPayload,
+  SECTION_TYPES,
   type SectionType,
   type ValidationResult,
 } from "@/lib/extraction-schema";
@@ -40,7 +40,8 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function coerceString(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
   return fallback;
 }
 
@@ -54,7 +55,14 @@ function coerceStringArray(value: unknown): string[] {
   return value.map((item) => coerceString(item, "").trim()).filter(Boolean);
 }
 
-function coerceConfidence(value: unknown): number {
+/**
+ * Reconstructed-from-chunks payloads used to default missing confidence
+ * to 1, which made the doc-detail page render every chunk with a green
+ * "HIGH" tag — the screenshot bug. We now return null when the chunk
+ * metadata didn't capture a real Azure word-level score, and the display
+ * layer (`confidenceLabel`) hides the tag for null inputs.
+ */
+function coerceConfidence(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.min(1, value));
   }
@@ -62,19 +70,24 @@ function coerceConfidence(value: unknown): number {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
   }
-  return 1;
+  return null;
 }
 
 function coerceDocumentType(value: string): DocumentType {
-  return DOCUMENT_TYPES.includes(value as DocumentType) ? (value as DocumentType) : "other";
+  return DOCUMENT_TYPES.includes(value as DocumentType)
+    ? (value as DocumentType)
+    : "other";
 }
 
 function coerceLanguage(value: string): LanguageCode {
-  return LANGUAGE_CODES.includes(value as LanguageCode) ? (value as LanguageCode) : "ar";
+  return LANGUAGE_CODES.includes(value as LanguageCode)
+    ? (value as LanguageCode)
+    : "ar";
 }
 
 function coerceSectionType(value: unknown): SectionType {
-  return typeof value === "string" && SECTION_TYPES.includes(value as SectionType)
+  return typeof value === "string" &&
+    SECTION_TYPES.includes(value as SectionType)
     ? (value as SectionType)
     : "body";
 }
@@ -88,7 +101,9 @@ function parseTableObject(value: unknown): ExtractedTable | null {
     : Array.isArray(obj.columns)
       ? obj.columns
       : [];
-  const headers = headersSource.map((cell) => coerceString(cell, "")).filter(Boolean);
+  const headers = headersSource
+    .map((cell) => coerceString(cell, ""))
+    .filter(Boolean);
 
   const rows = Array.isArray(obj.rows)
     ? obj.rows
@@ -118,10 +133,16 @@ function parseMarkdownTable(content: string): ExtractedTable | null {
 
   let caption: string | undefined;
   if (lines[0]?.startsWith("**") && lines[0]?.endsWith("**")) {
-    caption = lines.shift()?.replace(/^\*\*|\*\*$/g, "").trim() || undefined;
+    caption =
+      lines
+        .shift()
+        ?.replace(/^\*\*|\*\*$/g, "")
+        .trim() || undefined;
   }
 
-  const tableLines = lines.filter((line) => line.startsWith("|") && line.endsWith("|"));
+  const tableLines = lines.filter(
+    (line) => line.startsWith("|") && line.endsWith("|"),
+  );
   if (tableLines.length < 3) return null;
 
   const parseLine = (line: string) =>
@@ -135,7 +156,10 @@ function parseMarkdownTable(content: string): ExtractedTable | null {
   const isSeparator = separatorRow.every((cell) => /^:?-{3,}:?$/.test(cell));
   if (!isSeparator) return null;
 
-  const rows = tableLines.slice(2).map(parseLine).filter((row) => row.length > 0);
+  const rows = tableLines
+    .slice(2)
+    .map(parseLine)
+    .filter((row) => row.length > 0);
   if (rows.length === 0) return null;
 
   return {
@@ -145,7 +169,9 @@ function parseMarkdownTable(content: string): ExtractedTable | null {
   };
 }
 
-function parseLooseTableSection(section: ExtractedSection): ExtractedTable | null {
+function parseLooseTableSection(
+  section: ExtractedSection,
+): ExtractedTable | null {
   const rawRows = section.subItems
     .map((item) =>
       item
@@ -166,19 +192,26 @@ function parseLooseTableSection(section: ExtractedSection): ExtractedTable | nul
     widthCounts.set(row.length, (widthCounts.get(row.length) || 0) + 1);
   }
   const rowWidth =
-    [...widthCounts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] || 0;
+    [...widthCounts.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0] - b[0],
+    )[0]?.[0] || 0;
   if (rowWidth === 0) return null;
 
   const rows = rawRows.flatMap((row) => {
     if (row.length === rowWidth) return [row];
     if (row.length === rowWidth + 1) {
       return [
-        [row[0], ...Array.from({ length: Math.max(0, rowWidth - 1) }, () => "")],
+        [
+          row[0],
+          ...Array.from({ length: Math.max(0, rowWidth - 1) }, () => ""),
+        ],
         row.slice(1),
       ];
     }
     if (row.length < rowWidth) {
-      return [[...row, ...Array.from({ length: rowWidth - row.length }, () => "")]];
+      return [
+        [...row, ...Array.from({ length: rowWidth - row.length }, () => "")],
+      ];
     }
     return [row];
   });
@@ -225,7 +258,7 @@ function extractTable(
     content: section.content,
     type: "table",
     subItems: section.subItems,
-    confidence: 1,
+    confidence: null,
   });
   return fromLooseSection || undefined;
 }
@@ -249,7 +282,9 @@ function emptyWarnings(): ExtractionWarnings {
   };
 }
 
-function extractStoredWarnings(metadata: Record<string, unknown> | null): ExtractionWarnings {
+function extractStoredWarnings(
+  metadata: Record<string, unknown> | null,
+): ExtractionWarnings {
   const extracted = asRecord(metadata?.extractionWarnings);
   if (!extracted) return emptyWarnings();
 
@@ -261,7 +296,9 @@ function extractStoredWarnings(metadata: Record<string, unknown> | null): Extrac
       : [],
     classificationFailed: extracted.classificationFailed === true,
     metadataFailed: extracted.metadataFailed === true,
-    correctionBatchesFailed: Number.isFinite(Number(extracted.correctionBatchesFailed))
+    correctionBatchesFailed: Number.isFinite(
+      Number(extracted.correctionBatchesFailed),
+    )
       ? Number(extracted.correctionBatchesFailed)
       : 0,
     verifierMismatches: coerceStringArray(extracted.verifierMismatches),
@@ -269,11 +306,15 @@ function extractStoredWarnings(metadata: Record<string, unknown> | null): Extrac
   };
 }
 
-function extractStoredMetadata(metadata: Record<string, unknown> | null): ExtractionMetadata {
+function extractStoredMetadata(
+  metadata: Record<string, unknown> | null,
+): ExtractionMetadata {
   return parseMetadataPayload(metadata).value;
 }
 
-function buildClassification(document: ExtractionInspectionDocument): DocumentClassification {
+function buildClassification(
+  document: ExtractionInspectionDocument,
+): DocumentClassification {
   return {
     documentType: coerceDocumentType(document.type),
     title: document.title,
@@ -325,9 +366,10 @@ export function buildNormalizedExtractionPayload(args: {
 
   for (const chunk of sortedChunks) {
     const pageNumber = chunk.page_number;
-    const metadata = chunk.metadata && typeof chunk.metadata === "object"
-      ? chunk.metadata
-      : null;
+    const metadata =
+      chunk.metadata && typeof chunk.metadata === "object"
+        ? chunk.metadata
+        : null;
 
     let page = pagesByNumber.get(pageNumber);
     if (!page) {
@@ -354,7 +396,9 @@ export function buildNormalizedExtractionPayload(args: {
     };
     const table = extractTable(metadata, sectionSeed);
 
-    const section: ExtractedSection = table ? { ...sectionSeed, table } : sectionSeed;
+    const section: ExtractedSection = table
+      ? { ...sectionSeed, table }
+      : sectionSeed;
 
     page.sections.push(section);
   }

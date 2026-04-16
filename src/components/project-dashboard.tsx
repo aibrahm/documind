@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import {
+  BookOpen,
+  Calendar,
+  FileText,
+  Network,
+  Save,
+  Share2,
+  Target,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FileText, Network, Calendar, Target, BookOpen, Save } from "lucide-react";
-import type { Database } from "@/lib/database.types";
+import { useCallback, useEffect, useState } from "react";
+import { DocumentGraphView } from "@/components/graph/document-graph-view";
 import { PageHeader } from "@/components/page-header";
+import type { Database } from "@/lib/database.types";
 
 type Project = Database["public"]["Tables"]["projects"]["Row"];
 
@@ -34,9 +43,9 @@ interface LinkedEntity {
 
 export function ProjectDashboard({ project, counts }: Props) {
   const router = useRouter();
-  const [tab, setTab] = useState<"context" | "documents" | "entities">(
-    "context",
-  );
+  const [tab, setTab] = useState<
+    "context" | "documents" | "entities" | "graph"
+  >("context");
   const [docs, setDocs] = useState<LinkedDoc[]>([]);
   const [entities, setEntities] = useState<LinkedEntity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,22 +92,28 @@ export function ProjectDashboard({ project, counts }: Props) {
     load();
   }, [project.id]);
 
-  const meta: React.ReactNode[] = [];
-  if (project.kind) meta.push(<span key="kind">{project.kind}</span>);
+  const meta: Array<{ key: string; node: React.ReactNode }> = [];
+  if (project.kind) meta.push({ key: "kind", node: project.kind });
   if (project.stage)
-    meta.push(
-      <span key="stage" className="flex items-center gap-1">
-        <Target className="h-3 w-3" strokeWidth={1.5} />
-        {project.stage}
-      </span>,
-    );
+    meta.push({
+      key: "stage",
+      node: (
+        <span className="flex items-center gap-1">
+          <Target className="h-3 w-3" strokeWidth={1.5} />
+          {project.stage}
+        </span>
+      ),
+    });
   if (project.target_close)
-    meta.push(
-      <span key="close" className="flex items-center gap-1">
-        <Calendar className="h-3 w-3" strokeWidth={1.5} />
-        {new Date(project.target_close).toLocaleDateString()}
-      </span>,
-    );
+    meta.push({
+      key: "close",
+      node: (
+        <span className="flex items-center gap-1">
+          <Calendar className="h-3 w-3" strokeWidth={1.5} />
+          {new Date(project.target_close).toLocaleDateString()}
+        </span>
+      ),
+    });
 
   return (
     <>
@@ -112,14 +127,14 @@ export function ProjectDashboard({ project, counts }: Props) {
               style={{ color: "var(--ink-faint)" }}
             >
               {meta.map((m, i) => (
-                <span key={i} className="flex items-center gap-3">
+                <span key={m.key} className="flex items-center gap-3">
                   {i > 0 && (
                     <span
                       className="h-1 w-1 rounded-full"
                       style={{ background: "var(--ink-ghost)" }}
                     />
                   )}
-                  {m}
+                  {m.node}
                 </span>
               ))}
             </div>
@@ -131,7 +146,7 @@ export function ProjectDashboard({ project, counts }: Props) {
       <div
         className="grid"
         style={{
-          gridTemplateColumns: "repeat(3, auto) 1fr",
+          gridTemplateColumns: "repeat(4, auto) 1fr",
           gap: "1px",
           background: "var(--border)",
           borderBottom: "1px solid var(--border)",
@@ -157,6 +172,12 @@ export function ProjectDashboard({ project, counts }: Props) {
           label="Entities"
           count={counts.entities}
         />
+        <TabButton
+          active={tab === "graph"}
+          onClick={() => setTab("graph")}
+          icon={Share2}
+          label="Graph"
+        />
         {/* Empty filler cell so the strip extends to the right edge */}
         <div style={{ background: "var(--surface-raised)" }} />
       </div>
@@ -167,25 +188,45 @@ export function ProjectDashboard({ project, counts }: Props) {
           borderBottom: "1px solid var(--border)",
         }}
       >
-        {tab === "context" ? (
+        {tab === "graph" ? (
+          // Graph fetches its own data and sizes itself. Min-height keeps
+          // the canvas usable on a typical laptop without forcing a fixed
+          // viewport-relative height that breaks on very short windows.
+          <div className="min-h-[560px] h-[calc(100vh-260px)]">
+            {/* key={project.id} forces a remount when navigating between
+                projects so DocumentGraphView's state resets cleanly
+                without needing a synchronous clear inside its effect. */}
+            <DocumentGraphView key={project.id} projectId={project.id} />
+          </div>
+        ) : tab === "context" ? (
           <div className="p-0">
-            <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: "1px solid var(--border-light)" }}>
-              <div className="text-xs" style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}>
+            <div
+              className="flex items-center justify-between px-4 py-2"
+              style={{ borderBottom: "1px solid var(--border-light)" }}
+            >
+              <div
+                className="text-xs"
+                style={{ color: "var(--ink-faint)", letterSpacing: "0.04em" }}
+              >
                 CONTEXT.MD
               </div>
               <button
                 type="button"
                 onClick={saveContext}
                 disabled={!contextDirty || contextSaving}
-                className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium cursor-pointer transition-colors disabled:opacity-40"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium cursor-pointer transition-colors disabled:opacity-40"
                 style={{
-                  background: contextDirty ? "var(--ink)" : "var(--surface-sunken)",
-                  color: contextDirty ? "var(--surface-raised)" : "var(--ink-muted)",
+                  background: contextDirty
+                    ? "var(--ink)"
+                    : "var(--surface-sunken)",
+                  color: contextDirty
+                    ? "var(--surface-raised)"
+                    : "var(--ink-muted)",
                   border: "none",
-                  borderRadius: "var(--radius-sm)",
+                  borderRadius: "var(--radius-md)",
                 }}
               >
-                <Save className="h-3 w-3" strokeWidth={1.75} />
+                <Save className="h-3.5 w-3.5" strokeWidth={1.75} />
                 {contextSaving ? "Saving..." : contextDirty ? "Save" : "Saved"}
               </button>
             </div>
@@ -196,9 +237,10 @@ export function ProjectDashboard({ project, counts }: Props) {
                 setContextDirty(true);
               }}
               placeholder={`## Current State\nWhat's happening with this project right now.\n\n## Timeline\n2026-04-14  First entry — what happened today`}
-              className="w-full p-4 bg-transparent border-0 outline-none font-mono text-sm resize-none"
+              className="w-full p-4 bg-transparent border-0 outline-none text-sm resize-none"
               style={{
                 color: "var(--ink)",
+                fontFamily: "var(--font-mono)",
                 minHeight: "420px",
                 lineHeight: 1.6,
               }}

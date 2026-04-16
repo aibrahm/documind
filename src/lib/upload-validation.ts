@@ -6,13 +6,11 @@
 //   1. File is actually a PDF (magic bytes, not just the filename)
 //   2. File is under the workspace's hard size cap
 //
-// Previously each entry point (src/app/api/upload/route.ts, the legacy
-// multipart path, src/app/api/intake/analyze/route.ts) rolled its own
-// extension + size check, and the signed-upload route allowed up to
-// 100MB while downstream /api/upload only accepted 50MB — a gap an
-// attacker could use to push large garbage into storage without ever
-// succeeding downstream. This module is the one rule, enforced in
-// every place we see the bytes.
+// Previously each upload entry point rolled its own extension + size
+// check, and the signed-upload route allowed up to 100MB while downstream
+// /api/upload only accepted 50MB — a gap an attacker could use to push
+// large garbage into storage without ever succeeding downstream. This
+// module is the one rule, enforced in every place we see the bytes.
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DocuMind",
+  title: "documind",
   description:
     "Bilingual document intelligence — contracts, memos, laws, and briefings synthesized on demand.",
   icons: {
@@ -31,9 +31,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="dm-body">
-        {children}
-      </body>
+      <body className="dm-body">{children}</body>
     </html>
   );
 }
