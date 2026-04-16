@@ -71,7 +71,7 @@ export function Nav() {
             <Link
               key={l.href}
               href={l.href}
-              className="flex items-center justify-center gap-2 h-16 transition-colors"
+              className="flex items-center justify-center gap-2 h-16 transition-colors leading-none"
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: "0.875rem",
@@ -92,7 +92,7 @@ export function Nav() {
                 }
               }}
             >
-              <Icon className="h-4 w-4" strokeWidth={1.75} />
+              <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} style={{ transform: "translateY(0.5px)" }} />
               {l.label}
             </Link>
           );
@@ -112,7 +112,7 @@ export function Nav() {
           }}
           aria-label="Settings"
         >
-          <Settings className="h-4 w-4" strokeWidth={1.75} />
+          <Settings className="h-4 w-4 shrink-0" strokeWidth={1.75} style={{ transform: "translateY(0.5px)" }} />
         </Link>
       </div>
     </header>
